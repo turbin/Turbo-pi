@@ -1,15 +1,66 @@
-# Development Rules
+# AGENTS.md
 
-## Conversational Style
+Guidance for AI coding agents (and humans) working in this repository. Read this file fully before making changes.
 
-- Keep answers short and concise
-- No emojis in commits, issues, PR comments, or code
-- No fluff or cheerful filler text (e.g., "Thanks @user" not "Thanks so much @user!")
-- Technical prose only, be direct
+## Project Overview
+
+This is the **Pi agent harness** monorepo (`pi-monorepo`), home of Pi, a self-extensible terminal coding agent. npm workspaces under `packages/*`, published under the `@earendil-works` npm scope. Lockstep versioning: all TypeScript packages share one version and are released together.
+
+Packages:
+
+| Package | Path | Description |
+|---|---|---|
+| `@earendil-works/pi-ai` | `packages/ai` | Unified multi-provider LLM API (OpenAI, Anthropic, Google, Bedrock, and many more). One file per provider in `src/providers/<name>.ts` plus a generated `<name>.models.ts`; `src/models.generated.ts` is generated. |
+| `@earendil-works/pi-agent-core` | `packages/agent` | Agent runtime: agent loop, tool calling, transport abstraction, state management. `src/harness/` holds the coding-agent harness pieces (compaction, session, skills, system prompt). |
+| `@earendil-works/pi-coding-agent` | `packages/coding-agent` | The `pi` CLI. `src/core/` (agent session, tools in `core/tools/`, extensions, sessions, settings), `src/modes/` (interactive TUI, print mode, RPC), `src/cli/` (startup). |
+| `@earendil-works/pi-tui` | `packages/tui` | Terminal UI library with differential rendering, editor component, keybindings. |
+| `@earendil-works/pi-orchestrator` | `packages/orchestrator` | Experimental. Supervises multiple pi instances over an IPC socket and exposes an RPC/CLI interface. Unstable, may change or be removed. |
+| `agent-gateway` | `packages/agent-gateway` | Independent **Python** package (not an npm workspace). FastAPI server exposing an OpenAI-compatible API that routes to a local model server with quality-gated cloud escalation. Python 3.12, deps via `uv`. See its own `README.md`. |
+
+Other notable entries:
+
+- `.pi/` — this repo's own pi configuration (extensions, prompt templates, skills) used when running pi here.
+- ` design/` — design documents (note: the directory name contains a leading space).
+- `scripts/` — repo tooling (release, shrinkwrap generation, checks, stats).
+- `packages/coding-agent/docs/` — user documentation; `packages/coding-agent/examples/` — extension examples (some are their own workspaces).
+
+## Technology Stack
+
+- TypeScript (ES2022, ESM, Node16/NodeNext resolution), Node `>=22.19.0`.
+- Type checking/build via `tsgo` (`@typescript/native-preview`); run-from-source via `tsx`.
+- Lint/format via Biome 2.3.5 (`biome.json`): tabs (width 3), line width 120.
+- Tests via Vitest 4 (`packages/ai`, `packages/agent`, `packages/coding-agent`); `packages/tui` uses `node --test`.
+- TypeScript source uses **erasable syntax only** (Node strip-only mode), enforced by `erasableSyntaxOnly` in `tsconfig.base.json`.
+- Root `tsconfig.json` maps `@earendil-works/*` imports directly to `src/`, so tests and `tsx` run against sources, not `dist/`.
+
+## Build and Test Commands
+
+```bash
+npm install --ignore-scripts   # hydrate deps (never run lifecycle scripts unless asked)
+npm run build                  # build all TS packages (tui -> ai -> agent -> coding-agent -> orchestrator)
+npm run check                  # biome check --write + pinned-deps + ts-imports + shrinkwrap checks + tsgo --noEmit + browser smoke
+./test.sh                      # run non-e2e tests with API keys and auth stripped
+./pi-test.sh                   # run the pi CLI from sources (tsx); --no-env strips API keys
+```
+
+- After code changes (not docs): run `npm run check` with full output (no tail). Fix all errors, warnings, and infos before committing. `npm run check` does not run tests.
+- Never run `npm run build` or `npm test` unless requested by the user.
+- Never run the full vitest suite directly: it includes e2e tests that activate when endpoint/auth env vars are present. For all non-e2e tests, run `./test.sh` from the repo root. To run a specific test, run from the package root: `node ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts`.
+- If you create or modify a test file, run it and iterate until it passes.
+- Python package: `cd packages/agent-gateway && uv sync && uv run pytest` (run with `uv run python -m agent_gateway`).
+
+## Code Style Guidelines
+
+### Conversational Style
+
+- Keep answers short and concise.
+- No emojis in commits, issues, PR comments, or code.
+- No fluff or cheerful filler text (e.g., "Thanks @user" not "Thanks so much @user!").
+- Technical prose only, be direct.
 - When the user asks a question, answer it first before making edits or running implementation commands.
 - When responding to user feedback or an analysis, explicitly say whether you agree or disagree before saying what you changed.
 
-## Code Quality
+### Code Quality
 
 - Read files in full before wide-ranging changes, before editing files you have not fully inspected, and when asked to investigate or audit. Do not rely on search snippets for broad changes.
 - No `any` unless absolutely necessary.
@@ -23,24 +74,38 @@
 - Never hardcode key checks (e.g. `matchesKey(keyData, "ctrl+x")`). Add defaults to `DEFAULT_EDITOR_KEYBINDINGS` or `DEFAULT_APP_KEYBINDINGS` so they stay configurable.
 - Never modify `packages/ai/src/models.generated.ts` directly; update `packages/ai/scripts/generate-models.ts` instead, then regenerate. Including the resulting `models.generated.ts` diff is always OK, even if regeneration includes unrelated upstream model metadata changes.
 
-## Commands
+## Testing Instructions
 
-- After code changes (not docs): `npm run check` (full output, no tail). Fix all errors, warnings, and infos before committing. Does not run tests.
-- Never run `npm run build` or `npm test` unless requested by the user.
-- Never run the full vitest suite directly: it includes e2e tests that activate when endpoint/auth env vars are present. For all non-e2e tests, run `./test.sh` from the repo root. Otherwise run specific tests from the package root: `node ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts`.
-- If you create or modify a test file, run it and iterate on test or implementation until it passes.
-- For `packages/coding-agent/test/suite/`, use `test/suite/harness.ts` + the faux provider. No real provider APIs, keys, or paid tokens.
+- `./test.sh` moves `~/.pi/agent/auth.json` aside, unsets all provider API keys, sets `PI_NO_LOCAL_LLM=1`, then runs `npm test` across workspaces. Tests that need real providers skip themselves without keys.
+- For `packages/coding-agent/test/suite/`, use `test/suite/harness.ts` + the faux provider (`registerFauxProvider` from `@earendil-works/pi-ai/compat`). No real provider APIs, keys, or paid tokens.
 - Put issue-specific regressions under `packages/coding-agent/test/suite/regressions/` named `<issue-number>-<short-slug>.test.ts`.
-- For ad-hoc scripts, `write` them to a temp file (e.g. `/tmp`), run, edit if needed, remove when done. Don't embed multi-line scripts in `bash` commands.
+- `packages/tui` tests run with `node --test test/*.test.ts` (not vitest).
+- `packages/agent` also has a harness suite: `npm run test:harness` (vitest.harness.config.ts).
+- CI (`.github/workflows/ci.yml`) runs on Ubuntu: `npm ci --ignore-scripts`, `npm run build`, `npm run check`, `npm test`.
+- For ad-hoc scripts, write them to a temp file (e.g. `/tmp`), run, edit if needed, remove when done. Don't embed multi-line scripts in `bash` commands.
 - Never commit unless the user asks.
+
+### Testing pi Interactive Mode with tmux
+
+Run the TUI in a controlled terminal (from the repo root):
+
+```bash
+tmux new-session -d -s pi-test -x 80 -y 24
+tmux send-keys -t pi-test "./pi-test.sh" Enter
+sleep 3 && tmux capture-pane -t pi-test -p     # capture after startup
+tmux send-keys -t pi-test "your prompt here" Enter
+tmux send-keys -t pi-test Escape               # special keys (also C-o for ctrl+o, etc.)
+tmux kill-session -t pi-test
+```
 
 ## Dependency and Install Security
 
 - Treat npm dep and lockfile changes as reviewed code. Direct external deps stay pinned to exact versions.
 - Hydrate/update locally with `npm install --ignore-scripts`; clean/CI-style with `npm ci --ignore-scripts`. Don't run lifecycle scripts unless the user asks.
+- `.npmrc` sets `save-exact=true` and `min-release-age=2`.
 - If dep metadata changes, refresh `package-lock.json` with `npm install --package-lock-only --ignore-scripts`.
 - If `packages/coding-agent/npm-shrinkwrap.json` needs regen, run `node scripts/generate-coding-agent-shrinkwrap.mjs` (verify with `--check` or `npm run check`). New deps with lifecycle scripts require review and an explicit allowlist entry in that script; never add one silently.
-- Pre-commit blocks lockfile commits unless `PI_ALLOW_LOCKFILE_CHANGE=1`. Don't bypass unless the user wants the lockfile change committed.
+- Pre-commit (husky, `.husky/pre-commit`) blocks lockfile commits unless `PI_ALLOW_LOCKFILE_CHANGE=1` and runs `npm run check`. Don't bypass unless the user wants the lockfile change committed.
 
 ## Git
 
@@ -63,6 +128,27 @@ If rebase conflicts occur:
 - Resolve conflicts only in files you modified.
 - If a conflict is in a file you did not modify, abort and ask the user.
 - Never force push.
+
+## Commit Format and Decision Records (user convention, long-term)
+
+This overrides the `{feat,fix,docs}[...]` message format above for work done in this repo per user instruction (2026-07-17).
+
+After completing any change task:
+
+1. Summarize every design decision made during the work, with the reason for each, and save it as a Markdown file under ` design/` (note: the directory name contains a leading space), named `<date>-<topic>-changes-and-decisions.md`.
+2. Commit the change points with a message in exactly this format:
+
+   ```text
+   COMPLETED：<描述完成的任务>
+   TODO：<描述待完成的任务>
+   Refer Spec：<本次修改引用的 spec>；<本次所有决策引用的 spec 与决策记录文档>
+   ```
+
+   - `COMPLETED`: what was finished.
+   - `TODO`: what remains unfinished or blocked.
+   - `Refer Spec`: the spec(s) this change implements, plus the decision-record document and any spec cited by the decisions.
+
+All other Git rules above still apply (stage explicit paths only, commit only your own session's files, never commit unless asked).
 
 ## Issues and PRs
 
@@ -88,18 +174,12 @@ When closing issues via commit:
 
 - Include `fixes #<number>` or `closes #<number>` in the message so merging auto-closes the issue. For multiple issues, repeat the keyword per issue (`closes #1, closes #2`); a shared keyword (`closes #1, #2`) only closes the first.
 
-## Testing pi Interactive Mode with tmux
+## Security Considerations
 
-Run the TUI in a controlled terminal (from the repo root):
-
-```bash
-tmux new-session -d -s pi-test -x 80 -y 24
-tmux send-keys -t pi-test "./pi-test.sh" Enter
-sleep 3 && tmux capture-pane -t pi-test -p     # capture after startup
-tmux send-keys -t pi-test "your prompt here" Enter
-tmux send-keys -t pi-test Escape               # special keys (also C-o for ctrl+o, etc.)
-tmux kill-session -t pi-test
-```
+- Pi has no built-in permission system; it runs with the launching user's full permissions. Treat the local user account as the trust boundary (see `SECURITY.md`). Containerization patterns are documented in `packages/coding-agent/docs/containerization.md`.
+- Files like `AGENTS.md`, skills, and extensions are prompt-injection vectors by design; only work in trusted repositories with trusted extensions.
+- Never read, copy, or transmit credential files (`~/.pi/agent/auth.json`, `.env`, API keys). `test.sh` deliberately strips auth and keys — keep tests key-free.
+- Report vulnerabilities privately per `SECURITY.md` (`security@earendil.com` or GitHub Security Advisories); never open public issues for security reports.
 
 ## Changelog
 

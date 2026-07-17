@@ -1,0 +1,67 @@
+# Agent Gateway configuration example.
+# Copy to config.toml and edit. Unknown or missing required fields fail at startup.
+
+[server]
+host = "127.0.0.1"
+port = 8787
+admin_key_env = "AGW_ADMIN_KEY"
+single_worker_lock = "./var/agent-gateway.lock"
+# SSE comment heartbeat interval while waiting for the upstream result.
+sse_heartbeat_seconds = 15
+
+[database]
+url = "sqlite+aiosqlite:///./var/agent_gateway.db"
+
+[local_omlx]
+base_url = "http://127.0.0.1:8000/v1"
+model = "gemma-4-12b-it-4bit"
+timeout_seconds = 120
+concurrency = 1
+
+[cloud.kimi]
+enabled = true
+base_url_env = "KIMI_BASE_URL"
+api_key_env = "KIMI_API_KEY"
+model_env = "KIMI_MODEL"
+
+[cloud.deepseek]
+enabled = false
+
+# Estimated cost reserved before any cloud egress; reconciled after the run.
+# reserve_micro_usd = 100000
+
+[routing]
+cloud_egress_default = false
+selected_cloud_provider = "kimi"
+automatic_transport_retries = 0
+
+# Extra DLP secret patterns (name = regex) merged over the built-in defaults;
+# scanned over the outbound envelope before any cloud egress.
+# [security.dlp_patterns]
+# internal_token = "INT-[0-9]{12}"
+
+[memory_index]
+provider = "local"  # disabled | local | mem0 | gbrain
+enabled = true
+write_async = true
+read_timeout_ms = 300
+max_hits = 5
+
+# API key -> ChannelContext mapping. One [[channels]] entry per API key.
+[[channels]]
+key = "sk-local-dev-key-1"
+client_id = "lobsterai"
+workspace_id = "default"
+channel_id = "dev"
+allowed_models = ["agent-auto", "agent-local"]
+cloud_egress_allowed = false
+
+[[channels]]
+key = "sk-local-dev-key-2"
+client_id = "lobsterai"
+workspace_id = "default"
+channel_id = "dev-cloud"
+allowed_models = ["agent-auto", "agent-local", "agent-cloud"]
+cloud_egress_allowed = true
+# Per-(channel, month) cloud spend cap; omit for uncapped.
+# monthly_budget_micro_usd = 5000000
