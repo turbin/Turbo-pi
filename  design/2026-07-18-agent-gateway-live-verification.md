@@ -574,4 +574,68 @@ curl -s -X POST http://127.0.0.1:8787/v1/chat/completions \
 
 curl 后台 kill 在 macOS/本地环境下因 socket 缓冲行为未触发 `cancelled`，这与取消监听逻辑本身无关；显式 socket close 可稳定复现取消路径。该差异已记录。
 
+---
+
+## A09 Restart Lease Recovery and No Duplicate Cloud Calls Live Verification
+
+**日期：** 2026-07-18
+**环境：** gateway 已停止并重启。
+
+### 验证方法
+
+1. 启动长流式请求并在运行中 SIGKILL 终止 gateway：
+
+```bash
+curl -N -s -X POST http://127.0.0.1:8787/v1/chat/completions \
+  -H "Authorization: Bearer lobster-local-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "agent-auto",
+    "messages": [{"role": "user", "content": "请详细解释量子计算的原理，尽量展开..."}],
+    "stream": true,
+    "max_tokens": 2048
+  }' > /tmp/a09-inflight.log &
+sleep 0.2
+kill -9 $(pgrep -f "python -m agent_gateway")
+```
+
+终止后确认 gateway 无进程残留，并确认 DB 中留下 `run_started` trace：
+
+```
+chatcmpl-a63decc5c30f4502ad838e8d09c57c7a|run_started|2026-07-18 05:05:01.546473
+```
+
+为加速验证，在 DB 中将其 `lease_expires_at` 设为过去时间（UTC，与 gateway 内部一致）。
+
+2. 重新启动 gateway：
+
+```bash
+cd packages/agent-gateway
+DEEPSEEK_BASE_URL="https://api.deepseek.com/v1" \
+DEEPSEEK_API_KEY="<DEEPSEEK_API_KEY>" \
+DEEPSEEK_MODEL="deepseek-v4-flash" \
+nohup uv run python -m agent_gateway --config config.toml > /tmp/agent-gateway.log 2>&1 &
+```
+
+3. 检查恢复结果：
+
+```python
+import subprocess
+db = 'packages/agent-gateway/var/agent_gateway.db'
+out = subprocess.check_output(['sqlite3', db, "SELECT COUNT(*) FROM model_runs WHERE purpose='recovery'"])
+assert int(out.strip()) == 0
+out2 = subprocess.check_output(['sqlite3', db, "SELECT state FROM request_executions WHERE trace_id = '<trace_id>'"])
+assert out2.strip() in (b'abandoned', b'cancelled')
+print('A09 lease recovery verified')
+```
+
+### 验证结果
+
+- 重启后 `chatcmpl-a63decc5c30f4502ad838e8d09c57c7a` 状态变为 `abandoned`。
+- `model_runs` 中 `purpose='recovery'` 的数量为 0。
+- 断言输出：`A09 lease recovery verified`。
+
+结论：A09 通过——gateway 重启后正确放弃过期 lease，且恢复过程不发起新的 provider 调用（0 个 recovery ModelRun）。
+
+
 
