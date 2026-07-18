@@ -472,3 +472,49 @@ async def test_sse_emits_error_event_after_first_byte(
     payload = json.loads(error_lines[0][6:])
     assert payload["error"]["code"] == "upstream_unavailable"
     assert payload["error"]["message"] == "cloud down"
+
+
+async def test_sse_replays_multiple_parallel_tool_calls(
+    client: httpx.AsyncClient,
+    fake_provider: FakeProvider,
+) -> None:
+    """Multiple tool calls in one assistant message are emitted as separate deltas."""
+    fake_provider.push(
+        ModelResult(
+            content=None,
+            tool_calls=(
+                ToolCallResult(id="call_1", name="get_weather", arguments='{"city":"A"}'),
+                ToolCallResult(id="call_2", name="get_time", arguments="{}"),
+            ),
+            finish_reason="tool_calls",
+            prompt_tokens=5,
+            completion_tokens=10,
+            total_tokens=15,
+        )
+    )
+    resp = await client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "agent-auto",
+            "messages": [{"role": "user", "content": "weather and time"}],
+            "tools": [
+                {"type": "function", "function": {"name": "get_weather", "parameters": {"type": "object"}}},
+                {"type": "function", "function": {"name": "get_time", "parameters": {"type": "object"}}},
+            ],
+            "stream": True,
+        },
+        headers=auth(KEY_1),
+    )
+    assert resp.status_code == 200
+
+    chunks = []
+    for line in resp.text.splitlines():
+        if line.startswith("data: ") and line[6:] != "[DONE]":
+            chunks.append(json.loads(line[6:]))
+
+    tool_deltas = [c for c in chunks if c["choices"][0]["delta"].get("tool_calls")]
+    assert len(tool_deltas) >= 2, "expected tool call deltas for each parallel call"
+    ids = {d["choices"][0]["delta"]["tool_calls"][0]["id"] for d in tool_deltas}
+    assert ids == {"call_1", "call_2"}
+    indices = [d["choices"][0]["delta"]["tool_calls"][0]["index"] for d in tool_deltas]
+    assert indices == [0, 1]
