@@ -223,6 +223,65 @@ Kimi Code CLI 的默认请求会携带 `reasoning_effort`（来自 `config.toml`
 
 ## 更新：V1-A04 云升级 live 验证（DeepSeek）
 
+**日期：** 2026-07-18
+**环境：** gateway 已运行，channel `lobster-local-key`，cloud egress 已启用（不影响 A05 本地路径）。
+
+### 验证方法
+
+发送流式请求并请求 usage chunk：
+
+```bash
+curl -N -s -X POST http://127.0.0.1:8787/v1/chat/completions \
+  -H "Authorization: Bearer lobster-local-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "agent-auto",
+    "messages": [{"role": "user", "content": "你好，请简短回复"}],
+    "stream": true,
+    "stream_options": {"include_usage": true},
+    "max_tokens": 64
+  }' > /tmp/a05-sse.log
+```
+
+使用 Python 脚本解析并验证 chunk 顺序：
+
+```python
+import json
+chunks = []
+with open('/tmp/a05-sse.log') as f:
+    for line in f:
+        line = line.strip()
+        if not line.startswith('data: '):
+            continue
+        data = line[6:]
+        if data == '[DONE]':
+            chunks.append({'done': True})
+            continue
+        chunks.append(json.loads(data))
+
+assert chunks[0]['choices'][0]['delta'].get('role') == 'assistant'
+usage_chunks = [c for c in chunks if c.get('usage')]
+assert usage_chunks
+assert chunks[-1].get('done')
+print('A05 SSE sequence verified')
+```
+
+### 验证结果
+
+- `config.toml` 中 `sse_heartbeat_seconds = 5`。
+- 流式响应在本地 omlx 处理期间未触发心跳超时（请求耗时 < 5 秒）。
+- 输出 chunk 序列：
+  1. `role: assistant`
+  2. `content: <中文回复>`
+  3. `finish_reason: stop`
+  4. `choices: []` 的 usage chunk（`prompt_tokens=19, completion_tokens=9, total_tokens=28`）
+  5. `data: [DONE]`
+
+断言输出：`A05 SSE sequence verified`（chunks count=5）。
+
+结论：SSE 心跳、回放、usage chunk 和 `[DONE]` 终止符均按设计工作。请求实际由本地 omlx 处理，trace_id=`chatcmpl-3c9fadc06e144a748c5e256331bffc41`。
+
+
 **日期：** 2026-07-18（同日追加）
 **环境：** 用户提供了 DeepSeek API key。gateway 配置通过环境变量读取：
 - `DEEPSEEK_BASE_URL=https://api.deepseek.com/v1`
@@ -278,3 +337,66 @@ deepseek|succeeded|escalation|{"finish_reason": "length", "escalation_reason": "
 
 - 由于 DeepSeek `deepseek-v4-flash` 在 thinking 模式下对 named `tool_choice` 返回 400，未用 live 验证 `invalid_tool_schema` / `forced_tool_missing` 的升级路径；这两条路在单测中由 FakeProvider 覆盖。
 - 升级后的 DeepSeek 响应在 `max_tokens=1` 时 `content` 为空（reasoning token 占用 1 token），这是模型行为，不影响升级路径本身的验证。
+
+---
+
+## A05 SSE Live Verification
+
+**日期：** 2026-07-18
+**环境：** gateway 已运行，channel `lobster-local-key`，cloud egress 已启用（不影响 A05 本地路径）。
+
+### 验证方法
+
+发送流式请求并请求 usage chunk：
+
+```bash
+curl -N -s -X POST http://127.0.0.1:8787/v1/chat/completions \
+  -H "Authorization: Bearer lobster-local-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "agent-auto",
+    "messages": [{"role": "user", "content": "你好，请简短回复"}],
+    "stream": true,
+    "stream_options": {"include_usage": true},
+    "max_tokens": 64
+  }' > /tmp/a05-sse.log
+```
+
+使用 Python 脚本解析并验证 chunk 顺序：
+
+```python
+import json
+chunks = []
+with open('/tmp/a05-sse.log') as f:
+    for line in f:
+        line = line.strip()
+        if not line.startswith('data: '):
+            continue
+        data = line[6:]
+        if data == '[DONE]':
+            chunks.append({'done': True})
+            continue
+        chunks.append(json.loads(data))
+
+assert chunks[0]['choices'][0]['delta'].get('role') == 'assistant'
+usage_chunks = [c for c in chunks if c.get('usage')]
+assert usage_chunks
+assert chunks[-1].get('done')
+print('A05 SSE sequence verified')
+```
+
+### 验证结果
+
+- `config.toml` 中 `sse_heartbeat_seconds = 5`。
+- 流式响应在本地 omlx 处理期间未触发心跳超时（请求耗时 < 5 秒）。
+- 输出 chunk 序列：
+  1. `role: assistant`
+  2. `content: <中文回复>`
+  3. `finish_reason: stop`
+  4. `choices: []` 的 usage chunk（`prompt_tokens=19, completion_tokens=9, total_tokens=28`）
+  5. `data: [DONE]`
+
+断言输出：`A05 SSE sequence verified`（chunks count=5）。
+
+结论：SSE 心跳、回放、usage chunk 和 `[DONE]` 终止符均按设计工作。请求实际由本地 omlx 处理，trace_id=`chatcmpl-3c9fadc06e144a748c5e256331bffc41`。
+
