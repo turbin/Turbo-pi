@@ -76,6 +76,7 @@ class BudgetReservation(Base):
     reserved_micro_usd: Mapped[int]
     charged_micro_usd: Mapped[int] = mapped_column(default=0)
     state: Mapped[str]
+    version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     trace_id: Mapped[str] = mapped_column(ForeignKey("request_executions.trace_id"))
 
 

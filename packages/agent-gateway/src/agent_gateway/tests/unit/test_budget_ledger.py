@@ -204,3 +204,32 @@ async def test_reconcile_twice_rejected(ledger: BudgetLedger, trace_id: str) -> 
     await ledger.reconcile(reservation.id, used_micro_usd=50)
     with pytest.raises(ReservationNotOpen):
         await ledger.reconcile(reservation.id, used_micro_usd=50)
+
+
+async def test_concurrent_reconcile_no_double_bill(
+    ledger: BudgetLedger, trace_id: str, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Concurrent reconciles must not all observe the reserved state and update it."""
+    reservation = await ledger.reserve(
+        channel_id=CHANNEL,
+        period_yyyymm=PERIOD,
+        micro_usd=100_000,
+        cap_micro_usd=1_000_000,
+        trace_id=trace_id,
+    )
+
+    async def reconcile_attempt() -> str:
+        try:
+            await ledger.reconcile(reservation.id, used_micro_usd=60_000)
+        except ReservationNotOpen:
+            return "already_closed"
+        return "ok"
+
+    outcomes = await asyncio.gather(*(reconcile_attempt() for _ in range(5)))
+    assert outcomes.count("ok") == 1
+    assert outcomes.count("already_closed") == 4
+
+    rows = await fetch_reservations(session_factory)
+    assert len(rows) == 1
+    assert rows[0].state == "reconciled"
+    assert rows[0].charged_micro_usd == 60_000

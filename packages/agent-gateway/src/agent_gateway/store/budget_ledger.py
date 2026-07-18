@@ -11,7 +11,7 @@ remainder implicitly); `release` frees the whole reservation on provider
 failure.
 """
 
-from sqlalchemy import case, func, select, text
+from sqlalchemy import case, func, select, text, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -103,17 +103,28 @@ class BudgetLedger:
         return int(result.scalar_one())
 
     async def _close_reservation(self, reservation_id: int, values: dict[str, object]) -> None:
-        try:
-            async with self._session_factory() as session:
-                reservation = await session.get(BudgetReservation, reservation_id)
-                if reservation is None:
-                    raise BudgetLedgerError(f"reservation not found: {reservation_id}")
-                if reservation.state != STATE_RESERVED:
-                    raise ReservationNotOpen(
-                        f"reservation {reservation_id} is {reservation.state}"
+        """CAS close: read, check state, then UPDATE only if version matches."""
+        for attempt in range(3):
+            try:
+                async with self._session_factory() as session:
+                    reservation = await session.get(BudgetReservation, reservation_id)
+                    if reservation is None:
+                        raise BudgetLedgerError(f"reservation not found: {reservation_id}")
+                    if reservation.state != STATE_RESERVED:
+                        raise ReservationNotOpen(
+                            f"reservation {reservation_id} is {reservation.state}"
+                        )
+                    result = await session.execute(
+                        update(BudgetReservation)
+                        .where(
+                            BudgetReservation.id == reservation_id,
+                            BudgetReservation.version == reservation.version,
+                        )
+                        .values(version=BudgetReservation.version + 1, **values)
                     )
-                for key, value in values.items():
-                    setattr(reservation, key, value)
-                await session.commit()
-        except SQLAlchemyError as exc:
-            raise BudgetLedgerError(f"failed to close reservation {reservation_id}: {exc}") from exc
+                    if result.rowcount == 1:
+                        await session.commit()
+                        return
+            except SQLAlchemyError as exc:
+                raise BudgetLedgerError(f"failed to close reservation {reservation_id}: {exc}") from exc
+        raise BudgetLedgerError(f"concurrent update conflict for reservation {reservation_id}")
