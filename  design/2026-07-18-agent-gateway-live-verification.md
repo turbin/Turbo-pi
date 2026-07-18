@@ -13,7 +13,7 @@
 `GET /v1/models` 使用 omlx API key 返回模型列表：
 
 ```bash
-curl -s http://127.0.0.1:8367/v1/models -H "Authorization: Bearer 3675630"
+curl -s http://127.0.0.1:8367/v1/models -H "Authorization: Bearer <OMLX_API_KEY>"
 ```
 
 返回模型：
@@ -31,7 +31,7 @@ curl -s http://127.0.0.1:8367/v1/models -H "Authorization: Bearer 3675630"
 
 - `local_omlx.base_url = "http://127.0.0.1:8367/v1"`
 - `local_omlx.model = "gemma-4-12B-it-4bit"`
-- `local_omlx.api_key = "3675630"`（新增强制认证转发）
+- `local_omlx.api_key = "<OMLX_API_KEY>"`（新增强制认证转发）
 - channel `lobster-local-key`，allowed_models 包含 `agent-auto`
 
 启动 gateway：`uv run python -m agent_gateway --config config.toml`

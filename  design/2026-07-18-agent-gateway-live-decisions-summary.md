@@ -42,7 +42,7 @@
 
 ### D-2026-07-18-04：保持 `config.toml` 在 `.gitignore` 中，不提交本地 omlx API key
 
-- **原因**：`config.toml` 包含敏感本地配置（如 omlx API key `3675630`），不应进入仓库。现场验证仅依赖本地文件。
+- **原因**：`config.toml` 包含敏感本地配置（如 omlx API key `<OMLX_API_KEY>`），不应进入仓库。现场验证仅依赖本地文件。
 
 ---
 

@@ -129,7 +129,11 @@ def test_unknown_message_role_rejected() -> None:
 
 
 def test_reasoning_effort_accepted_but_not_forwarded() -> None:
+    from agent_gateway.providers.base import build_chat_request
+
     payload = valid_payload()
     payload["reasoning_effort"] = "high"
     env = ChatCompletionEnvelopeV1.model_validate(payload)
     assert env.reasoning_effort == "high"
+    upstream = build_chat_request(env, model="agent-auto")
+    assert "reasoning_effort" not in upstream
