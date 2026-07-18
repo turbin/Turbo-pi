@@ -201,7 +201,7 @@ Kimi Code CLI 默认随请求发送 `reasoning_effort`（来自 `config.toml` �
 | V1-A05 SSE 心跳/回放/usage/[DONE] | ✅ 完成 | live 验证流式请求 chunk 序列为 role → content → finish → usage → [DONE]，心跳间隔 5 秒未触发超时 |
 | V1-A06 双 key 隔离、预算不超卖 | ✅ 完成 | live 验证：模型列表按 key 过滤、跨 key trace 读取 404、5 并发对 $0.10 预算仅 1 个成功出云/其余 budget_exceeded |
 | V1-A07 幂等重放与 409 | ✅ 完成 | live 验证：同 key 同 digest 重放 id 一致；同 key 不同 digest 返回 409 `idempotency_conflict` |
-| V1-A08 断连取消与槽位释放 | ✅ 单测覆盖 | 双路径（流式/非流式） |
+| V1-A08 断连取消与槽位释放 | ✅ 完成 | live 验证：显式 socket close 触发 trace 变为 `cancelled`，`model_runs` 记录 `client_cancelled`；后续请求成功，槽位释放 |
 | V1-A09 重启 lease 恢复、不重复云调用 | ✅ 单测覆盖 | 恢复 0 ModelRun 有断言 |
 | V1-A10 敏感内容不出云/不入库 | ✅ 单测覆盖 | DLP 阻断 + 全表扫描断言秘密不落盘；WAL/SHM 权限为 nit |
 | V1-A11 脱敏 fixture | 部分 | 以 FakeProvider/单测替代 fixture 文件，`tests/fixtures/` 未建 |

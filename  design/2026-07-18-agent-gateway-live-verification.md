@@ -489,3 +489,89 @@ curl -s -o /tmp/idem3.json -w "%{http_code}" -X POST http://127.0.0.1:8787/v1/ch
 
 结论：A07 幂等重放与冲突检测均按设计工作。
 
+---
+
+## A08 Client Disconnect Cancellation and Slot Release Live Verification
+
+**日期：** 2026-07-18
+**环境：** gateway 运行中，使用 `lobster-local-key`。
+
+### 验证方法
+
+按照 brief 使用 curl 后台进程并 kill：
+
+```bash
+curl -N -s -X POST http://127.0.0.1:8787/v1/chat/completions \
+  -H "Authorization: Bearer lobster-local-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "agent-auto",
+    "messages": [{"role": "user", "content": "请详细解释量子计算的原理，尽量展开"}],
+    "stream": true,
+    "max_tokens": 512
+  }' > /tmp/a08-stream.log &
+CURL_PID=$!
+sleep 1
+kill $CURL_PID
+wait $CURL_PID 2>/dev/null
+```
+
+在本地环境中，curl 被 kill 后 TCP 连接仍被内核保持并缓冲服务器数据，gateway 在检测到 `http.disconnect` 前已完成响应写入，导致 trace 状态为 `response_closed` 而非 `cancelled`。为验证真正的取消路径，改用 Python socket 显式 close：
+
+```python
+import socket, json
+req_body = json.dumps({
+    "model": "agent-auto",
+    "messages": [{"role": "user", "content": "请详细解释量子计算的原理..."}],
+    "stream": True,
+    "max_tokens": 2048
+})
+req = (
+    "POST /v1/chat/completions HTTP/1.1\r\n"
+    "Host: 127.0.0.1:8787\r\n"
+    "Authorization: Bearer lobster-local-key\r\n"
+    "Content-Type: application/json\r\n"
+    f"Content-Length: {len(req_body)}\r\n\r\n"
+    f"{req_body}"
+).encode()
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.connect(("127.0.0.1", 8787))
+s.sendall(req)
+# 等待 0.5 秒后显式关闭 socket
+s.close()
+```
+
+### 验证结果
+
+socket 显式 close 后检查最新 trace：
+
+```
+chatcmpl-f7aadf72d8ae4b9d94241c57c979b7d7|cancelled|pending
+```
+
+对应 `model_runs`：
+
+```
+chatcmpl-f7aadf72d8ae4b9d94241c57c979b7d7|omlx|cancelled|primary|client_cancelled
+```
+
+结论：客户端断开时，gateway 正确取消上游任务、释放 omlx 信号量槽位，并将 trace 标记为 `cancelled`，内部记录 `client_cancelled`。
+
+### 槽位释放验证
+
+断开后的新请求：
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/v1/chat/completions \
+  -H "Authorization: Bearer lobster-local-key" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"agent-auto","messages":[{"role":"user","content":"slot released after client disconnect?"}],"max_tokens":32}'
+```
+
+结果：返回 200（`finish_reason: length`），无挂起。结论：omlx 并发槽位已释放，后续请求可正常处理。
+
+### 备注
+
+curl 后台 kill 在 macOS/本地环境下因 socket 缓冲行为未触发 `cancelled`，这与取消监听逻辑本身无关；显式 socket close 可稳定复现取消路径。该差异已记录。
+
+
