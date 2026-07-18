@@ -759,7 +759,62 @@ uv run pytest -q
 
 结论：A11 通过——脱敏 fixture 文件可用，并被单元测试正确加载验证。
 
+---
 
+## Phase 2 代码修复与测试补全验证
 
+**日期：** 2026-07-18
+**目标：** 修复 `design/2026-07-17-agent-gateway-changes-and-decisions.md` §4 中的 minor 1–4，删除死代码，并补齐并行多 tool call SSE 回放测试缺口。
+**方法：** 全部按 TDD 执行：先写失败测试，再实现，再 `uv run pytest -q` 验证。
 
+### 修复项与对应测试
 
+| 任务 | 修复内容 | 新增/更新测试 | 状态 |
+| --- | --- | --- | --- |
+| Task 8 | 删除 `providers/stub.py` 及 `__init__.py` 导出 | 依赖检查 | ✅ 通过 |
+| Task 9 | 首字节后 provider 失败时 yield `data: {"error": ...}` 事件 | `test_sse_emits_error_event_after_first_byte` | ✅ 通过 |
+| Task 10 | `budget_reservations` 加 `version` 列及迁移 0003，`reconcile`/`release` 用 CAS | `test_concurrent_reconcile_no_double_bill` | ✅ 通过 |
+| Task 11 | 断连时设置 `delivery_status = "aborted"` | `test_disconnect_sets_delivery_status_aborted` | ✅ 通过 |
+| Task 12 | 流式请求完成后释放 Idempotency-Key | `test_streaming_idempotent_key_released_after_completion` | ✅ 通过 |
+| Task 13 | 并行多 tool call SSE delta 回放 | `test_sse_replays_multiple_parallel_tool_calls` | ✅ 通过 |
+
+### 验证结果
+
+完整套件运行：
+
+```bash
+cd packages/agent-gateway
+uv run pytest -q
+```
+
+输出：
+
+```text
+167 passed in 7.20s
+```
+
+（Phase 1 结束时 162 passed；Phase 2 新增 5 个测试：Task 9/10/11/12/13 各 1 个。）
+
+### 结论
+
+V1 全部验收项 A01–A11 已完成，§4 minor 1–4 已修复，测试缺口已补齐，`providers/stub.py` 已删除。gateway 可视为 V1 完成，进入 V1.1 规则学习规划阶段。
+
+### 注意
+
+运行中的 gateway 进程（`127.0.0.1:8787`）使用的是修改前代码。如需在生产/验证环境反映本次修复，必须重启 gateway 以加载新的 Python 源码。
+
+---
+
+## 决策记录（Phase 2 追加）
+
+1. **SSE 错误事件与 JSON 错误体区分**
+   - 原因：首字节前仍返回稳定 JSON 错误体（`DelayedEventStreamResponse` 捕获异常）；首字节后只能继续 SSE，故用 `data: {"error": ...}` 事件终止。
+
+2. **幂等键释放与重放策略**
+   - 原因：非流式请求用响应体重放；流式请求无响应体，必须在完成态释放 key，否则重试永远 409。
+
+3. **预算 ledger 显式 CAS**
+   - 原因：即使 SQLite 单写串行，也显式使用 `version` 乐观锁，保证跨数据库/部署行为一致，避免重复计费。
+
+4. **delivery_status 在 cancellation 路径统一更新**
+   - 原因：`record_cancellation` 是流式与非流式断连的共同落点，在此设置 `aborted` 避免遗漏。

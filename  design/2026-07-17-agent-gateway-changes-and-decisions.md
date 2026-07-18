@@ -171,24 +171,52 @@ Kimi Code CLI 默认随请求发送 `reasoning_effort`（来自 `config.toml` �
 
 原因：在不破坏网关严格合同的前提下，兼容主流 OpenAI 客户端（Kimi Code）的默认行为；字段显式声明而非全局放宽 `extra`，保持对真正未知参数的保护。
 
+### 3.19 Phase 2 V1 收尾修复与决策（2026-07-18）
+
+1. **首字节后 provider 失败不静默截断**
+   - 决策：`stream_traced_events` 维护 `bytes_sent` 标志；一旦已发送字节（心跳或 replay），后续 `GatewayError` 不再抛给 ASGI（那会触发 Starlette 的 "response already started" RuntimeError），而是 yield `data: {"error": ...}` 后正常返回，流以 SSE 错误事件终止。
+   - 原因：SSE 头已提交后无法改状态码，统一用 SSE 事件携带稳定错误体，避免客户端收到半截流。
+
+2. **流式请求的 Idempotency-Key 在完成后释放**
+   - 决策：非流式请求通过持久化响应体支持重放；流式响应不持久化，因此在 `response_closed` 后调用 `store.release_idempotency_key(trace_id)` 将幂等键置空，允许后续同样 key 的请求重新执行。
+   - 原因：既保留流式请求的幂等冲突保护，又避免"终态+无响应体"导致 key 永久 409。
+
+3. **预算 ledger 关闭操作加 CAS**
+   - 决策：`budget_reservations` 增加 `version` 列及 Alembic 迁移 `0003_budget_version`；`reconcile`/`release` 通过 `_close_reservation` 执行 `UPDATE ... WHERE id = ? AND version = ?`，版本号自增并最多重试 3 次。
+   - 原因：消除并发场景下读改写可能导致的重复计费或状态覆盖；SQLite 单写串行下仍可通过显式 CAS 保证跨数据库行为一致。
+
+4. **断连时更新 `delivery_status` 为 `aborted`**
+   - 决策：`record_cancellation` 在记录 cancelled ModelRun 后、状态迁移前，调用 `store.set_delivery_status(trace_id, "aborted")`。
+   - 原因：`delivery_status` 最初只写入 `pending`，需要反映请求实际未交付给客户端的结果。
+
+5. **并行多 tool call SSE 回放测试补全**
+   - 决策：新增 `test_sse_replays_multiple_parallel_tool_calls`，验证 `build_replay_events` 为每个 `tool_call` 生成独立 delta 并携带正确 `index`/`id`。
+   - 原因：覆盖 P0-03 点名的测试缺口；实现本身无需修改。
+
+6. **删除 Day 2 遗留 `providers/stub.py`**
+   - 决策：确认无引用后删除，并清理 `providers/__init__.py` 的导出。
+   - 原因：避免死代码，减少维护面。
+
 ---
 
 ## 4. 评审结论与遗留清单
 
-评审 agent 复核全部源码与测试并复跑套件，结论：**fix-first**（核心合同真实实现且有测试，4 个 major 需修）。4 个 major 已全部修复并复验（151 → 159 通过）。遗留未修项：
+评审 agent 复核全部源码与测试并复跑套件，结论：**fix-first**（核心合同真实实现且有测试，4 个 major 需修）。4 个 major 已全部修复并复验（151 → 159 通过）。Phase 2 进一步修复 §4 minor 1–4 并补全测试缺口，完整套件 167 passed。遗留未修项：
 
-**Minor**
-1. 首字节后 provider 失败 → SSE 静默截断（建议终止前发 `data: {"error": ...}` 事件）
-2. keyed stream 请求永远无法重放，重试恒 409（建议"终态+无存储体"允许重执行）
-3. 预算 `reconcile`/`release` 读改写无 CAS（双击概率低，影响有界）
-4. `delivery_status` 只写不更新（断连后应写 `aborted`）
-5. `deadline_at` 未用于主动超时、504 `deadline_exceeded` 未启用（当前仅作恢复清扫谓词）
-6. 请求侧 400 `invalid_tool_schema` 未启用（坏 tool schema 走 `unsupported_parameter`）
-7. （修复后部分缓解）lease 恢复原仅覆盖 leased/run_started
+**Minor（已修复）**
+1. ~~首字节后 provider 失败 → SSE 静默截断~~ → 已修复：`stream_traced_events` 跟踪 `bytes_sent`，首字节后失败时 yield `data: {"error": ...}` 事件再终止流（任务 9）。
+2. ~~keyed stream 请求永远无法重放，重试恒 409~~ → 已修复：流式请求在 `response_closed` 后调用 `store.release_idempotency_key(trace_id)` 释放幂等键，允许重执行（任务 12）。
+3. ~~预算 `reconcile`/`release` 读改写无 CAS~~ → 已修复：`budget_reservations` 增加 `version` 列及迁移 0003，`_close_reservation` 使用 `UPDATE ... WHERE version = ?` 并自动重试（任务 10）。
+4. ~~`delivery_status` 只写不更新~~ → 已修复：客户端断连时 `record_cancellation` 同步设置 `delivery_status = "aborted"`（任务 11）。
+
+**Minor（仍为遗留）**
+5. `deadline_at` 未用于主动超时、504 `deadline_exceeded` 未启用（当前仅作恢复清扫谓词）。
+6. 请求侧 400 `invalid_tool_schema` 未启用（坏 tool schema 走 `unsupported_parameter`）。
+7. （修复后部分缓解）lease 恢复原仅覆盖 leased/run_started。
 
 **Nit（摘）**：WAL/SHM 文件未 chmod 0600；DLP 未扫描消息 `name` 字段；`stream_options` 不带 `stream=true` 时静默忽略；命名 `tool_choice` 不校验是否在 `tools` 中声明；空 `messages` 未拒；`routing.cloud_egress_default`/`automatic_transport_retries` 配置解析后未读；API key 比较非常量时间（本机网关可接受）；取消 watcher 任务未 await；手动设置 `connection: keep-alive` 头。
 
-**测试缺口**：并行多 tool call 的 SSE delta 回放（P0-03 点名）、云 provider 超时映射（共享代码，本地已测）。
+**测试缺口（已补全）**：~~并行多 tool call 的 SSE delta 回放（P0-03 点名）~~ → 已新增 `test_sse_replays_multiple_parallel_tool_calls`（任务 13）。云 provider 超时映射由共享代码覆盖，本地已测。
 
 ## 5. 验收清单对照（计划 §7）
 
@@ -204,12 +232,12 @@ Kimi Code CLI 默认随请求发送 `reasoning_effort`（来自 `config.toml` �
 | V1-A08 断连取消与槽位释放 | ✅ 完成 | live 验证：显式 socket close 触发 trace 变为 `cancelled`，`model_runs` 记录 `client_cancelled`；后续请求成功，槽位释放 |
 | V1-A09 重启 lease 恢复、不重复云调用 | ✅ 完成 | live 验证：SIGKILL 终止 gateway 留下 `run_started` trace，重启后状态变为 `abandoned`；`model_runs` 中 `purpose='recovery'` 数量为 0 |
 | V1-A10 敏感内容不出云/不入库 | ✅ 完成 | live 验证：AWS AKID 模式触发 `cloud_egress_forbidden`，秘密字符串未出现在 `model_runs`、`trace_events`、DB 文件及 WAL/SHM 中 |
-| V1-A11 脱敏 fixture | ✅ 完成 | 新增 `tests/fixtures/quality_invalid_tool.json` 与 `escalation_body.json`，`test_quality.py` 与 `test_escalation.py` 加载验证，完整套件 162 passed |
+| V1-A11 脱敏 fixture | ✅ 完成 | 新增 `tests/fixtures/quality_invalid_tool.json` 与 `escalation_body.json`，`test_quality.py` 与 `test_escalation.py` 加载验证；Phase 2 后完整套件 167 passed |
 
 ## 6. 后续行动建议
 
 1. ~~环境具备后补 Day 1：Kimi Code 探针 + omlx live baseline（已解除 A01–A03 阻塞）。~~
-2. 处理 §4 minor 1–4（SSE 错误事件、keyed stream 重放、预算关闭 CAS、delivery_status）。
-3. 删除 `providers/stub.py`（Day 2 遗留桩，已无引用）。
-4. 并行 tool call SSE 回放补测试。
-5. 用户确认后提交：`feat(agent-gateway): ...`（遵循仓库 commit 规范，仅 stage `packages/agent-gateway/`）。
+2. ~~处理 §4 minor 1–4（SSE 错误事件、keyed stream 重放、预算关闭 CAS、delivery_status）。~~
+3. ~~删除 `providers/stub.py`（Day 2 遗留桩，已无引用）。~~
+4. ~~并行 tool call SSE 回放补测试。~~
+5. V1 已关闭；进入 V1.1 规则学习规划。
