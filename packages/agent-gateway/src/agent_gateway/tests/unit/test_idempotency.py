@@ -179,3 +179,25 @@ async def test_keyed_request_persists_body_only_then(
     assert len(traces) == 1
     assert traces[0].response_status == 200
     assert json.loads(traces[0].response_body) == resp.json()
+
+
+async def test_streaming_idempotent_key_released_after_completion(
+    client: httpx.AsyncClient, app: FastAPI, fake_provider: FakeProvider
+) -> None:
+    """Stream requests with Idempotency-Key can be re-executed after completion."""
+    fake_provider.push(make_result())
+    fake_provider.push(make_result())
+    first = await client.post(
+        "/v1/chat/completions", json=chat_payload(stream=True), headers=keyed(KEY_1, "idem-stream-1")
+    )
+    assert first.status_code == 200
+
+    second = await client.post(
+        "/v1/chat/completions", json=chat_payload(stream=True), headers=keyed(KEY_1, "idem-stream-1")
+    )
+    assert second.status_code == 200
+
+    # Two independent traces and provider calls, no 409 conflict.
+    assert await count_rows(app, RequestExecution) == 2
+    assert await count_rows(app, ModelRun) == 2
+    assert first.text != second.text

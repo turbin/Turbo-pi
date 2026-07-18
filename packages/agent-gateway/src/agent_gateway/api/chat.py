@@ -626,6 +626,10 @@ async def stream_traced_events(
             event_type="response_closed",
             clear_lease=True,
         )
+        # Stream responses are not persisted for idempotent replay, so a
+        # completed keyed stream would otherwise conflict forever with retries.
+        # Detach the key once the response has been fully delivered.
+        await store.release_idempotency_key(trace_id)
     except STORE_ERRORS as exc:
         raise GatewayError("database_unavailable", f"trace store unavailable: {exc}") from exc
 
