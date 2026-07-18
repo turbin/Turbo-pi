@@ -204,7 +204,7 @@ Kimi Code CLI 默认随请求发送 `reasoning_effort`（来自 `config.toml` �
 | V1-A08 断连取消与槽位释放 | ✅ 完成 | live 验证：显式 socket close 触发 trace 变为 `cancelled`，`model_runs` 记录 `client_cancelled`；后续请求成功，槽位释放 |
 | V1-A09 重启 lease 恢复、不重复云调用 | ✅ 完成 | live 验证：SIGKILL 终止 gateway 留下 `run_started` trace，重启后状态变为 `abandoned`；`model_runs` 中 `purpose='recovery'` 数量为 0 |
 | V1-A10 敏感内容不出云/不入库 | ✅ 完成 | live 验证：AWS AKID 模式触发 `cloud_egress_forbidden`，秘密字符串未出现在 `model_runs`、`trace_events`、DB 文件及 WAL/SHM 中 |
-| V1-A11 脱敏 fixture | 部分 | 以 FakeProvider/单测替代 fixture 文件，`tests/fixtures/` 未建 |
+| V1-A11 脱敏 fixture | ✅ 完成 | 新增 `tests/fixtures/quality_invalid_tool.json` 与 `escalation_body.json`，`test_quality.py` 与 `test_escalation.py` 加载验证，完整套件 162 passed |
 
 ## 6. 后续行动建议
 

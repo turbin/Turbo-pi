@@ -1,8 +1,11 @@
 """Day 5: observable-only quality gates (review P0-02)."""
 
+import json
+from pathlib import Path
+
 from agent_gateway.envelope import ChatCompletionEnvelopeV1
 from agent_gateway.providers.base import ModelResult, ToolCallResult
-from agent_gateway.quality import evaluate_quality
+from agent_gateway.quality import REASON_INVALID_TOOL_SCHEMA, evaluate_quality
 
 WEATHER_TOOL = {
     "type": "function",
@@ -174,3 +177,27 @@ def test_forced_tool_present_accepted() -> None:
 def test_auto_tool_choice_does_not_force() -> None:
     envelope = make_envelope(tools=[WEATHER_TOOL], tool_choice="auto")
     assert evaluate_quality(envelope, make_result()).escalate is False
+
+
+def test_quality_fixture_invalid_tool_schema() -> None:
+    fixture = Path(__file__).parent.parent / "fixtures" / "quality_invalid_tool.json"
+    data = json.loads(fixture.read_text())
+    envelope = ChatCompletionEnvelopeV1.model_validate(data["envelope"])
+    tool_call = data["model_result"]["tool_calls"][0]
+    result = ModelResult(
+        content=data["model_result"]["content"],
+        tool_calls=(
+            ToolCallResult(
+                id=tool_call["id"],
+                name=tool_call["function"]["name"],
+                arguments=tool_call["function"]["arguments"],
+            ),
+        ),
+        finish_reason=data["model_result"]["finish_reason"],
+        prompt_tokens=None,
+        completion_tokens=None,
+        total_tokens=None,
+    )
+    decision = evaluate_quality(envelope, result)
+    assert decision.escalate
+    assert decision.reason == REASON_INVALID_TOOL_SCHEMA

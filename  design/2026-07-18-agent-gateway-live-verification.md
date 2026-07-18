@@ -695,6 +695,71 @@ print('A10 DLP no-secret verified')
 
 结论：A10 通过——DLP 在本地结果需升级时阻止敏感字符串出云，且该字符串不入数据库或 WAL/SHM。
 
+---
+
+## A11 Desensitized Fixture Files Live Verification
+
+**日期：** 2026-07-18
+**环境：** 本地测试套件，使用 uv + pytest。
+
+### 验证方法
+
+1. 创建 fixture 目录：
+
+```bash
+mkdir -p packages/agent-gateway/src/agent_gateway/tests/fixtures
+```
+
+2. 写入两个 fixture 文件：
+
+`quality_invalid_tool.json`：包含声明 `city` 应为 string 的 tool schema，但模型返回 `{"city": 12345}`，预期触发 `invalid_tool_schema`。
+
+`escalation_body.json`：OpenAI 兼容的云升级响应形状，所有 id 和内容使用 PLACEHOLDER 占位符。
+
+3. 在 `test_quality.py` 中新增 `test_quality_fixture_invalid_tool_schema`：
+
+```python
+def test_quality_fixture_invalid_tool_schema() -> None:
+    fixture = Path(__file__).parent.parent / "fixtures" / "quality_invalid_tool.json"
+    data = json.loads(fixture.read_text())
+    envelope = ChatCompletionEnvelopeV1.model_validate(data["envelope"])
+    tool_call = data["model_result"]["tool_calls"][0]
+    result = ModelResult(
+        content=data["model_result"]["content"],
+        tool_calls=(
+            ToolCallResult(
+                id=tool_call["id"],
+                name=tool_call["function"]["name"],
+                arguments=tool_call["function"]["arguments"],
+            ),
+        ),
+        finish_reason=data["model_result"]["finish_reason"],
+        prompt_tokens=None,
+        completion_tokens=None,
+        total_tokens=None,
+    )
+    decision = evaluate_quality(envelope, result)
+    assert decision.escalate
+    assert decision.reason == REASON_INVALID_TOOL_SCHEMA
+```
+
+4. 在 `test_escalation.py` 中新增 `test_escalation_body_fixture_shape` 验证 `escalation_body.json` 结构。
+
+5. 运行测试：
+
+```bash
+uv run pytest -q src/agent_gateway/tests/unit/test_quality.py src/agent_gateway/tests/unit/test_escalation.py
+uv run pytest -q
+```
+
+### 验证结果
+
+- `test_quality.py` 与 `test_escalation.py` 特定测试：32 passed。
+- 完整套件：`162 passed`（原 160 + 新增 2）。
+
+结论：A11 通过——脱敏 fixture 文件可用，并被单元测试正确加载验证。
+
+
 
 
 

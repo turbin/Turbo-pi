@@ -1,0 +1,14 @@
+{
+  "description": "OpenAI-compatible response shape after local omlx fails the quality gate and escalates. Placeholders replace real content and ids.",
+  "id": "chatcmpl-PLACEHOLDER",
+  "object": "chat.completion",
+  "model": "agent-auto",
+  "choices": [
+    {
+      "index": 0,
+      "message": {"role": "assistant", "content": "Cloud fallback content placeholder"},
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+}

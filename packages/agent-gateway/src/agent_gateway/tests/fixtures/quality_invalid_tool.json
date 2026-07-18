@@ -1,0 +1,28 @@
+{
+  "description": "Tool call with arguments that violate the declared schema (city should be string, not integer). All sensitive values replaced.",
+  "envelope": {
+    "model": "agent-auto",
+    "messages": [{"role": "user", "content": "What's the weather?"}],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "parameters": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"]
+          }
+        }
+      }
+    ]
+  },
+  "model_result": {
+    "content": null,
+    "tool_calls": [
+      {"id": "call_123", "type": "function", "function": {"name": "get_weather", "arguments": "{\"city\": 12345}"}}
+    ],
+    "finish_reason": "tool_calls"
+  },
+  "expected_reason": "invalid_tool_schema"
+}

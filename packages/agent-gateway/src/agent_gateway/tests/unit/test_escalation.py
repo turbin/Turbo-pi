@@ -463,3 +463,16 @@ async def test_sse_heartbeats_continue_during_escalation_wait(tmp_path: Path) ->
     assert any("云端回复" in line for line in lines)
     assert "data: [DONE]" in lines
     await app.state.engine.dispose()
+
+
+def test_escalation_body_fixture_shape() -> None:
+    """The desensitized escalation fixture matches the OpenAI response shape."""
+    fixture = Path(__file__).parent.parent / "fixtures" / "escalation_body.json"
+    data = json.loads(fixture.read_text())
+    assert data["object"] == "chat.completion"
+    assert data["model"] == "agent-auto"
+    assert data["choices"][0]["message"]["role"] == "assistant"
+    assert data["choices"][0]["finish_reason"] == "stop"
+    assert data["usage"]["total_tokens"] == data["usage"]["prompt_tokens"] + data["usage"]["completion_tokens"]
+    assert "PLACEHOLDER" in data["id"]
+    assert "placeholder" in data["choices"][0]["message"]["content"].lower()
