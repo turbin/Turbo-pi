@@ -637,5 +637,64 @@ print('A09 lease recovery verified')
 
 结论：A09 通过——gateway 重启后正确放弃过期 lease，且恢复过程不发起新的 provider 调用（0 个 recovery ModelRun）。
 
+---
+
+## A10 Sensitive Data Does Not Leave Cloud or Enter DB Live Verification
+
+**日期：** 2026-07-18
+**环境：** gateway 运行中，channel `lobster-local-key` 允许云升级，已启用 DeepSeek 云 provider。
+
+### 验证方法
+
+发送包含 AWS AKID 模式的合成密钥，并设置 `max_tokens=1` 以触发本地 omlx `finish_reason=length` 后的云升级：
+
+```bash
+SECRET="AKIAIOSFODNN7EXAMPLE"
+curl -s -o /tmp/a10.json -w "%{http_code}" -X POST http://127.0.0.1:8787/v1/chat/completions \
+  -H "Authorization: Bearer lobster-local-key" \
+  -H "Content-Type: application/json" \
+  -d "{\"model\":\"agent-auto\",\"messages\":[{\"role\":\"user\",\"content\":\"analyze this key $SECRET\"}],\"max_tokens\":1}"
+```
+
+验证响应：
+
+```python
+import json
+d = json.load(open('/tmp/a10.json'))
+assert d['error']['code'] == 'cloud_egress_forbidden'
+print('A10 DLP response verified')
+```
+
+验证秘密字符串不落盘：
+
+```python
+import pathlib, subprocess
+secret = 'AKIAIOSFODNN7EXAMPLE'
+db = 'packages/agent-gateway/var/agent_gateway.db'
+mr = subprocess.check_output([
+    'sqlite3', db,
+    "SELECT trace_id || '|' || purpose || '|' || provider || '|' || state || '|' || COALESCE(quality_signals_json,'') || '|' || COALESCE(error_code,'') FROM model_runs"
+]).decode()
+assert secret not in mr
+te = subprocess.check_output([
+    'sqlite3', db,
+    "SELECT trace_id || '|' || event_type || '|' || COALESCE(payload_json,'') FROM trace_events"
+]).decode()
+assert secret not in te
+for p in pathlib.Path('packages/agent-gateway/var').glob('agent_gateway.db*'):
+    assert secret not in p.read_bytes().decode('latin1', errors='ignore')
+print('A10 DLP no-secret verified')
+```
+
+### 验证结果
+
+- HTTP 状态码：403。
+- `error.code`：`cloud_egress_forbidden`。
+- `model_runs`、`trace_events` 以及 DB/WAL/SHM 文件中均未出现 `AKIAIOSFODNN7EXAMPLE`。
+- 断言输出：`A10 DLP response verified` 和 `A10 DLP no-secret verified`。
+
+结论：A10 通过——DLP 在本地结果需升级时阻止敏感字符串出云，且该字符串不入数据库或 WAL/SHM。
+
+
 
 
