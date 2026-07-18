@@ -434,66 +434,58 @@ asyncio.run(main())
 
 A06 通过：模型列表按 key 过滤、跨 key trace 隔离、并发预算预留不超卖均按设计工作。
 
-
 ---
 
-## A05 SSE Live Verification
+## A07 Idempotency Replay and 409 Conflict Live Verification
 
 **日期：** 2026-07-18
-**环境：** gateway 已运行，channel `lobster-local-key`，cloud egress 已启用（不影响 A05 本地路径）。
+**环境：** gateway 运行中，使用 `lobster-local-key`。
 
 ### 验证方法
 
-发送流式请求并请求 usage chunk：
+生成 idempotency key 并发送两次完全相同的请求：
 
 ```bash
-curl -N -s -X POST http://127.0.0.1:8787/v1/chat/completions \
+IDEM_KEY="idem-$(uuidgen)"
+curl -s -X POST http://127.0.0.1:8787/v1/chat/completions \
   -H "Authorization: Bearer lobster-local-key" \
+  -H "Idempotency-Key: $IDEM_KEY" \
   -H "Content-Type: application/json" \
-  -d '{
-    "model": "agent-auto",
-    "messages": [{"role": "user", "content": "你好，请简短回复"}],
-    "stream": true,
-    "stream_options": {"include_usage": true},
-    "max_tokens": 64
-  }' > /tmp/a05-sse.log
+  -d '{"model":"agent-auto","messages":[{"role":"user","content":"幂等测试"}],"max_tokens":32}' > /tmp/idem1.json
+
+curl -s -X POST http://127.0.0.1:8787/v1/chat/completions \
+  -H "Authorization: Bearer lobster-local-key" \
+  -H "Idempotency-Key: $IDEM_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"agent-auto","messages":[{"role":"user","content":"幂等测试"}],"max_tokens":32}' > /tmp/idem2.json
 ```
 
-使用 Python 脚本解析并验证 chunk 顺序：
+验证两次响应一致：
 
 ```python
 import json
-chunks = []
-with open('/tmp/a05-sse.log') as f:
-    for line in f:
-        line = line.strip()
-        if not line.startswith('data: '):
-            continue
-        data = line[6:]
-        if data == '[DONE]':
-            chunks.append({'done': True})
-            continue
-        chunks.append(json.loads(data))
+a = json.load(open('/tmp/idem1.json'))
+b = json.load(open('/tmp/idem2.json'))
+assert a['id'] == b['id']
+assert a['choices'][0]['message']['content'] == b['choices'][0]['message']['content']
+print('A07 idempotent replay verified')
+```
 
-assert chunks[0]['choices'][0]['delta'].get('role') == 'assistant'
-usage_chunks = [c for c in chunks if c.get('usage')]
-assert usage_chunks
-assert chunks[-1].get('done')
-print('A05 SSE sequence verified')
+再用相同 key 但不同请求体：
+
+```bash
+curl -s -o /tmp/idem3.json -w "%{http_code}" -X POST http://127.0.0.1:8787/v1/chat/completions \
+  -H "Authorization: Bearer lobster-local-key" \
+  -H "Idempotency-Key: $IDEM_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"agent-auto","messages":[{"role":"user","content":"different content"}],"max_tokens":32}'
 ```
 
 ### 验证结果
 
-- `config.toml` 中 `sse_heartbeat_seconds = 5`。
-- 流式响应在本地 omlx 处理期间未触发心跳超时（请求耗时 < 5 秒）。
-- 输出 chunk 序列：
-  1. `role: assistant`
-  2. `content: <中文回复>`
-  3. `finish_reason: stop`
-  4. `choices: []` 的 usage chunk（`prompt_tokens=19, completion_tokens=9, total_tokens=28`）
-  5. `data: [DONE]`
+- 两次相同请求返回的 `id` 一致：`chatcmpl-aad97315003d4bbeb0d8666077e26b12`。
+- `content` 一致（均为空，omlx 在 `max_tokens=32` 时生成长度不足，但 replay 仍正确返回相同响应体）。
+- 不同 digest 返回 HTTP 409，`error.code = idempotency_conflict`。
 
-断言输出：`A05 SSE sequence verified`（chunks count=5）。
-
-结论：SSE 心跳、回放、usage chunk 和 `[DONE]` 终止符均按设计工作。请求实际由本地 omlx 处理，trace_id=`chatcmpl-3c9fadc06e144a748c5e256331bffc41`。
+结论：A07 幂等重放与冲突检测均按设计工作。
 
