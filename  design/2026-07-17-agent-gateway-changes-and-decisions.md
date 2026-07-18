@@ -187,9 +187,9 @@ httpx ASGITransport 不跑 lifespan，测试与生产路径会分叉；`create_a
 
 | 项 | 状态 | 说明 |
 | --- | --- | --- |
-| V1-A01 LobsterAI 探针报告 | **blocked** | 环境无 LobsterAI 客户端 |
+| V1-A01 Kimi Code 探针报告 | **blocked** | 环境无 Kimi Code 客户端 |
 | V1-A02 omlx live baseline | **blocked** | omlx（127.0.0.1:8000）未运行 |
-| V1-A03 LobsterAI 中文请求落地 omlx | **blocked** | 同上；已由 FakeProvider 端到端覆盖等价路径 |
+| V1-A03 Kimi Code 中文请求落地 omlx | **blocked** | 同上；已由 FakeProvider 端到端覆盖等价路径 |
 | V1-A04 结构/tool 失败升级单云 | ✅ 单测覆盖 | fake cloud；live 未验 |
 | V1-A05 SSE 心跳/回放/usage/[DONE] | ✅ 单测覆盖 | 含升级期心跳 |
 | V1-A06 双 key 隔离、预算不超卖 | ✅ 单测覆盖 | 并发竞态实测 |
@@ -201,7 +201,7 @@ httpx ASGITransport 不跑 lifespan，测试与生产路径会分叉；`create_a
 
 ## 6. 后续行动建议
 
-1. 环境具备后补 Day 1：LobsterAI 探针 + omlx live baseline（解除 A01–A03 阻塞）。
+1. 环境具备后补 Day 1：Kimi Code 探针 + omlx live baseline（解除 A01–A03 阻塞）。
 2. 处理 §4 minor 1–4（SSE 错误事件、keyed stream 重放、预算关闭 CAS、delivery_status）。
 3. 删除 `providers/stub.py`（Day 2 遗留桩，已无引用）。
 4. 并行 tool call SSE 回放补测试。
