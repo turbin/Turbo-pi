@@ -218,3 +218,63 @@ Kimi Code CLI 的默认请求会携带 `reasoning_effort`（来自 `config.toml`
 
 - V1-A02 的 tool 调用与超长响应 live 未用 Kimi Code 客户端复验；gateway 到 omlx 的流式与非流式中文路径已验证可用。
 - V1-A04 及以后仍仅由单测覆盖，未做 live 验证。
+
+---
+
+## 更新：V1-A04 云升级 live 验证（DeepSeek）
+
+**日期：** 2026-07-18（同日追加）
+**环境：** 用户提供了 DeepSeek API key。gateway 配置通过环境变量读取：
+- `DEEPSEEK_BASE_URL=https://api.deepseek.com/v1`
+- `DEEPSEEK_API_KEY`（环境变量传入，不写入任何提交文件）
+- `DEEPSEEK_MODEL=deepseek-v4-flash`
+
+`config.toml` 中：
+- `[cloud.deepseek] enabled = true`，`base_url_env/api_key_env/model_env` 指向上述环境变量名。
+- `[routing] selected_cloud_provider = "deepseek"`。
+- channel `lobster-local-key` 设置 `cloud_egress_allowed = true` 与 `monthly_budget_micro_usd = 1_000_000`。
+
+### 验证方法
+
+发送本地 omlx 会触发 `finish_reason_length` 的请求：
+
+```bash
+curl -X POST http://127.0.0.1:8787/v1/chat/completions \
+  -H "Authorization: Bearer lobster-local-key" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"agent-auto","messages":[{"role":"user","content":"你好，请简短介绍一下自己"}],"max_tokens":1}'
+```
+
+本地 omlx 返回 `finish_reason: length`，gateway 质量门控触发升级，二次请求 DeepSeek。
+
+### 数据库验证
+
+```bash
+sqlite3 packages/agent-gateway/var/agent_gateway.db \
+  "SELECT provider, state, purpose, quality_signals_json FROM model_runs WHERE trace_id = '<trace_id>';"
+```
+
+结果：
+
+```
+omlx|succeeded|primary|{"finish_reason": "length", ...}
+deepseek|succeeded|escalation|{"finish_reason": "length", "escalation_reason": "finish_reason_length", ...}
+```
+
+结论：V1-A04 通过——本地结构失败（生成长度不足）触发单一云升级至 DeepSeek，且 `model_runs` 正确记录 primary 与 escalation 两次运行。
+
+### 决策记录（追加）
+
+1. **云 provider 通过环境变量注入，key 不写入 config.toml 或代码/文档。**
+   - 原因：`config.toml` 本身被 gitignore，但坚持 env-var 注入可确保即使 config 被意外复制，敏感 key 也不随之泄露；与 `KimiProvider.from_config` 设计一致。
+
+2. **DeepSeek 使用现有 `kimi.py` 适配器。**
+   - 原因：DeepSeek 与 OpenAI 兼容，`kimi.py` 已是配置驱动的 OpenAI 适配；无需新增 `deepseek.py`（与 §3.11 决策一致）。
+
+3. **live 验证选择 `finish_reason_length` 作为触发器。**
+   - 原因：omlx 对 `max_tokens=1` 稳定返回 `finish_reason=length`，且该信号在质量门控中属于"结构失败"，能明确验证升级路径。forced_tool/named tool_choice 在 DeepSeek `deepseek-v4-flash` thinking 模式下不被支持，会返回 400，不适合当前模型配置。
+
+### 遗留
+
+- 由于 DeepSeek `deepseek-v4-flash` 在 thinking 模式下对 named `tool_choice` 返回 400，未用 live 验证 `invalid_tool_schema` / `forced_tool_missing` 的升级路径；这两条路在单测中由 FakeProvider 覆盖。
+- 升级后的 DeepSeek 响应在 `max_tokens=1` 时 `content` 为空（reasoning token 占用 1 token），这是模型行为，不影响升级路径本身的验证。

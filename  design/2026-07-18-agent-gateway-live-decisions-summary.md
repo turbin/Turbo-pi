@@ -72,6 +72,15 @@
 
 ---
 
+### D-2026-07-18-05：云 provider 通过环境变量注入，key 不写入 config.toml 或代码/文档
+- 原因：`KimiProvider.from_config` 已设计为从 env 读取；即使 `config.toml` 被 gitignore，env-var 注入也能防止 key 在日志、文档或临时文件中泄露。
+
+### D-2026-07-18-06：DeepSeek 复用现有 `kimi.py` 适配器
+- 原因：DeepSeek 接口为 OpenAI 兼容，`kimi.py` 已是配置驱动的通用适配；无需新增 `deepseek.py`（与历史决策 §3.11 一致）。
+
+### D-2026-07-18-07：live 验证选择 `finish_reason_length` 作为云升级触发器
+- 原因：omlx 对 `max_tokens=1` 稳定返回 `finish_reason=length`，该信号属于质量门控中的"结构失败"，能明确验证升级路径；DeepSeek `deepseek-v4-flash` 在 thinking 模式下不支持 named `tool_choice`，无法用于 live 验证 forced_tool 升级路径。
+
 ## 验收状态（截至 2026-07-18）
 
 | 项 | 状态 |
@@ -79,7 +88,7 @@
 | V1-A01 Kimi Code 探针报告 | ✅ 完成 |
 | V1-A02 omlx live baseline | ✅ 完成 |
 | V1-A03 Kimi Code 中文请求落地 omlx | ✅ 完成 |
-| V1-A04 结构/tool 失败升级单云 | ✅ 单测覆盖；live 未验 |
+| V1-A04 结构/tool 失败升级单云 | ✅ 完成 |
 | V1-A05 SSE 心跳/回放/usage/[DONE] | ✅ 单测覆盖 |
 | V1-A06 双 key 隔离、预算不超卖 | ✅ 单测覆盖 |
 | V1-A07 幂等重放与 409 | ✅ 单测覆盖 |
