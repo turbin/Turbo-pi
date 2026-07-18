@@ -99,6 +99,7 @@ class ChatCompletionEnvelopeV1(StrictModel):
     temperature: float | None = None
     top_p: float | None = None
     stop: str | list[str] | None = None
+    reasoning_effort: str | None = None
 
     @model_validator(mode="after")
     def _check_token_params(self) -> "ChatCompletionEnvelopeV1":

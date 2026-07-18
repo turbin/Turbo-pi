@@ -123,3 +123,98 @@ sqlite3 packages/agent-gateway/var/agent_gateway.db \
 
 - 反编译后发现的配置接口：`saveCoworkApiConfig({ apiKey, baseURL, model, apiType })` 写入 `api-config.json`（`apiType` 仅允许 `"openai"` 或 `"anthropic"`）。
 - omlx 认证信息来自 `~/.omlx/settings.json` 的 `auth.api_key`（已脱敏，未写入任何提交文件）。
+
+
+---
+
+## 更新：Kimi Code CLI 现场验证（替换 LobsterAI）
+
+**日期：** 2026-07-18（同日追加）
+**目标：** 完成 `V1-A01`（Kimi Code 兼容探针）、`V1-A02`（omlx live baseline）、`V1-A03`（Kimi Code 中文请求最终 provider 为 omlx）
+**环境变更：** 用户本地已安装 Kimi Code CLI（`/Users/yanbin/.kimi-code/bin/kimi`），并将文档中的 "LobsterAI" 替换为 "Kimi Code"。
+
+### 验证结果
+
+#### V1-A01 Kimi Code 兼容探针
+
+Kimi Code CLI 支持通过自定义 `openai` provider 类型配置任意 base URL、逻辑模型名与 API key：
+
+```toml
+[models."local/agent-auto"]
+provider = "local:agent-gateway"
+model = "agent-auto"
+max_context_size = 128000
+capabilities = ["thinking"]
+
+[providers."local:agent-gateway"]
+type = "openai"
+base_url = "http://127.0.0.1:8787/v1"
+api_key = "lobster-local-key"
+```
+
+运行 `kimi doctor` 与 `kimi provider list`：
+
+- `kimi doctor`：配置有效。
+- `kimi provider list`：识别 `local:agent-gateway type=openai models=1`。
+
+结论：Kimi Code 可配置为指向本地 gateway，使用逻辑模型名 `agent-auto`。
+
+#### V1-A02 omlx live baseline（追加确认）
+
+omlx 在 `127.0.0.1:8367` 运行。通过 gateway 测试：
+
+1. **非流式中文请求**：`curl POST /v1/chat/completions` 返回中文回复，`model_runs.provider = "omlx"`。
+2. **SSE 流式中文请求**：`stream=true` 返回完整 SSE 回放，包含 `role` delta、`content` delta、`finish_reason: stop` 与 `[DONE]`。
+
+结论：omlx live baseline 通过 gateway 的非流式与流式路径均可用。
+
+#### V1-A03 Kimi Code 中文请求最终 provider 为 omlx
+
+执行：
+
+```bash
+kimi -p "你好，请简短介绍一下自己" -m local/agent-auto
+```
+
+输出：中文回复，内容与 Kimi Code CLI 自我介绍一致。
+
+数据库验证：
+
+```bash
+sqlite3 packages/agent-gateway/var/agent_gateway.db \
+  "SELECT trace_id, provider, state, purpose FROM model_runs ORDER BY id DESC LIMIT 1;"
+```
+
+结果：
+
+```
+chatcmpl-b8b2e9dc665c4361b9c42ce9c5f6e1b7|omlx|succeeded|primary
+```
+
+结论：Kimi Code 的中文请求经 gateway 最终路由到本地 omlx，provider 为 omlx，符合 V1-A03。
+
+### 现场修复：Kimi Code 默认发送 `reasoning_effort`
+
+Kimi Code CLI 的默认请求会携带 `reasoning_effort`（来自 `config.toml` `[thinking]` 配置）。`ChatCompletionEnvelopeV1` 原使用 `extra="forbid"`，gateway 返回 400 `unsupported_parameter: reasoning_effort`。
+
+修复：
+- `packages/agent-gateway/src/agent_gateway/envelope.py`：显式声明 `reasoning_effort: str | None = None`，接受该字段但不转发给上游。
+- `packages/agent-gateway/src/agent_gateway/tests/unit/test_envelope.py`：新增单测 `test_reasoning_effort_accepted_but_not_forwarded`。
+
+验证：`uv run pytest -q` → 160 个测试全部通过（原 159 + 新增 1）。
+
+### 决策记录（追加）
+
+1. **在 `ChatCompletionEnvelopeV1` 中显式接受 `reasoning_effort`**，而非全局放宽 `extra="forbid"`。
+   - 原因：兼容 Kimi Code 等 OpenAI 客户端的默认请求，同时保持对未知参数的严格保护。
+
+2. **不将 `reasoning_effort` 转发到上游 omlx**。
+   - 原因：本地 omlx 模型不支持该参数；转发会导致上游失败。
+
+3. **Kimi Code 配置使用 `type = "openai"` 自定义 provider**。
+   - 原因：Kimi Code CLI 支持 `openai` provider 类型，可配置任意 base URL、api_key、model，足够完成网关探针验证。
+
+### 遗留
+
+- V1-A02 的 tool 调用与超长响应 live 未用 Kimi Code 客户端复验；gateway 到 omlx 的流式与非流式中文路径已验证可用。
+- V1-A04 及以后仍仅由单测覆盖，未做 live 验证。

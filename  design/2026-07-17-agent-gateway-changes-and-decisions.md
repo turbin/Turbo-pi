@@ -164,6 +164,13 @@ httpx ASGITransport 不跑 lifespan，测试与生产路径会分叉；`create_a
 - `asyncio.wait` 默认 `ALL_COMPLETED` 导致 SSE 断连检测要等满心跳周期 → 改 `FIRST_COMPLETED`。
 - watcher 先取消 provider 任务再抛异常，原始 `CancelledError` 掩盖 `ClientDisconnected` 导致 trace 漏标 cancelled → watcher 改为只观察。
 
+### 3.18 现场验证：为 Kimi Code 兼容新增 `reasoning_effort` 字段
+Kimi Code CLI 默认随请求发送 `reasoning_effort`（来自 `config.toml` 中 `[thinking]` 配置）。`ChatCompletionEnvelopeV1` 原使用 `extra="forbid"`，导致 gateway 返回 400 `unsupported_parameter: reasoning_effort`。
+
+决策：在 `ChatCompletionEnvelopeV1` 中显式声明 `reasoning_effort: str | None = None` 并接受它，但 `providers/base.py` 的 `build_chat_request` 不将其转发到上游 omlx（上游本地模型不支持该参数）。新增单测覆盖，确保该字段通过 envelope 校验且不被转发。
+
+原因：在不破坏网关严格合同的前提下，兼容主流 OpenAI 客户端（Kimi Code）的默认行为；字段显式声明而非全局放宽 `extra`，保持对真正未知参数的保护。
+
 ---
 
 ## 4. 评审结论与遗留清单
@@ -187,9 +194,9 @@ httpx ASGITransport 不跑 lifespan，测试与生产路径会分叉；`create_a
 
 | 项 | 状态 | 说明 |
 | --- | --- | --- |
-| V1-A01 Kimi Code 探针报告 | **blocked** | 环境无 Kimi Code 客户端 |
-| V1-A02 omlx live baseline | **blocked** | omlx（127.0.0.1:8000）未运行 |
-| V1-A03 Kimi Code 中文请求落地 omlx | **blocked** | 同上；已由 FakeProvider 端到端覆盖等价路径 |
+| V1-A01 Kimi Code 探针报告 | ✅ 完成 | Kimi Code CLI 配置 `local:agent-gateway` openai provider 指向 gateway，`provider list` 识别 `local/agent-auto` 模型，非流式请求成功 |
+| V1-A02 omlx live baseline | ✅ 完成 | omlx 8367 `/v1/models` 可用；gateway 到 omlx 中文非流式与 SSE 流式请求均返回中文；`model_runs` provider=omlx, state=succeeded, purpose=primary |
+| V1-A03 Kimi Code 中文请求落地 omlx | ✅ 完成 | `kimi -p "你好，请简短介绍一下自己" -m local/agent-auto` 经 gateway 路由到本地 omlx，数据库 `provider = "omlx"` |
 | V1-A04 结构/tool 失败升级单云 | ✅ 单测覆盖 | fake cloud；live 未验 |
 | V1-A05 SSE 心跳/回放/usage/[DONE] | ✅ 单测覆盖 | 含升级期心跳 |
 | V1-A06 双 key 隔离、预算不超卖 | ✅ 单测覆盖 | 并发竞态实测 |
@@ -201,7 +208,7 @@ httpx ASGITransport 不跑 lifespan，测试与生产路径会分叉；`create_a
 
 ## 6. 后续行动建议
 
-1. 环境具备后补 Day 1：Kimi Code 探针 + omlx live baseline（解除 A01–A03 阻塞）。
+1. ~~环境具备后补 Day 1：Kimi Code 探针 + omlx live baseline（已解除 A01–A03 阻塞）。~~
 2. 处理 §4 minor 1–4（SSE 错误事件、keyed stream 重放、预算关闭 CAS、delivery_status）。
 3. 删除 `providers/stub.py`（Day 2 遗留桩，已无引用）。
 4. 并行 tool call SSE 回放补测试。

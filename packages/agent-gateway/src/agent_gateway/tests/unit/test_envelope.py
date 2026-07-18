@@ -126,3 +126,10 @@ def test_unknown_message_role_rejected() -> None:
     payload["messages"].append({"role": "developer", "content": "x"})
     with pytest.raises(ValidationError):
         ChatCompletionEnvelopeV1.model_validate(payload)
+
+
+def test_reasoning_effort_accepted_but_not_forwarded() -> None:
+    payload = valid_payload()
+    payload["reasoning_effort"] = "high"
+    env = ChatCompletionEnvelopeV1.model_validate(payload)
+    assert env.reasoning_effort == "high"
