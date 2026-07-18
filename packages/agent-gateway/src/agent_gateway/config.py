@@ -37,6 +37,8 @@ class DatabaseConfig(StrictModel):
 class LocalOmlxConfig(StrictModel):
     base_url: str = DEFAULT_OMLX_BASE_URL
     model: str
+    # Optional API key for local omlx servers that require authentication.
+    api_key: str | None = None
     timeout_seconds: int = Field(default=120, gt=0)
     concurrency: int = Field(default=1, ge=1)
 

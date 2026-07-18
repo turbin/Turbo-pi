@@ -51,6 +51,7 @@ async def create_app(config: GatewayConfig) -> FastAPI:
     provider = OmlxProvider(
         base_url=config.local_omlx.base_url,
         model=config.local_omlx.model,
+        api_key=config.local_omlx.api_key,
         timeout_seconds=config.local_omlx.timeout_seconds,
         concurrency=config.local_omlx.concurrency,
     )

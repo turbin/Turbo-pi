@@ -37,15 +37,18 @@ class OmlxProvider:
         *,
         base_url: str = DEFAULT_BASE_URL,
         model: str,
+        api_key: str | None = None,
         timeout_seconds: int = 120,
         concurrency: int = 1,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._model = model
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else None
         self._client = httpx.AsyncClient(
             base_url=base_url,
             timeout=httpx.Timeout(timeout_seconds),
             transport=transport,
+            headers=headers,
         )
         self._semaphore = asyncio.Semaphore(concurrency)
 

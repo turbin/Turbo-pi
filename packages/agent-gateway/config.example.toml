@@ -13,8 +13,9 @@ sse_heartbeat_seconds = 15
 url = "sqlite+aiosqlite:///./var/agent_gateway.db"
 
 [local_omlx]
-base_url = "http://127.0.0.1:8000/v1"
-model = "gemma-4-12b-it-4bit"
+base_url = "http://127.0.0.1:8367/v1"
+model = "gemma-4-12B-it-4bit"
+# api_key = "set-if-required"
 timeout_seconds = 120
 concurrency = 1
 
