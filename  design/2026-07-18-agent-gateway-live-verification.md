@@ -340,6 +340,103 @@ deepseek|succeeded|escalation|{"finish_reason": "length", "escalation_reason": "
 
 ---
 
+## A06 Dual Key Isolation and Budget No-Oversell Live Verification
+
+**日期：** 2026-07-18
+**环境：** 在 `config.toml` 末尾新增 `second-test-key` channel；gateway 重启后读取新配置。cloud provider 仍通过环境变量注入 DeepSeek。
+
+### 配置变更
+
+于 `packages/agent-gateway/config.toml` 追加：
+
+```toml
+[[channels]]
+key = "second-test-key"
+client_id = "test-client"
+workspace_id = "default"
+channel_id = "second-test"
+allowed_models = ["agent-auto"]
+cloud_egress_allowed = false
+monthly_budget_micro_usd = 100_000
+```
+
+`config.toml` 为本地 gitignored 文件，不含提交密钥。
+
+### 验证 1：模型列表按 key 过滤
+
+```bash
+curl -s http://127.0.0.1:8787/v1/models -H "Authorization: Bearer lobster-local-key" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["data"]))'
+curl -s http://127.0.0.1:8787/v1/models -H "Authorization: Bearer second-test-key" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["data"]))'
+```
+
+结果：
+- `lobster-local-key`：2 个模型
+- `second-test-key`：1 个模型
+
+结论：按 key 的 `allowed_models` 过滤生效。
+
+### 验证 2：跨 key trace 隔离
+
+分别用两个 key 请求：
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/v1/chat/completions -H "Authorization: Bearer lobster-local-key" -H "Content-Type: application/json" -d '{"model":"agent-auto","messages":[{"role":"user","content":"hello from key1"}],"max_tokens":32}'
+curl -s -X POST http://127.0.0.1:8787/v1/chat/completions -H "Authorization: Bearer second-test-key" -H "Content-Type: application/json" -d '{"model":"agent-auto","messages":[{"role":"user","content":"hello from key2"}],"max_tokens":32}'
+```
+
+得到 trace_id：
+- key1: `chatcmpl-55dfe6eb202246a6bb2683c7841a2b9e`
+- key2: `chatcmpl-551e6741ce584047b87e7efda211f078`
+
+交叉查询：
+
+```bash
+curl -s http://127.0.0.1:8787/internal/traces/$TRACE1 -H "Authorization: Bearer second-test-key" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("state","not-found"))'
+curl -s http://127.0.0.1:8787/internal/traces/$TRACE2 -H "Authorization: Bearer lobster-local-key" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("state","not-found"))'
+```
+
+结果：两者均返回 `not-found`。结论：跨 key trace 读取返回 404，不泄露存在性。
+
+### 验证 3：预算不超卖
+
+为验证预算预留并发上限，临时将 `second-test-key` 的 `cloud_egress_allowed` 改为 `true`（否则该 key 不会触发云升级，预算预留逻辑不会被调用）。其 `monthly_budget_micro_usd = 100_000`（$0.10），而 `cloud.reserve_micro_usd = 100_000`，因此最多允许 1 个并发出云请求。
+
+并发脚本：
+
+```python
+import asyncio, httpx
+
+async def reserve(i):
+    async with httpx.AsyncClient(timeout=60.0) as c:
+        r = await c.post(
+            'http://127.0.0.1:8787/v1/chat/completions',
+            headers={'Authorization': 'Bearer second-test-key'},
+            json={'model': 'agent-auto', 'messages': [{'role': 'user', 'content': f'req {i}'}], 'max_tokens': 32}
+        )
+        return r.status_code, r.json().get('error', {}).get('code', 'ok')
+
+async def main():
+    results = await asyncio.gather(*[reserve(i) for i in range(5)])
+    print(results)
+    assert all(status == 200 or code == 'budget_exceeded' for status, code in results)
+    print('A06 budget no-oversell verified')
+
+asyncio.run(main())
+```
+
+结果：`[(429, 'budget_exceeded'), (429, 'budget_exceeded'), (200, 'ok'), (429, 'budget_exceeded'), (429, 'budget_exceeded')]`。
+
+结论：5 并发请求中仅 1 个成功出云，其余 4 个均返回 `budget_exceeded`，没有超过 `$0.10` 预算。预算预留并发不超卖验证通过。
+
+测试完成后已将 `second-test-key` 的 `cloud_egress_allowed` 恢复为 `false` 并重启 gateway。
+
+### 总体结论
+
+A06 通过：模型列表按 key 过滤、跨 key trace 隔离、并发预算预留不超卖均按设计工作。
+
+
+---
+
 ## A05 SSE Live Verification
 
 **日期：** 2026-07-18

@@ -199,7 +199,7 @@ Kimi Code CLI 默认随请求发送 `reasoning_effort`（来自 `config.toml` �
 | V1-A03 Kimi Code 中文请求落地 omlx | ✅ 完成 | `kimi -p "你好，请简短介绍一下自己" -m local/agent-auto` 经 gateway 路由到本地 omlx，数据库 `provider = "omlx"` |
 | V1-A04 结构/tool 失败升级单云 | ✅ 完成 | 本地 omlx `max_tokens=1` 返回 `finish_reason=length` 触发硬门控，升级到 DeepSeek；`model_runs` 出现 `provider=deepseek, purpose=escalation`；云 provider 通过环境变量 `DEEPSEEK_BASE_URL/API_KEY/MODEL` 配置，key 不落地配置/DB/log |
 | V1-A05 SSE 心跳/回放/usage/[DONE] | ✅ 完成 | live 验证流式请求 chunk 序列为 role → content → finish → usage → [DONE]，心跳间隔 5 秒未触发超时 |
-| V1-A06 双 key 隔离、预算不超卖 | ✅ 单测覆盖 | 并发竞态实测 |
+| V1-A06 双 key 隔离、预算不超卖 | ✅ 完成 | live 验证：模型列表按 key 过滤、跨 key trace 读取 404、5 并发对 $0.10 预算仅 1 个成功出云/其余 budget_exceeded |
 | V1-A07 幂等重放与 409 | ✅ 单测覆盖 | 含在途竞态、重启后重试 |
 | V1-A08 断连取消与槽位释放 | ✅ 单测覆盖 | 双路径（流式/非流式） |
 | V1-A09 重启 lease 恢复、不重复云调用 | ✅ 单测覆盖 | 恢复 0 ModelRun 有断言 |
