@@ -57,6 +57,7 @@ from agent_gateway.security.redact import redacted_finding_payload
 from agent_gateway.sse import (
     DelayedEventStreamResponse,
     build_replay_events,
+    format_sse_event,
     usage_payload,
 )
 from agent_gateway.statemachine import TERMINAL_STATES, RequestState
@@ -516,9 +517,16 @@ async def stream_traced_events(
     heartbeat_seconds: float,
 ) -> AsyncIterator[bytes]:
     """Delayed SSE replay with the same trace handling as the non-streaming path."""
+    bytes_sent = False
+
+    def _mark_sent() -> None:
+        nonlocal bytes_sent
+        bytes_sent = True
+
     task = asyncio.ensure_future(route.provider.complete(envelope))
     try:
         async for heartbeat in heartbeats_until_done(request, task, heartbeat_seconds):
+            _mark_sent()
             yield heartbeat
         result = task.result()
     except ClientDisconnected:
@@ -528,6 +536,9 @@ async def stream_traced_events(
         return  # never write a response to the gone client
     except GatewayError as exc:
         await record_provider_failure(store, trace_id, route, running, timeout_seconds, exc)
+        if bytes_sent:
+            yield format_sse_event(exc.body())
+            return
         raise
 
     await record_succeeded_run(
@@ -558,6 +569,7 @@ async def stream_traced_events(
         # cloud task exactly as on the local wait.
         try:
             async for heartbeat in heartbeats_until_done(request, cloud_task, heartbeat_seconds):
+                _mark_sent()
                 yield heartbeat
             result = cloud_task.result()
         except ClientDisconnected as exc:
@@ -583,6 +595,9 @@ async def stream_traced_events(
                 timeout_seconds=timeout_seconds,
                 exc=exc,
             )
+            if bytes_sent:
+                yield format_sse_event(exc.body())
+                return
             raise
         result = await finish_escalation(
             store=store,
@@ -597,14 +612,15 @@ async def stream_traced_events(
             result=result,
         )
 
-    started = await start_response_transition(store, trace_id, running)
+    response_started = await start_response_transition(store, trace_id, running)
     include_usage = envelope.stream_options.include_usage if envelope.stream_options else False
     for event in build_replay_events(trace_id, envelope, result, include_usage=include_usage):
+        _mark_sent()
         yield event
     try:
         await store.transition(
             trace_id,
-            expected_version=started.version,
+            expected_version=response_started.version,
             to_state=RequestState.response_closed,
             event_type="response_closed",
             clear_lease=True,

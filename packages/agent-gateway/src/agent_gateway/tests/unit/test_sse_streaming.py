@@ -9,6 +9,7 @@ import pytest
 from fastapi import FastAPI
 from sqlalchemy import select
 
+from agent_gateway.channel import ChannelRegistry
 from agent_gateway.config import GatewayConfig, load_config
 from agent_gateway.envelope import ChatCompletionEnvelopeV1
 from agent_gateway.errors import GatewayError
@@ -423,3 +424,51 @@ async def test_forced_tool_present_signal_not_set(
     runs = await fetch_runs(app, resp.json()["id"])
     signals = json.loads(runs[0].quality_signals_json)
     assert signals["forced_tool_missing"] is False
+
+
+async def test_sse_emits_error_event_after_first_byte(
+    client: httpx.AsyncClient,
+    app: FastAPI,
+    fake_provider: FakeProvider,
+) -> None:
+    """After SSE headers are committed, a failed escalation emits an error event."""
+
+    class DelayedCloudFailure(FakeProvider):
+        async def complete(self, envelope: ChatCompletionEnvelopeV1) -> ModelResult:
+            self.received.append(envelope)
+            await asyncio.sleep(0.1)
+            raise GatewayError("upstream_unavailable", "cloud down")
+
+    # Enable cloud egress for KEY_1 so the local length result escalates.
+    app.state.config.channels[0].cloud_egress_allowed = True
+    app.state.registry = ChannelRegistry(app.state.config.channels)
+    app.state.cloud_provider = DelayedCloudFailure()
+
+    fake_provider.push(
+        ModelResult(
+            content="x",
+            tool_calls=None,
+            finish_reason="length",
+            prompt_tokens=1,
+            completion_tokens=1,
+            total_tokens=2,
+        )
+    )
+    resp = await client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "agent-auto",
+            "messages": [{"role": "user", "content": "x"}],
+            "stream": True,
+            "max_tokens": 1,
+        },
+        headers=auth(KEY_1),
+    )
+    assert resp.status_code == 200
+
+    lines = resp.text.splitlines()
+    error_lines = [ln for ln in lines if ln.startswith("data: ") and '"error"' in ln]
+    assert error_lines, "expected an error SSE event"
+    payload = json.loads(error_lines[0][6:])
+    assert payload["error"]["code"] == "upstream_unavailable"
+    assert payload["error"]["message"] == "cloud down"

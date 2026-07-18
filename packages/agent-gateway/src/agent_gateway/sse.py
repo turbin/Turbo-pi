@@ -30,6 +30,11 @@ HEARTBEAT = b": heartbeat\n\n"
 DONE = b"data: [DONE]\n\n"
 
 
+def format_sse_event(payload: dict) -> bytes:
+    """Public helper to format a JSON payload as an SSE data event."""
+    return _sse(payload)
+
+
 def usage_payload(result: ModelResult) -> dict:
     prompt_tokens = result.prompt_tokens or 0
     completion_tokens = result.completion_tokens or 0
