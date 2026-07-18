@@ -125,6 +125,24 @@ async def test_disconnect_mid_upstream_cancels_and_releases_semaphore(
     assert len(calls) == 2
 
 
+async def test_disconnect_sets_delivery_status_aborted(
+    client: httpx.AsyncClient, app: FastAPI
+) -> None:
+    calls: list[int] = []
+    app.state.provider = blocking_provider(calls)
+    request_body = json.dumps(chat_payload()).encode()
+    sent: list[dict] = []
+
+    async def send(message: dict) -> None:
+        sent.append(message)
+
+    with pytest.raises(asyncio.CancelledError):
+        await app(make_scope(request_body), disconnecting_receive(request_body), send)
+
+    trace, _ = await fetch_trace_and_runs(app)
+    assert trace.delivery_status == "aborted"
+
+
 async def test_disconnect_mid_upstream_cancels_sse_path(
     client: httpx.AsyncClient, app: FastAPI
 ) -> None:

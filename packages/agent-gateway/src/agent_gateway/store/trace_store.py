@@ -265,6 +265,19 @@ class TraceStore:
         except SQLAlchemyError as exc:
             raise TraceStoreError(f"failed to record event for {trace_id}: {exc}") from exc
 
+    async def set_delivery_status(self, trace_id: str, status: str) -> None:
+        """Update delivery_status for a trace (e.g. aborted on client disconnect)."""
+        try:
+            async with self._session_factory() as session:
+                await session.execute(
+                    update(RequestExecution)
+                    .where(RequestExecution.trace_id == trace_id)
+                    .values(delivery_status=status)
+                )
+                await session.commit()
+        except SQLAlchemyError as exc:
+            raise TraceStoreError(f"failed to set delivery_status for {trace_id}: {exc}") from exc
+
     async def release_idempotency_key(self, trace_id: str) -> None:
         """Detach the idempotency key from a trace abandoned before any
         provider call, so a retry with the same key re-executes instead of

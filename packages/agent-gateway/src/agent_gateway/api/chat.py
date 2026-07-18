@@ -252,7 +252,7 @@ async def record_cancellation(
 
     The client is gone; if the store write also fails, the startup lease
     sweep abandons the trace instead. Internal code 499 client_cancelled is
-    recorded but never sent to the client.
+    recorded but never sent to the client. delivery_status is set to aborted.
     """
     try:
         await store.record_model_run(
@@ -264,6 +264,7 @@ async def record_cancellation(
             timeout_ms=timeout_seconds * 1000,
             error_code="client_cancelled",
         )
+        await store.set_delivery_status(trace_id, "aborted")
         await store.transition(
             trace_id,
             expected_version=running.version,
