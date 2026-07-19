@@ -198,3 +198,44 @@ V1.2 再实现 P1–P3：skill 进化、verifier 筛选、meta-skill slow loop�
 - ` design/SPEC.md`（原 v1.0）
 - ` design/2026-07-17-agent-gateway-implementation-plan.md`
 - ` design/2026-07-17-agent-gateway-changes-and-decisions.md`
+
+---
+
+## 附录：Live E2E 验证记录（2026-07-19）
+
+### 验证目标
+
+验证 Kimi Code CLI 经 agent-server 到 Python gateway 再到 omlx/DeepSeek 的完整链路，包括检索注入与 session 落盘。
+
+### 验证方法
+
+1. 启动 agent-server（端口 8788）：`npx tsx src/start.ts`。
+2. 配置 Kimi Code 使用 `local:agent-server` provider（`base_url=http://127.0.0.1:8788/v1`）。
+3. 发送测试请求：
+   - `kimi -p "你好" -m local/agent-auto-server`（基础链路）
+   - `kimi -p "量子计算是什么" -m local/agent-auto-server`（EVIDENCE 注入）
+   - `kimi -p "如何写好测试" -m local/agent-auto-server`（Method 注入）
+   - `kimi -p "密钥怎么保存" -m local/agent-auto-server`（Guard 注入）
+4. 检查 agent-server 日志与 session JSONL 中的 `retrieved` 字段。
+
+### 验证结果
+
+| 请求 | retrieved | 注入内容 | 结果 |
+|---|---|---|---|
+| 你好 | `[]` | 无 | ✅ 正常响应 |
+| 量子计算是什么 | `[exp-quantum-1, exp-quantum-2]` | EVIDENCE 量子计算基础/特性 | ✅ 响应包含量子计算解释 |
+| 如何写好测试 | `[exp-method-1, exp-quantum-2]` | Method 先写测试 | ✅ 响应包含 TDD 相关内容 |
+| 密钥怎么保存 | `[exp-guard-1]` | Guard 密钥安全 | ✅ 响应包含密钥管理建议 |
+
+### 发现的问题与修复
+
+1. **Kimi Code 消息格式**：Kimi Code 发送的 messages 中，user content 可能是数组格式（text 块），system 消息可能被遗漏，tools 是 OpenAI 格式。修复：在 `/v1/chat/completions` 端点中统一归一化 content 和 tools。
+2. **system-reminder 干扰**：Kimi Code 会在 user 消息中插入 `<system-reminder>` 插件提示，导致检索 query 错误。修复：在 query 提取时过滤以 `<system-reminder>` 开头的消息。
+3. **stream 响应格式**：Kimi Code 期望 OpenAI SSE 格式，而 agent-server 内部使用 pi-ai 事件格式。修复：stream=true 时直接透传 gateway 的 OpenAI SSE，不经过 pi-ai 转换。
+4. **CJK FTS 召回**：FTS5 unicode61 不分割 CJK，导致中文检索召回差。修复：索引时将 CJK 文本分割为单字和 bigram。
+
+### 后续 TODO
+
+- P1：skill catalog / SOP schema 注入、离线进化、verifier 筛选。
+- 对齐 session JSONL 与 pi 原生格式。
+- 处理 review 发现的 minor 问题（cancel-path unhandled rejection、request-body validation）。
