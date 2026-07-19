@@ -1,0 +1,127 @@
+import type { AssistantMessage, Model, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
+import { describe, expect, it } from "vitest";
+import { toOpenAIRequest } from "../src/openai-compat.js";
+import type { InjectionPayload } from "../src/types.js";
+
+const model: Model<"openai-completions"> = {
+	id: "gemma-4-12B-it-4bit",
+	name: "Gemma 4 12B IT (4bit)",
+	api: "openai-completions",
+	provider: "local",
+	baseUrl: "http://127.0.0.1:8367/v1",
+	reasoning: false,
+	input: ["text"],
+	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	contextWindow: 128000,
+	maxTokens: 8192,
+};
+
+function userMsg(content: UserMessage["content"]): UserMessage {
+	return { role: "user", content, timestamp: Date.now() };
+}
+
+function assistantMsg(content: AssistantMessage["content"]): AssistantMessage {
+	return {
+		role: "assistant",
+		content,
+		api: "openai-completions",
+		provider: "local",
+		model: model.id,
+		usage: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
+		stopReason: "stop",
+		timestamp: Date.now(),
+	};
+}
+
+function toolResultMsg(overrides: Partial<ToolResultMessage> = {}): ToolResultMessage {
+	return {
+		role: "toolResult",
+		toolCallId: "call-1",
+		toolName: "get_weather",
+		content: [{ type: "text", text: "sunny" }],
+		isError: false,
+		timestamp: Date.now(),
+		...overrides,
+	};
+}
+
+describe("toOpenAIRequest", () => {
+	it("maps InjectionPayload to OpenAI chat completion body", () => {
+		const payload: InjectionPayload = {
+			messages: [userMsg("hello")],
+			systemPrompt: "You are helpful.",
+			tools: [{ name: "get_weather", description: "Get weather", parameters: {} }],
+		};
+		const req = toOpenAIRequest(payload, model);
+		expect(req.model).toBe("gemma-4-12B-it-4bit");
+		expect(req.messages[0]).toEqual({ role: "system", content: "You are helpful." });
+		expect(req.messages[1]).toEqual({ role: "user", content: "hello" });
+		expect(req.tools).toHaveLength(1);
+		expect(req.tools?.[0]).toEqual({
+			type: "function",
+			function: { name: "get_weather", description: "Get weather", parameters: {} },
+		});
+	});
+
+	it("omits the system message and tools when absent", () => {
+		const req = toOpenAIRequest({ messages: [userMsg("hi")] }, model);
+		expect(req.messages).toHaveLength(1);
+		expect(req.messages[0].role).toBe("user");
+		expect(req.tools).toBeUndefined();
+	});
+
+	it("maps user content parts to OpenAI content parts", () => {
+		const req = toOpenAIRequest(
+			{
+				messages: [
+					userMsg([
+						{ type: "text", text: "what is this?" },
+						{ type: "image", data: "aW1hZ2U=", mimeType: "image/png" },
+					]),
+				],
+			},
+			model,
+		);
+		expect(req.messages[0].content).toEqual([
+			{ type: "text", text: "what is this?" },
+			{ type: "image_url", image_url: { url: "data:image/png;base64,aW1hZ2U=" } },
+		]);
+	});
+
+	it("maps assistant text and tool calls", () => {
+		const req = toOpenAIRequest(
+			{
+				messages: [
+					assistantMsg([
+						{ type: "text", text: "Let me check." },
+						{ type: "thinking", thinking: "hmm" },
+						{ type: "toolCall", id: "call-1", name: "get_weather", arguments: { city: "Berlin" } },
+					]),
+				],
+			},
+			model,
+		);
+		const msg = req.messages[0];
+		expect(msg.role).toBe("assistant");
+		expect(msg.content).toBe("Let me check.");
+		expect(msg.tool_calls).toEqual([
+			{
+				id: "call-1",
+				type: "function",
+				function: { name: "get_weather", arguments: JSON.stringify({ city: "Berlin" }) },
+			},
+		]);
+	});
+
+	it("maps tool results to tool messages keyed by tool_call_id", () => {
+		const req = toOpenAIRequest({ messages: [toolResultMsg()] }, model);
+		expect(req.messages[0]).toEqual({ role: "tool", content: "sunny", tool_call_id: "call-1" });
+	});
+});
