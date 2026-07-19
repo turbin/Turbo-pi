@@ -81,7 +81,11 @@ describe("POST /api/stream", () => {
 	it("proxies request with experience injection and records the session", async () => {
 		await store.insert(makeExperience());
 		const fetchMock = mockGatewayFetch(
-			sseStream(['data: {"choices":[{"delta":{"content":"你好！"}}]}\n\n', "data: [DONE]\n\n"]),
+			sseStream([
+				'data: {"choices":[{"delta":{"content":"你好！"}}]}\n\n',
+				'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":3,"total_tokens":13}}\n\n',
+				"data: [DONE]\n\n",
+			]),
 		);
 		const server = createServer({ store, gatewayUrl: GATEWAY_URL, sessionDir });
 
@@ -89,8 +93,10 @@ describe("POST /api/stream", () => {
 
 		expect(resp.statusCode).toBe(200);
 		expect(resp.headers["content-type"]).toContain("text/event-stream");
-		expect(resp.body).toContain("你好！");
-		expect(resp.body).toContain("data: [DONE]");
+		// Raw OpenAI SSE is transformed into the pi-ai-style event protocol (SPEC §4.1).
+		expect(resp.body).toContain('"delta":"你好！"');
+		expect(resp.body).toContain('"type":"done"');
+		expect(resp.body).not.toContain("data: [DONE]");
 
 		// Gateway received an OpenAI-compatible request with the injection applied.
 		const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
@@ -105,14 +111,57 @@ describe("POST /api/stream", () => {
 		expect(injected).toBeDefined();
 		expect(injected.content).toContain("用户说你好时偏好简洁的中文回复");
 
-		// Session JSONL records request (with retrieved IDs), start, completion.
+		// Session JSONL records request (with retrieved IDs), start, every
+		// emitted event, and completion.
 		const entries = readSessionEntries();
-		expect(entries.map((e) => e.type)).toEqual(["request", "response_started", "response_completed"]);
+		const types = entries.map((e) => e.type);
+		expect(types[0]).toBe("request");
+		expect(types[1]).toBe("response_started");
+		expect(types[types.length - 1]).toBe("response_completed");
 		expect(entries[0].data.retrieved).toEqual(["exp-1"]);
+		const eventTypes = entries.filter((e) => e.type === "event").map((e) => e.data.type);
+		expect(eventTypes).toEqual(["start", "text_start", "text_delta", "text_end", "done"]);
+	});
+
+	it("replaces a truncated toolCall with an error event (SPEC §5.1 step 7)", async () => {
+		mockGatewayFetch(
+			sseStream([
+				'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"read","arguments":"{\\"pa"}}]}}]}\n\n',
+				'data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\n',
+				"data: [DONE]\n\n",
+			]),
+		);
+		const payload = {
+			...PAYLOAD,
+			context: {
+				...PAYLOAD.context,
+				tools: [
+					{
+						name: "read",
+						description: "Read a file",
+						parameters: { type: "object", required: ["path"], properties: { path: { type: "string" } } },
+					},
+				],
+			},
+		};
+		const server = createServer({ store, gatewayUrl: GATEWAY_URL, sessionDir });
+
+		const resp = await server.inject({ method: "POST", url: "/api/stream", payload });
+
+		expect(resp.statusCode).toBe(200);
+		expect(resp.body).toContain('"type":"error"');
+		expect(resp.body).toContain("finish_reason=length");
+		expect(resp.body).not.toContain('"type":"done"');
+
+		const entries = readSessionEntries();
+		const eventTypes = entries.filter((e) => e.type === "event").map((e) => e.data.type);
+		expect(eventTypes).toEqual(["start", "error"]);
 	});
 
 	it("proxies without injection when retrieval has no hits", async () => {
-		const fetchMock = mockGatewayFetch(sseStream(["data: [DONE]\n\n"]));
+		const fetchMock = mockGatewayFetch(
+			sseStream(['data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n', "data: [DONE]\n\n"]),
+		);
 		const server = createServer({ store, gatewayUrl: GATEWAY_URL, sessionDir });
 
 		const resp = await server.inject({ method: "POST", url: "/api/stream", payload: PAYLOAD });

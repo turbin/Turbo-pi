@@ -7,6 +7,7 @@ import { buildInjection } from "./injection.js";
 import { toOpenAIRequest } from "./openai-compat.js";
 import { retrieve } from "./retrieval.js";
 import { SessionWriter } from "./session-writer.js";
+import { validateToolCallStream } from "./toolcall-validator.js";
 import type { InjectionPayload, ProxyStreamOptions, StreamRequest } from "./types.js";
 
 export interface ProxyHandlerOptions {
@@ -20,10 +21,13 @@ const RETRIEVAL_LIMIT = 8;
 
 /**
  * Online replay pipeline (SPEC §5.1): extract the last user message as query,
- * retrieve + inject experiences, forward to the Python gateway, and stream the
- * SSE response back. Every step is recorded to the session JSONL, including
- * which experience IDs were injected. The writer is closed exactly once, when
- * the stream completes, errors, or is cancelled, so no tail entries are lost.
+ * retrieve + inject experiences, forward to the Python gateway, and transform
+ * the raw OpenAI SSE response into the pi-ai-style `/api/stream` event
+ * protocol (SPEC §4.1) with toolCall outbound validation (SPEC §5.1 step 7).
+ * Every step is recorded to the session JSONL — the request (with injected
+ * experience IDs) and every emitted event — including which experience IDs
+ * were injected. The writer is closed exactly once, when the stream completes,
+ * errors, or is cancelled, so no tail entries are lost.
  */
 export async function handleStream(
 	body: StreamRequest,
@@ -46,8 +50,11 @@ export async function handleStream(
 		const gateway = new GatewayClient(opts.gatewayUrl);
 		const stream = await gateway.stream(gatewayReq);
 		writer.write({ type: "response_started", data: {} });
-		// TODO(Task 9): pipe through toolCall validation and event transformation.
-		return teeWithSessionClose(stream, writer);
+		const validated = validateToolCallStream(stream, {
+			tools: body.context.tools,
+			onEvent: (event) => writer.write({ type: "event", data: event }),
+		});
+		return teeWithSessionClose(validated, writer);
 	} catch (err) {
 		writer.write({ type: "error", data: { message: String(err) } });
 		await writer.close();
