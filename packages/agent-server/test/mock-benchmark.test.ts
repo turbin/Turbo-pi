@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { type MockBenchmarkMetrics, runMockBenchmark } from "../src/mock-benchmark.js";
+import { type MockBenchmarkMetrics, runMockBenchmark } from "../src/mock-benchmark.ts";
 
 describe("runMockBenchmark", () => {
 	let metrics: MockBenchmarkMetrics;

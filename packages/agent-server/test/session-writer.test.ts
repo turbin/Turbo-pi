@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { SessionWriter } from "../src/session-writer.js";
+import { SessionWriter } from "../src/session-writer.ts";
 
 describe("SessionWriter", () => {
 	it("writes JSONL entries", async () => {

@@ -1,5 +1,5 @@
 import type { Message, Model } from "@earendil-works/pi-ai";
-import type { InjectionPayload } from "./types.js";
+import type { InjectionPayload } from "./types.ts";
 
 export type OpenAIContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
 

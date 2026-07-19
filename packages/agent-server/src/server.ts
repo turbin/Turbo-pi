@@ -4,9 +4,9 @@ import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import Fastify, { type FastifyInstance } from "fastify";
-import { ExperienceStore } from "./experience-store.js";
-import { handleStream } from "./proxy-handler.js";
-import type { StreamRequest } from "./types.js";
+import { ExperienceStore } from "./experience-store.ts";
+import { handleStream } from "./proxy-handler.ts";
+import type { StreamRequest } from "./types.ts";
 
 export interface CreateServerOptions {
 	store?: ExperienceStore;

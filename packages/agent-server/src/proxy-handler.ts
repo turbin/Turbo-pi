@@ -1,14 +1,14 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Context, Model } from "@earendil-works/pi-ai";
-import type { ExperienceStore } from "./experience-store.js";
-import { type GatewayChatRequest, GatewayClient } from "./gateway-client.js";
-import { buildInjection } from "./injection.js";
-import { toOpenAIRequest } from "./openai-compat.js";
-import { retrieve } from "./retrieval.js";
-import { SessionWriter } from "./session-writer.js";
-import { validateToolCallStream } from "./toolcall-validator.js";
-import type { InjectionPayload, ProxyStreamOptions, StreamRequest } from "./types.js";
+import type { ExperienceStore } from "./experience-store.ts";
+import { type GatewayChatRequest, GatewayClient } from "./gateway-client.ts";
+import { buildInjection } from "./injection.ts";
+import { toOpenAIRequest } from "./openai-compat.ts";
+import { retrieve } from "./retrieval.ts";
+import { SessionWriter } from "./session-writer.ts";
+import { validateToolCallStream } from "./toolcall-validator.ts";
+import type { InjectionPayload, ProxyStreamOptions, StreamRequest } from "./types.ts";
 
 export interface ProxyHandlerOptions {
 	store: ExperienceStore;

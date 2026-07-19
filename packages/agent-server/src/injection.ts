@@ -1,5 +1,5 @@
 import type { Context } from "@earendil-works/pi-ai";
-import type { InjectionPayload, RetrievedExperience } from "./types.js";
+import type { InjectionPayload, RetrievedExperience } from "./types.ts";
 
 /**
  * Assemble the replay injection payload: evidence pool, Method, and Guard

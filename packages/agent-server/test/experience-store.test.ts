@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ExperienceStore } from "../src/experience-store.js";
-import type { Experience } from "../src/types.js";
+import { ExperienceStore } from "../src/experience-store.ts";
+import type { Experience } from "../src/types.ts";
 
 describe("ExperienceStore", () => {
 	it("creates schema and inserts experiences", async () => {

@@ -1,7 +1,7 @@
 import type { Context, UserMessage } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import { buildInjection } from "../src/injection.js";
-import type { Experience, RetrievedExperience } from "../src/types.js";
+import { buildInjection } from "../src/injection.ts";
+import type { Experience, RetrievedExperience } from "../src/types.ts";
 
 function userMsg(content: string): UserMessage {
 	return { role: "user", content, timestamp: Date.now() };

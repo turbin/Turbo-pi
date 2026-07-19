@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { ExperienceStore } from "../src/experience-store.js";
-import { retrieve } from "../src/retrieval.js";
-import type { Experience } from "../src/types.js";
+import { ExperienceStore } from "../src/experience-store.ts";
+import { retrieve } from "../src/retrieval.ts";
+import type { Experience } from "../src/types.ts";
 
 function makeExp(id: string, title: string, text: string): Experience {
 	return {

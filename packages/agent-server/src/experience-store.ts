@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import type { Experience } from "./types.js";
+import type { Experience } from "./types.ts";
 
 interface ExperienceRow {
 	id: string;

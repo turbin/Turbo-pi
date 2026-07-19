@@ -1,5 +1,5 @@
-import type { ExperienceStore } from "./experience-store.js";
-import type { RetrievedExperience } from "./types.js";
+import type { ExperienceStore } from "./experience-store.ts";
+import type { RetrievedExperience } from "./types.ts";
 
 const CJK_RE = /[一-鿿]/;
 const TOKEN_RE = /[一-鿿]+|[a-zA-Z0-9]+/g;

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type GatewayChatRequest, GatewayClient } from "../src/gateway-client.js";
+import { type GatewayChatRequest, GatewayClient } from "../src/gateway-client.ts";
 
 const GATEWAY_URL = "http://127.0.0.1:8787";
 

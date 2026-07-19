@@ -1,7 +1,7 @@
 import type { AssistantMessage, Model, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import { toOpenAIRequest } from "../src/openai-compat.js";
-import type { InjectionPayload } from "../src/types.js";
+import { toOpenAIRequest } from "../src/openai-compat.ts";
+import type { InjectionPayload } from "../src/types.ts";
 
 const model: Model<"openai-completions"> = {
 	id: "gemma-4-12B-it-4bit",

@@ -1,4 +1,4 @@
-import type { OpenAIChatRequest } from "./openai-compat.js";
+import type { OpenAIChatRequest } from "./openai-compat.ts";
 
 /**
  * Request body sent to the Python agent-gateway. Extends the Task 5 OpenAI

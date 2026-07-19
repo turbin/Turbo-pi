@@ -3,10 +3,10 @@ import { createServer as createHttpServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ExperienceStore } from "./experience-store.js";
-import { createServer } from "./server.js";
-import type { StreamEvent } from "./toolcall-validator.js";
-import type { Experience } from "./types.js";
+import { ExperienceStore } from "./experience-store.ts";
+import { createServer } from "./server.ts";
+import type { StreamEvent } from "./toolcall-validator.ts";
+import type { Experience } from "./types.ts";
 
 /** Metrics of the mock benchmark run, matching `benchmark/results/report.md`. */
 export interface MockBenchmarkMetrics {

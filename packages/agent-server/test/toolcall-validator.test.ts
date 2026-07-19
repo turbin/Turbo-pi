@@ -4,7 +4,7 @@ import {
 	type ValidateStreamOptions,
 	validateToolCall,
 	validateToolCallStream,
-} from "../src/toolcall-validator.js";
+} from "../src/toolcall-validator.ts";
 
 const READ_TOOL = {
 	name: "read",

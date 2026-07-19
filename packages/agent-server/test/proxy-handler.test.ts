@@ -2,9 +2,9 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ExperienceStore } from "../src/experience-store.js";
-import { createServer } from "../src/server.js";
-import type { Experience } from "../src/types.js";
+import { ExperienceStore } from "../src/experience-store.ts";
+import { createServer } from "../src/server.ts";
+import type { Experience } from "../src/types.ts";
 
 const GATEWAY_URL = "http://127.0.0.1:8787";
 
