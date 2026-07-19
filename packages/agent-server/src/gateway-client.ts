@@ -46,6 +46,8 @@ export class GatewayClient {
 	}
 
 	private async post(body: GatewayChatRequest): Promise<Response> {
+		const fs = await import("node:fs/promises");
+		await fs.writeFile("/tmp/gateway-request.json", JSON.stringify(body, null, 2));
 		const resp = await fetch(`${this.baseUrl}/v1/chat/completions`, {
 			method: "POST",
 			headers: {

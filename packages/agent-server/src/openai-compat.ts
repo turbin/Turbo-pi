@@ -57,6 +57,13 @@ export function toOpenAIRequest(payload: InjectionPayload, model: Model<"openai-
 }
 
 function toOpenAIMessage(msg: Message): OpenAIRequestMessage {
+	if (msg.role === "system") {
+		if (typeof msg.content === "string") {
+			return { role: "system", content: msg.content };
+		}
+		return { role: "system", content: msg.content.map((part) => (part.type === "text" ? part.text : "")).join("") };
+	}
+
 	if (msg.role === "user") {
 		if (typeof msg.content === "string") {
 			return { role: "user", content: msg.content };
@@ -70,6 +77,9 @@ function toOpenAIMessage(msg: Message): OpenAIRequestMessage {
 	}
 
 	if (msg.role === "assistant") {
+		if (typeof msg.content === "string") {
+			return { role: "assistant", content: msg.content };
+		}
 		const text = msg.content
 			.filter((part) => part.type === "text")
 			.map((part) => part.text)
@@ -81,6 +91,9 @@ function toOpenAIMessage(msg: Message): OpenAIRequestMessage {
 	}
 
 	// toolResult
+	if (typeof msg.content === "string") {
+		return { role: "tool", content: msg.content, tool_call_id: msg.toolCallId };
+	}
 	const text = msg.content
 		.filter((part) => part.type === "text")
 		.map((part) => part.text)

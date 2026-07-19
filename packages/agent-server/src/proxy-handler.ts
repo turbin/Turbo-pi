@@ -66,11 +66,15 @@ function lastUserText(context: Context): string {
 	for (let i = context.messages.length - 1; i >= 0; i--) {
 		const msg = context.messages[i];
 		if (msg.role !== "user") continue;
-		if (typeof msg.content === "string") return msg.content;
-		return msg.content
-			.filter((part) => part.type === "text")
-			.map((part) => part.text)
-			.join("\n");
+		const text =
+			typeof msg.content === "string"
+				? msg.content
+				: msg.content
+						.filter((part) => part.type === "text")
+						.map((part) => part.text)
+						.join("\n");
+		if (text.startsWith("<system-reminder>")) continue;
+		return text;
 	}
 	return "";
 }
