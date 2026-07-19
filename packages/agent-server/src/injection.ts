@@ -11,7 +11,8 @@ import type { InjectionPayload, RetrievedExperience } from "./types.ts";
  * experiences are dropped here before they can reach the prompt.
  */
 export function buildInjection(context: Context, retrieved: RetrievedExperience[]): InjectionPayload {
-	const active = retrieved.filter((r) => r.experience.status !== "removed");
+	// Only replay verifier-approved experiences; dormant/removed stay out of the prompt (SPEC §5.2).
+	const active = retrieved.filter((r) => r.experience.status === "active");
 
 	const evidence: string[] = [];
 	const methods: string[] = [];

@@ -69,6 +69,15 @@ describe("buildInjection", () => {
 		expect(result.messages).toHaveLength(1);
 	});
 
+	it("filters out dormant experiences", () => {
+		const context: Context = { messages: [userMsg("hello")] };
+		const result = buildInjection(
+			context,
+			retrieved(makeExp({ status: "dormant", payload: { text: "unverified candidate" } })),
+		);
+		expect(result.messages).toHaveLength(1);
+	});
+
 	it("ignores non-Method/Guard abilities and malformed payloads", () => {
 		const context: Context = { messages: [userMsg("hello")] };
 		const result = buildInjection(

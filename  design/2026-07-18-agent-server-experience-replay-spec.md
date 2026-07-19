@@ -69,7 +69,7 @@ agent client (pi/任意)
 | `src/retrieval.ts` | FTS bm25 + 词袋余弦重排（中文简易分词） | §3.3 |
 | `src/injection.ts` | 三段式 prompt、skill catalog、SOP schema、Guard 校验 | §4.1/4.2/5.2 |
 | `src/etl.ts` | session JSONL → EVIDENCE 候选入库 | §3.4 |
-| `src/session-writer.ts` | pi 格式 session JSONL 落盘 | §3.4/§5.2 |
+| `src/session-writer.ts` | 自定义 JSONL 事件落盘（P0）；pi 格式对齐在 P1 | §3.4/§5.2 |
 | `src/openai-compat.ts` | OpenAI 兼容消息映射（复用 `packages/ai`） | §5.3 |
 | `src/gateway-client.ts` | 调用 Python gateway `/v1/chat/completions` 的客户端 | 内部接口 |
 | `src/offline/` | 离线进化：EvolutionRunner、SopLifecycle、select_experiences、canonicalize | §4/§6 |
@@ -132,6 +132,8 @@ TS server 将注入后的 context 转换为 OpenAI 兼容请求，POST 到 Pytho
 6. 流式事件透传回 client。
 7. 流末 toolCall 出站校验：length 整批拒绝、schema 校验、Guard 钩子。
 8. 全量落盘 session JSONL（请求 + 事件流 + 注入记录）。
+
+> **格式说明：** P0 落盘为自定义 JSONL 事件流（`{type: request|response_started|event|response_completed|error|aborted, data: {...}}`），便于 agent-server 内部 ETL 与离线进化消费。如需与 pi 原生 session 格式互操作（pi session-manager 回放），P1 应添加格式对齐或 adapter。
 
 ### 5.2 离线进化（cron）
 
