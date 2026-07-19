@@ -32,7 +32,19 @@ function buildFtsQuery(query: string): string {
 	const tokens: string[] = [];
 	for (const match of query.matchAll(TOKEN_RE)) {
 		const token = match[0].replace(/"/g, '""');
-		tokens.push(CJK_RE.test(token) ? `"${token}"*` : `"${token}"`);
+		if (CJK_RE.test(token)) {
+			// unicode61 does not segment CJK; split runs into chars + bigrams so FTS
+			// can match smaller units inside longer indexed runs.
+			for (let i = 0; i < token.length; i++) {
+				const ch = token[i];
+				tokens.push(`"${ch}"*`);
+				if (i + 1 < token.length) {
+					tokens.push(`"${ch}${token[i + 1]}"*`);
+				}
+			}
+		} else {
+			tokens.push(`"${token}"`);
+		}
 	}
 	return tokens.join(" OR ");
 }

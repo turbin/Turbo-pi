@@ -29,6 +29,24 @@ function rowToExperience(row: ExperienceRow): Experience {
 	};
 }
 
+// Split CJK text into single chars + bigrams so FTS5 can match words inside
+// contiguous CJK runs (unicode61 does not segment CJK natively).
+function tokenizeForFts(text: string): string {
+	const tokens: string[] = [];
+	for (let i = 0; i < text.length; i++) {
+		const ch = text[i];
+		if (/[一-鿿]/.test(ch)) {
+			tokens.push(ch);
+			if (i + 1 < text.length && /[一-鿿]/.test(text[i + 1])) {
+				tokens.push(ch + text[i + 1]);
+			}
+		} else {
+			tokens.push(ch);
+		}
+	}
+	return tokens.join(" ");
+}
+
 export class ExperienceStore {
 	private db: Database.Database;
 
@@ -79,13 +97,15 @@ export class ExperienceStore {
 				exp.contentHash,
 				exp.createdAt,
 			);
+		const payloadText = (exp.payload as Record<string, unknown>).text as string | undefined;
+		const searchText = `${exp.title} ${payloadText ?? ""}`;
 		this.db
 			.prepare(`
 				INSERT INTO experiences_fts (rowid, title, search_text)
-				SELECT rowid, title, title || ' ' || COALESCE(json_extract(payload, '$.text'), '')
+				SELECT rowid, title, ?
 				FROM experiences WHERE id = ?
 			`)
-			.run(exp.id);
+			.run(tokenizeForFts(searchText), exp.id);
 	}
 
 	async getById(id: string): Promise<Experience | null> {
