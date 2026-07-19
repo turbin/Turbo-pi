@@ -1,0 +1,23 @@
+{
+	"name": "@earendil-works/agent-server",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"test": "vitest run",
+		"check": "tsgo --noEmit"
+	},
+	"dependencies": {
+		"@earendil-works/pi-ai": "^0.80.10",
+		"better-sqlite3": "11.10.0",
+		"fastify": "5.10.0",
+		"zod": "3.25.76"
+	},
+	"devDependencies": {
+		"@types/better-sqlite3": "7.6.13",
+		"vitest": "4.1.9"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	}
+}
