@@ -39,7 +39,7 @@ export async function handleStream(
 	try {
 		const query = lastUserText(body.context);
 		const retrieved = await retrieve(opts.store, query, RETRIEVAL_LIMIT);
-		const injected = buildInjection(body.context, retrieved);
+		const injected = await buildInjection(body.context, retrieved);
 		const gatewayReq = toGatewayRequest(injected, body.model, body.options ?? {});
 
 		writer.write({

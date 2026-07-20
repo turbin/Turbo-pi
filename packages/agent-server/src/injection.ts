@@ -1,16 +1,28 @@
-import type { Context } from "@earendil-works/pi-ai";
+import type { Context, Tool } from "@earendil-works/pi-ai";
+import type { ExperienceStore } from "./experience-store.ts";
+import { buildSkillCatalog } from "./skill-catalog.ts";
+import { buildSopSchemas } from "./sop-schema.ts";
 import type { InjectionPayload, RetrievedExperience } from "./types.ts";
+
+/** SPEC §4.1: skill catalog is capped at 10 entries; SOP tool schemas at 15. */
+const SKILL_CATALOG_LIMIT = 10;
+const SOP_SCHEMA_LIMIT = 15;
 
 /**
  * Assemble the replay injection payload: evidence pool, Method, and Guard
  * blocks are merged into one synthetic user message inserted before the last
- * real user message (SPEC §5.1 step 4). Skill catalog (`<available_skills>`)
- * and SOP tool-schema injection are deferred to P1.
+ * real user message (SPEC §5.1 step 4). When a store is provided, the SKILL
+ * catalog is appended to the system prompt as `<available_skills>` and SOP
+ * tool schemas are merged into the tool list (SPEC §4.1).
  *
  * `ExperienceStore.search` does not filter by status, so `removed`
  * experiences are dropped here before they can reach the prompt.
  */
-export function buildInjection(context: Context, retrieved: RetrievedExperience[]): InjectionPayload {
+export async function buildInjection(
+	context: Context,
+	retrieved: RetrievedExperience[],
+	opts: { store?: ExperienceStore } = {},
+): Promise<InjectionPayload> {
 	// Only replay verifier-approved experiences; dormant/removed stay out of the prompt (SPEC §5.2).
 	const active = retrieved.filter((r) => r.experience.status === "active");
 
@@ -45,6 +57,29 @@ export function buildInjection(context: Context, retrieved: RetrievedExperience[
 		messages.splice(lastUserIdx, 0, { role: "user", content: blocks.join("\n\n"), timestamp: Date.now() });
 	}
 
-	// TODO(P1): skill catalog -> systemPrompt <available_skills>, SOP schemas -> tools.
-	return { messages, systemPrompt: context.systemPrompt, tools: context.tools };
+	let systemPrompt = context.systemPrompt;
+	let tools = context.tools;
+
+	if (opts.store) {
+		const { catalog, skills } = await buildSkillCatalog(opts.store, SKILL_CATALOG_LIMIT);
+		if (skills.length) {
+			systemPrompt = systemPrompt ? `${systemPrompt}\n\n${catalog}` : catalog;
+		}
+		const sopSchemas = await buildSopSchemas(opts.store, SOP_SCHEMA_LIMIT);
+		if (sopSchemas.length) {
+			// SOP tools are standalone additions; on a name collision the
+			// client-declared request tool wins (it is what the caller expects).
+			const requestToolNames = new Set((tools ?? []).map((t) => t.name));
+			const sopTools: Tool[] = sopSchemas
+				.filter((t) => !requestToolNames.has(t.function.name))
+				.map((t) => ({
+					name: t.function.name,
+					description: t.function.description,
+					parameters: t.function.parameters as Tool["parameters"],
+				}));
+			tools = [...(tools ?? []), ...sopTools];
+		}
+	}
+
+	return { messages, systemPrompt, tools };
 }
