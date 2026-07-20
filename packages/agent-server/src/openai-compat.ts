@@ -57,13 +57,6 @@ export function toOpenAIRequest(payload: InjectionPayload, model: Model<"openai-
 }
 
 function toOpenAIMessage(msg: Message): OpenAIRequestMessage {
-	if (msg.role === "system") {
-		if (typeof msg.content === "string") {
-			return { role: "system", content: msg.content };
-		}
-		return { role: "system", content: msg.content.map((part) => (part.type === "text" ? part.text : "")).join("") };
-	}
-
 	if (msg.role === "user") {
 		if (typeof msg.content === "string") {
 			return { role: "user", content: msg.content };

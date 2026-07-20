@@ -56,9 +56,15 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 		await fs.writeFile("/tmp/agent-server-request.json", JSON.stringify(body, null, 2));
 		const model = {
 			id: String(body.model ?? "agent-auto"),
-			api: "openai-completions",
-			provider: "local",
+			name: String(body.model ?? "agent-auto"),
+			api: "openai-completions" as const,
+			provider: "local" as const,
 			baseUrl: process.env.GATEWAY_URL ?? "http://127.0.0.1:8367/v1",
+			reasoning: false,
+			input: [],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 128000,
+			maxTokens: 128000,
 		};
 		// Normalize message content: Kimi Code sends content as text-part arrays;
 		// the gateway expects plain strings for user/assistant messages.
