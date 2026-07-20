@@ -39,7 +39,7 @@ export async function handleStream(
 	try {
 		const query = lastUserText(body.context);
 		const retrieved = await retrieve(opts.store, query, RETRIEVAL_LIMIT);
-		const injected = await buildInjection(body.context, retrieved);
+		const injected = await buildInjection(body.context, retrieved, { store: opts.store });
 		const gatewayReq = toGatewayRequest(injected, body.model, body.options ?? {});
 
 		writer.write({
@@ -51,7 +51,10 @@ export async function handleStream(
 		const stream = await gateway.stream(gatewayReq);
 		writer.write({ type: "response_started", data: {} });
 		const validated = validateToolCallStream(stream, {
-			tools: body.context.tools,
+			// Validate against the merged tool list: request tools plus any SOP
+			// schemas merged in by buildInjection (SPEC §4.1). Validating against
+			// body.context.tools alone would reject legitimate SOP toolCalls.
+			tools: injected.tools,
 			onEvent: (event) => writer.write({ type: "event", data: event }),
 		});
 		return teeWithSessionClose(validated, writer);

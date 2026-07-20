@@ -119,7 +119,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 				console.log("[agent-server] stream query:", query);
 				const retrieved = await retrieve(store, query, 8);
 				console.log("[agent-server] stream retrieved:", retrieved.map((r) => r.experience.id));
-				const injected = await buildInjection(context as any, retrieved);
+				const injected = await buildInjection(context as any, retrieved, { store });
 				const openaiReq = toOpenAIRequest(injected, model as any);
 				const gateway = new GatewayClient(gatewayUrl);
 				const gatewayStream = await gateway.stream({ ...openaiReq, stream: true });

@@ -123,6 +123,81 @@ describe("POST /api/stream", () => {
 		expect(eventTypes).toEqual(["start", "text_start", "text_delta", "text_end", "done"]);
 	});
 
+	it("injects skill catalog and SOP schemas, and validates SOP toolCalls against the merged tools", async () => {
+		await store.insert(
+			makeExperience({
+				id: "skill-1",
+				type: "SKILL",
+				title: "code-review",
+				payload: { description: "Review code changes for defects" },
+			}),
+		);
+		await store.insert(
+			makeExperience({
+				id: "sop-1",
+				type: "SOP",
+				title: "run-tests",
+				payload: {
+					schema: {
+						name: "run_tests",
+						description: "Run the project test suite",
+						parameters: {
+							type: "object",
+							required: ["filter"],
+							properties: { filter: { type: "string" } },
+						},
+					},
+				},
+			}),
+		);
+		const fetchMock = mockGatewayFetch(
+			sseStream([
+				'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"run_tests","arguments":"{\\"filter\\":\\"unit\\"}"}}]}}]}\n\n',
+				'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n',
+				"data: [DONE]\n\n",
+			]),
+		);
+		const payload = {
+			...PAYLOAD,
+			context: {
+				...PAYLOAD.context,
+				systemPrompt: "You are a helpful agent.",
+				tools: [
+					{
+						name: "read",
+						description: "Read a file",
+						parameters: { type: "object", required: ["path"], properties: { path: { type: "string" } } },
+					},
+				],
+			},
+		};
+		const server = createServer({ store, gatewayUrl: GATEWAY_URL, sessionDir });
+
+		const resp = await server.inject({ method: "POST", url: "/api/stream", payload });
+
+		expect(resp.statusCode).toBe(200);
+		// The SOP toolCall passes outbound validation against the merged tool
+		// list (request tools + injected SOP schemas) — it must not be rejected
+		// as an unknown tool.
+		expect(resp.body).toContain('"type":"done"');
+		expect(resp.body).toContain('"reason":"toolUse"');
+		expect(resp.body).toContain('"toolName":"run_tests"');
+		expect(resp.body).not.toContain('"type":"error"');
+
+		// The gateway request carries the skill catalog in the system prompt
+		// and the merged tools (request tools + SOP schemas).
+		const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+		const sent = JSON.parse(init.body as string);
+		const system = sent.messages.find((m: { role: string }) => m.role === "system");
+		expect(system).toBeDefined();
+		expect(system.content).toContain("You are a helpful agent.");
+		expect(system.content).toContain("<available_skills>");
+		expect(system.content).toContain('<skill name="code-review">Review code changes for defects</skill>');
+		const toolNames = sent.tools.map((t: { function: { name: string } }) => t.function.name);
+		expect(toolNames).toContain("read");
+		expect(toolNames).toContain("run_tests");
+	});
+
 	it("replaces a truncated toolCall with an error event (SPEC §5.1 step 7)", async () => {
 		mockGatewayFetch(
 			sseStream([
