@@ -131,6 +131,64 @@ describe("etlSessionFiles", () => {
 		store.close();
 	});
 
+	it("mines the streamed reply from stream_event custom entries (Task 8 format)", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "etl-stream-event-"));
+		const path = writeJsonl(dir, "session.jsonl", [
+			{ type: "session", version: 3, id: "s-9", timestamp: "2026-07-21T00:00:00Z", cwd: "/tmp" },
+			{
+				type: "message",
+				id: "m-1",
+				parentId: null,
+				timestamp: "2026-07-21T00:00:01Z",
+				message: { role: "user", content: "deploy the service", timestamp: 1 },
+			},
+			{
+				type: "custom",
+				id: "c-1",
+				parentId: "m-1",
+				timestamp: "2026-07-21T00:00:02Z",
+				customType: "experience_injection",
+				data: { retrieved: [] },
+			},
+			{
+				type: "custom",
+				id: "c-2",
+				parentId: "c-1",
+				timestamp: "2026-07-21T00:00:03Z",
+				customType: "response_started",
+			},
+			{
+				type: "custom",
+				id: "c-3",
+				parentId: "c-2",
+				timestamp: "2026-07-21T00:00:04Z",
+				customType: "stream_event",
+				data: { type: "text_delta", contentIndex: 0, delta: "Deployment finished without errors. " },
+			},
+			{
+				type: "custom",
+				id: "c-4",
+				parentId: "c-3",
+				timestamp: "2026-07-21T00:00:05Z",
+				customType: "stream_event",
+				data: { type: "text_delta", contentIndex: 0, delta: "Health checks all passed." },
+			},
+			{
+				type: "custom",
+				id: "c-5",
+				parentId: "c-4",
+				timestamp: "2026-07-21T00:00:06Z",
+				customType: "response_completed",
+			},
+		]);
+		const store = await makeStore();
+		const count = await etlSessionFiles([path], store);
+		expect(count).toBeGreaterThan(0);
+		const fromStream = await store.search("Deployment", 10);
+		expect(fromStream.length).toBeGreaterThan(0);
+		store.close();
+	});
+
 	it("is idempotent: rerunning on the same file inserts nothing", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "etl-idem-"));
 		const path = writeJsonl(dir, "session.jsonl", [

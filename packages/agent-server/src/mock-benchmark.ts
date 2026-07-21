@@ -219,18 +219,17 @@ function expectDone(events: StreamEvent[]): DoneEvent {
 	return done;
 }
 
-/** Find the session JSONL for `query` and return its recorded retrieved IDs. */
+/** Find the session JSONL for `query` and return its recorded retrieved IDs (pi-native format, SPEC §6). */
 function readRetrievedIds(sessionDir: string, query: string): string[] {
 	for (const file of readdirSync(sessionDir)) {
-		const first = readFileSync(join(sessionDir, file), "utf-8").split("\n", 1)[0];
-		const entry = JSON.parse(first) as {
-			type: string;
-			data: { body?: { context?: { messages?: { content?: string }[] } }; retrieved?: string[] };
-		};
-		const messages = entry.data.body?.context?.messages ?? [];
-		if (messages.some((m) => m.content === query)) {
-			return entry.data.retrieved ?? [];
-		}
+		const entries = readFileSync(join(sessionDir, file), "utf-8")
+			.split("\n")
+			.filter((line) => line.trim())
+			.map((line) => JSON.parse(line) as Record<string, unknown>);
+		const messages = entries.filter((e) => e.type === "message").map((e) => e.message as { content?: string });
+		if (!messages.some((m) => m.content === query)) continue;
+		const injection = entries.find((e) => e.type === "custom" && e.customType === "experience_injection");
+		return (injection?.data as { retrieved?: string[] } | undefined)?.retrieved ?? [];
 	}
 	throw new Error(`no session recorded for query: ${query}`);
 }

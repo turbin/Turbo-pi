@@ -111,15 +111,25 @@ describe("POST /api/stream", () => {
 		expect(injected).toBeDefined();
 		expect(injected.content).toContain("用户说你好时偏好简洁的中文回复");
 
-		// Session JSONL records request (with retrieved IDs), start, every
-		// emitted event, and completion.
+		// Session JSONL is pi-native (SPEC §6): a session header, one `message`
+		// entry per request context message, the injection record, and custom
+		// entries for the stream lifecycle.
 		const entries = readSessionEntries();
-		const types = entries.map((e) => e.type);
-		expect(types[0]).toBe("request");
-		expect(types[1]).toBe("response_started");
-		expect(types[types.length - 1]).toBe("response_completed");
-		expect(entries[0].data.retrieved).toEqual(["exp-1"]);
-		const eventTypes = entries.filter((e) => e.type === "event").map((e) => e.data.type);
+		expect(entries[0].type).toBe("session");
+		expect(entries[0].version).toBe(3);
+		expect(typeof entries[0].id).toBe("string");
+		expect(entries[0].metadata).toEqual({ model: "agent-auto", provider: "local" });
+		const messages = entries.filter((e) => e.type === "message");
+		expect(messages).toHaveLength(1);
+		expect(messages[0].message).toEqual({ role: "user", content: "你好" });
+		expect(messages[0].parentId).toBeNull();
+		const injection = entries.find((e) => e.customType === "experience_injection");
+		expect(injection?.data.retrieved).toEqual(["exp-1"]);
+		expect(injection?.parentId).toBe(messages[0].id);
+		const customTypes = entries.filter((e) => e.type === "custom").map((e) => e.customType);
+		expect(customTypes[1]).toBe("response_started");
+		expect(customTypes[customTypes.length - 1]).toBe("response_completed");
+		const eventTypes = entries.filter((e) => e.customType === "stream_event").map((e) => e.data.type);
 		expect(eventTypes).toEqual(["start", "text_start", "text_delta", "text_end", "done"]);
 	});
 
@@ -229,7 +239,7 @@ describe("POST /api/stream", () => {
 		expect(resp.body).not.toContain('"type":"done"');
 
 		const entries = readSessionEntries();
-		const eventTypes = entries.filter((e) => e.type === "event").map((e) => e.data.type);
+		const eventTypes = entries.filter((e) => e.customType === "stream_event").map((e) => e.data.type);
 		expect(eventTypes).toEqual(["start", "error"]);
 	});
 
@@ -247,7 +257,8 @@ describe("POST /api/stream", () => {
 		expect(sent.messages).toEqual([{ role: "user", content: "你好" }]);
 
 		const entries = readSessionEntries();
-		expect(entries[0].data.retrieved).toEqual([]);
+		const injection = entries.find((e) => e.customType === "experience_injection");
+		expect(injection?.data.retrieved).toEqual([]);
 	});
 
 	it("returns 502 and records the error when the gateway fails", async () => {
@@ -260,7 +271,9 @@ describe("POST /api/stream", () => {
 		expect(resp.json().error.message).toContain("gateway error: 500");
 
 		const entries = readSessionEntries();
-		expect(entries.map((e) => e.type)).toEqual(["request", "error"]);
-		expect(entries[1].data.message).toContain("gateway error: 500");
+		const last = entries[entries.length - 1];
+		expect(last.type).toBe("custom");
+		expect(last.customType).toBe("error");
+		expect(last.data.message).toContain("gateway error: 500");
 	});
 });

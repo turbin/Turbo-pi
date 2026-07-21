@@ -12,11 +12,13 @@ import type { ExperienceStore } from "../experience-store.ts";
  * 1. Pi-native session format (P1 target, Task 8): a `{type:"session"}`
  *    header plus `{type:"message", id, parentId, message:{role, content}}`
  *    entries (see SessionMessageEntry in pi's session-manager). A flat
- *    `{role, content}` message entry is also tolerated.
- * 2. Current custom proxy-handler format (`{type, data}`): the `request`
- *    entry carries `data.body.context.messages`, and `event` entries carry
- *    the streamed SSE events (`text_delta`/`thinking_delta`), which are
- *    reassembled per contentIndex into one assistant message.
+ *    `{role, content}` message entry is also tolerated. The streamed reply
+ *    lives in `{type:"custom", customType:"stream_event", data}` entries,
+ *    whose `text_delta`/`thinking_delta` payloads are reassembled per
+ *    contentIndex into one assistant message.
+ * 2. Legacy P0 proxy-handler format (`{type, data}`), kept only so old files
+ *    remain readable: the `request` entry carries `data.body.context.messages`,
+ *    and `event` entries carry the same streamed SSE events as `stream_event`.
  *
  * Only assistant and toolResult text is mined. Insertion is idempotent per
  * (file, entry, sentence) so a cron run can safely reprocess a file.
@@ -65,7 +67,7 @@ export async function etlSessionFiles(paths: string[], store: ExperienceStore): 
 
 function extractMessages(path: string): ExtractedMessage[] {
 	const messages: ExtractedMessage[] = [];
-	// Reassembled streamed text for the custom {type:"event"} format.
+	// Reassembled streamed text from stream_event custom entries (and legacy `event` entries).
 	const streamParts = new Map<number, string[]>();
 	let streamIndex = 0;
 
@@ -106,7 +108,7 @@ function extractMessages(path: string): ExtractedMessage[] {
 			continue;
 		}
 
-		if (entry.type === "event") {
+		if (entry.type === "event" || (entry.type === "custom" && entry.customType === "stream_event")) {
 			const event = entry.data as { type?: string; contentIndex?: number; delta?: string } | undefined;
 			if ((event?.type === "text_delta" || event?.type === "thinking_delta") && typeof event.delta === "string") {
 				const idx = event.contentIndex ?? 0;
