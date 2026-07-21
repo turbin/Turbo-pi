@@ -124,4 +124,37 @@ describe("toOpenAIRequest", () => {
 		const req = toOpenAIRequest({ messages: [toolResultMsg()] }, model);
 		expect(req.messages[0]).toEqual({ role: "tool", content: "sunny", tool_call_id: "call-1" });
 	});
+
+	// Kimi Code and other OpenAI clients put the system prompt in the messages
+	// array (and later assistant tool_calls/tool results in OpenAI shape); these
+	// must pass through instead of falling into the toolResult branch, which
+	// produced tool messages without tool_call_id (gateway 400).
+	it("passes through system-role messages from OpenAI clients", () => {
+		const payload = {
+			messages: [
+				{ role: "system", content: "You are Kimi Code." },
+				userMsg("帮我 review 代码"),
+			] as InjectionPayload["messages"],
+		};
+		const req = toOpenAIRequest(payload, model);
+		expect(req.messages[0]).toEqual({ role: "system", content: "You are Kimi Code." });
+		expect(req.messages[1]).toEqual({ role: "user", content: "帮我 review 代码" });
+	});
+
+	it("passes through OpenAI-shaped assistant tool_calls and tool_call_id", () => {
+		const payload = {
+			messages: [
+				{
+					role: "assistant",
+					content: "",
+					tool_calls: [{ id: "call-9", type: "function", function: { name: "get_time", arguments: "{}" } }],
+				},
+				{ role: "tool", content: "12:00", tool_call_id: "call-9" },
+			] as unknown as InjectionPayload["messages"],
+		};
+		const req = toOpenAIRequest(payload, model);
+		expect(req.messages[0].role).toBe("assistant");
+		expect(req.messages[0].tool_calls).toHaveLength(1);
+		expect(req.messages[1]).toEqual({ role: "tool", content: "12:00", tool_call_id: "call-9" });
+	});
 });

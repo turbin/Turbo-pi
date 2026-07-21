@@ -57,6 +57,19 @@ export function toOpenAIRequest(payload: InjectionPayload, model: Model<"openai-
 }
 
 function toOpenAIMessage(msg: Message): OpenAIRequestMessage {
+	// OpenAI clients (e.g. Kimi Code) send the system prompt as a message and
+	// keep history in OpenAI shape; pass these through instead of letting them
+	// fall into the toolResult branch (which produced tool messages without
+	// tool_call_id, rejected by the gateway with a 400).
+	const role = (msg as { role: string }).role;
+	if (role === "system") {
+		const content = (msg as { content: unknown }).content;
+		const text = Array.isArray(content)
+			? content.map((part) => (typeof part === "string" ? part : ((part as { text?: string })?.text ?? ""))).join("")
+			: String(content ?? "");
+		return { role: "system", content: text };
+	}
+
 	if (msg.role === "user") {
 		if (typeof msg.content === "string") {
 			return { role: "user", content: msg.content };
@@ -71,7 +84,10 @@ function toOpenAIMessage(msg: Message): OpenAIRequestMessage {
 
 	if (msg.role === "assistant") {
 		if (typeof msg.content === "string") {
-			return { role: "assistant", content: msg.content };
+			const message: OpenAIRequestMessage = { role: "assistant", content: msg.content };
+			const rawCalls = (msg as { tool_calls?: OpenAIToolCall[] }).tool_calls;
+			if (rawCalls?.length) message.tool_calls = rawCalls;
+			return message;
 		}
 		const text = msg.content
 			.filter((part) => part.type === "text")
@@ -84,14 +100,15 @@ function toOpenAIMessage(msg: Message): OpenAIRequestMessage {
 	}
 
 	// toolResult
+	const toolCallId = msg.toolCallId ?? (msg as unknown as { tool_call_id?: string }).tool_call_id;
 	if (typeof msg.content === "string") {
-		return { role: "tool", content: msg.content, tool_call_id: msg.toolCallId };
+		return { role: "tool", content: msg.content, tool_call_id: toolCallId };
 	}
 	const text = msg.content
 		.filter((part) => part.type === "text")
 		.map((part) => part.text)
 		.join("");
-	return { role: "tool", content: text, tool_call_id: msg.toolCallId };
+	return { role: "tool", content: text, tool_call_id: toolCallId };
 }
 
 function toOpenAIToolCall(call: { id: string; name: string; arguments: Record<string, unknown> }): OpenAIToolCall {

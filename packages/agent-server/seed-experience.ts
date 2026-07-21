@@ -56,7 +56,44 @@ async function main() {
     createdAt: new Date().toISOString(),
   });
 
-  console.log("seeded 4 experiences");
+  await store.insert({
+    id: "skill-code-review",
+    type: "SKILL",
+    title: "code-review",
+    payload: {
+      description: "How to review code effectively",
+      sections: {
+        overview: "Read the full diff first, check correctness, then style. Report concrete issues with file:line references.",
+      },
+    },
+    quality: 0.9,
+    status: "active",
+    sourceSession: "seed",
+    sourceEntryId: "seed-5",
+    contentHash: "hash-skill-1",
+    createdAt: new Date().toISOString(),
+  });
+
+  await store.insert({
+    id: "sop-get-time",
+    type: "SOP",
+    title: "get_time",
+    payload: {
+      schema: {
+        name: "get_time",
+        description: "Get current time",
+        parameters: { type: "object", properties: {} },
+      },
+    },
+    quality: 0.9,
+    status: "active",
+    sourceSession: "seed",
+    sourceEntryId: "seed-6",
+    contentHash: "hash-sop-1",
+    createdAt: new Date().toISOString(),
+  });
+
+  console.log("seeded 6 experiences");
 }
 
 main().catch((err) => { console.error(err); process.exit(1); });
