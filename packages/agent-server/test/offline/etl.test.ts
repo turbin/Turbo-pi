@@ -7,7 +7,7 @@ import { etlSessionFiles } from "../../src/offline/etl.ts";
 
 function writeJsonl(dir: string, name: string, entries: Record<string, unknown>[]): string {
 	const path = join(dir, name);
-	writeFileSync(path, entries.map((e) => JSON.stringify(e)).join("\n") + "\n");
+	writeFileSync(path, `${entries.map((e) => JSON.stringify(e)).join("\n")}\n`);
 	return path;
 }
 
@@ -89,7 +89,10 @@ describe("etlSessionFiles", () => {
 								{
 									role: "assistant",
 									content: [
-										{ type: "text", text: "First run the migration script before deploying the new version." },
+										{
+											type: "text",
+											text: "First run the migration script before deploying the new version.",
+										},
 									],
 								},
 								{
@@ -108,7 +111,10 @@ describe("etlSessionFiles", () => {
 			{ type: "response_started", data: {} },
 			{ type: "event", data: { type: "start" } },
 			{ type: "event", data: { type: "text_start", contentIndex: 0 } },
-			{ type: "event", data: { type: "text_delta", contentIndex: 0, delta: "Deployment finished without errors. " } },
+			{
+				type: "event",
+				data: { type: "text_delta", contentIndex: 0, delta: "Deployment finished without errors. " },
+			},
 			{ type: "event", data: { type: "text_delta", contentIndex: 0, delta: "Health checks all passed." } },
 			{ type: "event", data: { type: "text_end", contentIndex: 0 } },
 			{ type: "event", data: { type: "done", reason: "stop", usage: {} } },
@@ -160,7 +166,11 @@ describe("etlSessionFiles", () => {
 					id: "m-1",
 					parentId: null,
 					timestamp: "2026-07-20T00:00:00Z",
-					message: { role: "assistant", content: "ok. Sure! The cache must be invalidated after each schema change.", timestamp: 1 },
+					message: {
+						role: "assistant",
+						content: "ok. Sure! The cache must be invalidated after each schema change.",
+						timestamp: 1,
+					},
 				}),
 				"",
 			].join("\n"),
