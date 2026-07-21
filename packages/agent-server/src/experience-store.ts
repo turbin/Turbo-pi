@@ -114,6 +114,18 @@ export class ExperienceStore {
 		return rowToExperience(row);
 	}
 
+	async getByContentHash(contentHash: string): Promise<Experience | null> {
+		const row = this.db.prepare("SELECT * FROM experiences WHERE content_hash = ?").get(contentHash) as
+			| ExperienceRow
+			| undefined;
+		if (!row) return null;
+		return rowToExperience(row);
+	}
+
+	async promoteToActive(id: string, quality: number): Promise<void> {
+		this.db.prepare("UPDATE experiences SET status = 'active', quality = ? WHERE id = ?").run(quality, id);
+	}
+
 	async listActive(type: Experience["type"], limit: number): Promise<Experience[]> {
 		const rows = this.db
 			.prepare(`

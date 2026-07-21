@@ -1,0 +1,216 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import type { ExperienceStore } from "../experience-store.ts";
+import type { Experience } from "../types.ts";
+import { contentHashFor, dedupeCandidates } from "./canonicalize.ts";
+
+/**
+ * TS-side verifier (SPEC §4.2 step 4 / §6 Stage 3+5).
+ *
+ * The continuous quality scores themselves come from the vendored Python
+ * `verification_selection` pipeline (Verifier / TwoStageScorer, PPT
+ * tournament or vs-reference preference) — they are NOT recomputed here.
+ * This module is the promotion gate between the staged pipeline outputs
+ * (skills.json / sops.json / cards.json from `runOfflinePipeline`) and the
+ * ExperienceStore:
+ *
+ * - quality >= PROMOTION_THRESHOLD (0.5, SPEC §6 Stage 2c) -> active;
+ * - below threshold -> not inserted (low-score trajectories are dropped, per
+ *   the handoff simplification "no negative experience library");
+ * - canonicalize dedup via contentHash: a batch-internal duplicate is
+ *   dropped, an already-active store row is left alone, and a dormant ETL
+ *   candidate carrying the same contentHash is promoted in place.
+ */
+
+export const PROMOTION_THRESHOLD = 0.5;
+
+export interface VerifyItem {
+	/** Store id; defaults to `exp-<hash16>`. */
+	id?: string;
+	/** Experience type; defaults to "EVIDENCE". */
+	type?: Experience["type"];
+	/** Row title; defaults to payload.name / payload.text prefix / id. */
+	title?: string;
+	/** Continuous score from the Python verifier (or skill utility). */
+	quality: number;
+	payload?: Record<string, unknown>;
+	/**
+	 * Precomputed content hash. Set when the caller knows the hash scheme of
+	 * an existing row (e.g. re-verification of ETL candidates, which hash
+	 * sha256(text)); otherwise the canonical (type,title,payload) hash is used.
+	 */
+	contentHash?: string;
+	sourceSession?: string;
+	sourceEntryId?: string;
+}
+
+/**
+ * Promote verified items into the store. Returns the number of entries that
+ * are active because of this call (new inserts + dormant rows promoted).
+ */
+export async function verifyAndCanonicalize(items: VerifyItem[], store: ExperienceStore): Promise<number> {
+	const candidates = dedupeCandidates(
+		items.filter((item) => item.quality >= PROMOTION_THRESHOLD),
+		(item) => item.contentHash ?? contentHashFor(normalizeItem(item)),
+	);
+
+	let activeCount = 0;
+	for (const item of candidates) {
+		const normalized = normalizeItem(item);
+		const hash = item.contentHash ?? contentHashFor(normalized);
+		const existing = await store.getByContentHash(hash);
+		if (existing) {
+			if (existing.status !== "active") {
+				await store.promoteToActive(existing.id, item.quality);
+				activeCount++;
+			}
+			continue;
+		}
+		await store.insert({
+			id: item.id ?? `exp-${hash.slice(0, 16)}`,
+			type: normalized.type,
+			title: normalized.title,
+			payload: normalized.payload,
+			quality: item.quality,
+			status: "active",
+			sourceSession: item.sourceSession ?? "",
+			sourceEntryId: item.sourceEntryId ?? "",
+			contentHash: hash,
+			createdAt: new Date().toISOString(),
+		});
+		activeCount++;
+	}
+	return activeCount;
+}
+
+function normalizeItem(item: VerifyItem): {
+	type: Experience["type"];
+	title: string;
+	payload: Record<string, unknown>;
+} {
+	const payload = item.payload ?? {};
+	const type = item.type ?? "EVIDENCE";
+	const fallbackTitle =
+		(typeof payload.name === "string" && payload.name) ||
+		(typeof payload.text === "string" && payload.text.slice(0, 50)) ||
+		item.id ||
+		"untitled";
+	return { type, title: item.title ?? fallbackTitle, payload };
+}
+
+// ---------------------------------------------------------------------------
+// Staged pipeline output mapping (runOfflinePipeline outputDir -> VerifyItem)
+// ---------------------------------------------------------------------------
+
+interface StagedSkill {
+	name?: string;
+	summary?: string;
+	utility?: number;
+	content?: string;
+}
+
+interface StagedSop {
+	name?: string;
+	code?: string;
+	docstring?: string;
+	schema?: Record<string, unknown>;
+	tools?: string[];
+}
+
+interface StagedCard {
+	taskId?: string;
+	quality?: number;
+	card?: {
+		name?: string;
+		trigger?: string;
+		procedure?: string;
+		boundary?: string;
+		role?: string;
+		evidence?: Record<string, unknown>;
+	};
+}
+
+/** skills.json: [{name, summary, utility, content}] — quality = evolution utility. */
+export function skillsToStaged(skills: StagedSkill[]): VerifyItem[] {
+	return skills.map((skill) => ({
+		type: "SKILL",
+		title: skill.name ?? "unnamed-skill",
+		quality: typeof skill.utility === "number" ? skill.utility : 0,
+		payload: {
+			name: skill.name ?? "",
+			summary: skill.summary ?? "",
+			content: skill.content ?? "",
+			utility: skill.utility ?? 0,
+			text: skill.content ?? "",
+		},
+		sourceEntryId: skill.name ?? "",
+	}));
+}
+
+/**
+ * sops.json: [{name, code, docstring, schema, tools}]. The Python SOP
+ * lifecycle already pruned these (construction -> merge -> re-execution), so
+ * they are pre-vetted and enter at full quality (SPEC §6 Stage 2b).
+ */
+export function sopsToStaged(sops: StagedSop[]): VerifyItem[] {
+	return sops.map((sop) => ({
+		type: "SOP",
+		title: sop.name ?? "unnamed-sop",
+		quality: 1,
+		payload: {
+			name: sop.name ?? "",
+			code: sop.code ?? "",
+			docstring: sop.docstring ?? "",
+			schema: sop.schema ?? {},
+			tools: sop.tools ?? [],
+			text: sop.docstring ?? "",
+		},
+		sourceEntryId: sop.name ?? "",
+	}));
+}
+
+/** cards.json: [{taskId, quality, card:{五元组}}] — quality = verifier continuous score. */
+export function cardsToStaged(cards: StagedCard[]): VerifyItem[] {
+	const items: VerifyItem[] = [];
+	for (const entry of cards) {
+		const card = entry.card;
+		if (!card) continue;
+		items.push({
+			type: "EVIDENCE",
+			title: card.name ?? ((card.trigger ?? "").slice(0, 50) || "unnamed-card"),
+			quality: typeof entry.quality === "number" ? entry.quality : 0,
+			payload: {
+				name: card.name ?? "",
+				trigger: card.trigger ?? "",
+				procedure: card.procedure ?? "",
+				boundary: card.boundary ?? "",
+				role: card.role ?? "",
+				evidence: card.evidence ?? {},
+				taskId: entry.taskId ?? "",
+				text: [card.trigger, card.procedure].filter(Boolean).join("\n"),
+			},
+			sourceEntryId: entry.taskId ?? "",
+		});
+	}
+	return items;
+}
+
+function readJsonArray(path: string): unknown[] {
+	const data: unknown = JSON.parse(readFileSync(path, "utf-8"));
+	if (!Array.isArray(data)) throw new Error(`verifier: expected a JSON array in ${path}`);
+	return data;
+}
+
+/**
+ * Read the staged skills/sops/cards JSON files from a `runOfflinePipeline`
+ * output directory and promote the verified entries into the store. Returns
+ * the number of entries activated (inserted or promoted from dormant).
+ */
+export async function promoteStagedOutputs(outputDir: string, store: ExperienceStore): Promise<number> {
+	const items: VerifyItem[] = [
+		...skillsToStaged(readJsonArray(join(outputDir, "skills.json")) as StagedSkill[]),
+		...sopsToStaged(readJsonArray(join(outputDir, "sops.json")) as StagedSop[]),
+		...cardsToStaged(readJsonArray(join(outputDir, "cards.json")) as StagedCard[]),
+	];
+	return verifyAndCanonicalize(items, store);
+}

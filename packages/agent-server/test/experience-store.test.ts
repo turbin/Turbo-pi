@@ -59,4 +59,44 @@ describe("ExperienceStore", () => {
 		const results = await store.search("flaky", 10);
 		expect(results.map((r) => r.id)).toEqual(["exp-1"]);
 	});
+
+	it("looks up rows by contentHash", async () => {
+		const store = new ExperienceStore(":memory:");
+		await store.initSchema();
+		await store.insert({
+			id: "exp-1",
+			type: "EVIDENCE",
+			title: "test evidence",
+			payload: { text: "hello" },
+			quality: 0,
+			status: "dormant",
+			sourceSession: "session-1",
+			sourceEntryId: "entry-1",
+			contentHash: "hash-abc",
+			createdAt: new Date().toISOString(),
+		});
+		expect((await store.getByContentHash("hash-abc"))?.id).toBe("exp-1");
+		expect(await store.getByContentHash("hash-missing")).toBeNull();
+	});
+
+	it("promoteToActive flips status and writes back quality", async () => {
+		const store = new ExperienceStore(":memory:");
+		await store.initSchema();
+		await store.insert({
+			id: "exp-1",
+			type: "EVIDENCE",
+			title: "test evidence",
+			payload: { text: "hello" },
+			quality: 0,
+			status: "dormant",
+			sourceSession: "session-1",
+			sourceEntryId: "entry-1",
+			contentHash: "hash-abc",
+			createdAt: new Date().toISOString(),
+		});
+		await store.promoteToActive("exp-1", 0.9);
+		const row = await store.getById("exp-1");
+		expect(row?.status).toBe("active");
+		expect(row?.quality).toBe(0.9);
+	});
 });
