@@ -143,6 +143,44 @@ describe("collectTrajectories", () => {
 		expect(request?.text).toContain("request assistant reply");
 	});
 
+	it("counts the reply once when stream_event customs duplicate a reconstructed assistant message", () => {
+		const dir = mkdtempSync(join(tmpdir(), "pipeline-collect-dedup-"));
+		writeJsonl(dir, "dup.jsonl", [
+			{ type: "session", version: 3, id: "s-3", timestamp: "2026-07-21T00:00:00Z", cwd: "/tmp" },
+			{
+				type: "message",
+				id: "m-1",
+				parentId: null,
+				timestamp: "2026-07-21T00:00:01Z",
+				message: { role: "user", content: "deploy the service", timestamp: 1 },
+			},
+			{
+				type: "custom",
+				id: "c-1",
+				parentId: "m-1",
+				timestamp: "2026-07-21T00:00:02Z",
+				customType: "stream_event",
+				data: { type: "text_delta", contentIndex: 0, delta: "Deployment finished without errors." },
+			},
+			{
+				type: "message",
+				id: "m-2",
+				parentId: "c-1",
+				timestamp: "2026-07-21T00:00:03Z",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "Deployment finished without errors." }],
+					timestamp: 2,
+				},
+			},
+		]);
+
+		const trajectories = collectTrajectories(dir);
+		expect(trajectories).toHaveLength(1);
+		const occurrences = trajectories[0].text.split("Deployment finished without errors.").length - 1;
+		expect(occurrences).toBe(1);
+	});
+
 	it("skips malformed lines and files with no content, and ignores non-jsonl files", () => {
 		const dir = mkdtempSync(join(tmpdir(), "pipeline-collect-robust-"));
 		writeJsonl(dir, "good.jsonl", [

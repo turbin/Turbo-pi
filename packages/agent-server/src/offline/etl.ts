@@ -12,10 +12,15 @@ import type { ExperienceStore } from "../experience-store.ts";
  * 1. Pi-native session format (P1 target, Task 8): a `{type:"session"}`
  *    header plus `{type:"message", id, parentId, message:{role, content}}`
  *    entries (see SessionMessageEntry in pi's session-manager). A flat
- *    `{role, content}` message entry is also tolerated. The streamed reply
- *    lives in `{type:"custom", customType:"stream_event", data}` entries,
- *    whose `text_delta`/`thinking_delta` payloads are reassembled per
- *    contentIndex into one assistant message.
+ *    `{role, content}` message entry is also tolerated. Completed streams
+ *    additionally carry the gateway reply as a reconstructed assistant
+ *    `message` entry; streams that errored or were aborted (and files
+ *    written before that change) carry it only in `{type:"custom",
+ *    customType:"stream_event", data}` entries, whose
+ *    `text_delta`/`thinking_delta` payloads are reassembled per
+ *    contentIndex into one assistant message. When both exist, the
+ *    `message` entry wins and the matching stream parts are skipped so
+ *    the same reply text is mined exactly once.
  * 2. Legacy P0 proxy-handler format (`{type, data}`), kept only so old files
  *    remain readable: the `request` entry carries `data.body.context.messages`,
  *    and `event` entries carry the same streamed SSE events as `stream_event`.
@@ -70,6 +75,9 @@ function extractMessages(path: string): ExtractedMessage[] {
 	// Reassembled streamed text from stream_event custom entries (and legacy `event` entries).
 	const streamParts = new Map<number, string[]>();
 	let streamIndex = 0;
+	// Text of assistant `message` entries, used to skip stream parts that a
+	// reconstructed reply message already covers (mined exactly once).
+	const assistantMessageTexts: string[] = [];
 
 	for (const line of readFileSync(path, "utf-8").split("\n")) {
 		if (!line.trim()) continue;
@@ -85,9 +93,11 @@ function extractMessages(path: string): ExtractedMessage[] {
 			const message = (entry.message ?? entry) as Record<string, unknown>;
 			const text = extractText(message.content);
 			if (text) {
+				const role = String(message.role ?? "");
+				if (role === "assistant") assistantMessageTexts.push(text);
 				messages.push({
 					entryId: String(entry.id ?? `line-${messages.length}`),
-					role: String(message.role ?? ""),
+					role,
 					text,
 				});
 			}
@@ -120,7 +130,13 @@ function extractMessages(path: string): ExtractedMessage[] {
 	}
 
 	for (const [idx, parts] of [...streamParts.entries()].sort((a, b) => a[0] - b[0])) {
-		messages.push({ entryId: `stream-${streamIndex++}-${idx}`, role: "assistant", text: parts.join("") });
+		const text = parts.join("");
+		// Skip stream parts already covered by a reconstructed assistant
+		// `message` entry; mine them only for sessions lacking it (error/aborted
+		// streams, old files). Thinking deltas never match (message text parts
+		// exclude thinking), so they are still mined from the stream.
+		if (assistantMessageTexts.some((messageText) => messageText.includes(text))) continue;
+		messages.push({ entryId: `stream-${streamIndex++}-${idx}`, role: "assistant", text });
 	}
 	return messages;
 }

@@ -1,8 +1,10 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Model, Usage } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { SessionWriter } from "../src/session-writer.ts";
+import { buildAssistantMessage, SessionWriter } from "../src/session-writer.ts";
+import type { StreamEvent } from "../src/toolcall-validator.ts";
 
 /**
  * The target format is the pi-native session JSONL written by
@@ -134,5 +136,79 @@ describe("SessionWriter (pi-native session JSONL)", () => {
 		writer.writeSessionHeader({ id: "s-7", cwd: "/tmp/work" });
 		expect(() => writer.writeSessionHeader({ id: "s-8", cwd: "/tmp/work" })).toThrow(/header/);
 		await writer.close();
+	});
+});
+
+describe("buildAssistantMessage", () => {
+	const model: Model<any> = {
+		id: "agent-auto",
+		name: "agent-auto",
+		api: "openai-completions",
+		provider: "local",
+		baseUrl: "http://127.0.0.1:8367/v1",
+		reasoning: false,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 128000,
+		maxTokens: 8192,
+	};
+
+	function usage(input: number, output: number): Usage {
+		return {
+			input,
+			output,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: input + output,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		};
+	}
+
+	it("reconstructs text, thinking and toolCall parts in contentIndex order", () => {
+		const events: StreamEvent[] = [
+			{ type: "start" },
+			{ type: "thinking_start", contentIndex: 0 },
+			{ type: "thinking_delta", contentIndex: 0, delta: "let me " },
+			{ type: "thinking_delta", contentIndex: 0, delta: "think" },
+			{ type: "thinking_end", contentIndex: 0 },
+			{ type: "text_start", contentIndex: 1 },
+			{ type: "text_delta", contentIndex: 1, delta: "Hello" },
+			{ type: "text_delta", contentIndex: 1, delta: " world" },
+			{ type: "text_end", contentIndex: 1 },
+			{ type: "toolcall_start", contentIndex: 2, id: "call_1", toolName: "run_tests" },
+			{ type: "toolcall_delta", contentIndex: 2, delta: '{"filter":"unit"}' },
+			{ type: "toolcall_end", contentIndex: 2 },
+			{ type: "done", reason: "toolUse", usage: usage(10, 5) },
+		];
+		const message = buildAssistantMessage(events, model);
+		expect(message).not.toBeNull();
+		expect(message).toMatchObject({
+			role: "assistant",
+			api: "openai-completions",
+			provider: "local",
+			model: "agent-auto",
+			stopReason: "toolUse",
+			usage: usage(10, 5),
+		});
+		expect(typeof message?.timestamp).toBe("number");
+		expect(message?.content).toEqual([
+			{ type: "thinking", thinking: "let me think" },
+			{ type: "text", text: "Hello world" },
+			{ type: "toolCall", id: "call_1", name: "run_tests", arguments: { filter: "unit" } },
+		]);
+	});
+
+	it("returns null when the stream ended with an error event instead of done", () => {
+		const events: StreamEvent[] = [
+			{ type: "start" },
+			{ type: "text_delta", contentIndex: 0, delta: "partial" },
+			{ type: "error", reason: "error", errorMessage: "boom", usage: usage(1, 1) },
+		];
+		expect(buildAssistantMessage(events, model)).toBeNull();
+	});
+
+	it("returns null for an aborted stream with no terminal event", () => {
+		const events: StreamEvent[] = [{ type: "start" }, { type: "text_delta", contentIndex: 0, delta: "partial" }];
+		expect(buildAssistantMessage(events, model)).toBeNull();
 	});
 });

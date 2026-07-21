@@ -112,15 +112,16 @@ describe("POST /api/stream", () => {
 		expect(injected.content).toContain("用户说你好时偏好简洁的中文回复");
 
 		// Session JSONL is pi-native (SPEC §6): a session header, one `message`
-		// entry per request context message, the injection record, and custom
-		// entries for the stream lifecycle.
+		// entry per request context message, the injection record, custom
+		// entries for the stream lifecycle, and a reconstructed assistant
+		// `message` entry once the stream completes.
 		const entries = readSessionEntries();
 		expect(entries[0].type).toBe("session");
 		expect(entries[0].version).toBe(3);
 		expect(typeof entries[0].id).toBe("string");
 		expect(entries[0].metadata).toEqual({ model: "agent-auto", provider: "local" });
 		const messages = entries.filter((e) => e.type === "message");
-		expect(messages).toHaveLength(1);
+		expect(messages).toHaveLength(2);
 		expect(messages[0].message).toEqual({ role: "user", content: "你好" });
 		expect(messages[0].parentId).toBeNull();
 		const injection = entries.find((e) => e.customType === "experience_injection");
@@ -131,6 +132,25 @@ describe("POST /api/stream", () => {
 		expect(customTypes[customTypes.length - 1]).toBe("response_completed");
 		const eventTypes = entries.filter((e) => e.customType === "stream_event").map((e) => e.data.type);
 		expect(eventTypes).toEqual(["start", "text_start", "text_delta", "text_end", "done"]);
+
+		// The gateway reply is recorded as a pi-native assistant `message` entry
+		// so replayed/forked sessions include the model's turn.
+		const assistant = messages[1];
+		const lastStreamEvent = entries.filter((e) => e.customType === "stream_event").at(-1);
+		expect(lastStreamEvent).toBeDefined();
+		expect(assistant.parentId).toBe(lastStreamEvent?.id);
+		expect(assistant.message).toMatchObject({
+			role: "assistant",
+			content: [{ type: "text", text: "你好！" }],
+			api: "openai-completions",
+			provider: "local",
+			model: "agent-auto",
+			stopReason: "stop",
+			usage: { input: 10, output: 3, totalTokens: 13 },
+		});
+		expect(typeof assistant.message.timestamp).toBe("number");
+		const completed = entries.find((e) => e.customType === "response_completed");
+		expect(completed?.parentId).toBe(assistant.id);
 	});
 
 	it("injects skill catalog and SOP schemas, and validates SOP toolCalls against the merged tools", async () => {
@@ -241,6 +261,9 @@ describe("POST /api/stream", () => {
 		const entries = readSessionEntries();
 		const eventTypes = entries.filter((e) => e.customType === "stream_event").map((e) => e.data.type);
 		expect(eventTypes).toEqual(["start", "error"]);
+		// On stream error no assistant `message` entry is reconstructed; the
+		// reply stays recorded only as `stream_event` customs.
+		expect(entries.filter((e) => e.type === "message")).toHaveLength(1);
 	});
 
 	it("proxies without injection when retrieval has no hits", async () => {

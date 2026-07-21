@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createWriteStream, type WriteStream } from "node:fs";
-import type { Message } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Message, Model } from "@earendil-works/pi-ai";
+import type { StreamEvent } from "./toolcall-validator.ts";
 
 export interface SessionHeaderOptions {
 	id: string;
@@ -81,4 +82,87 @@ export class SessionWriter {
 			this.stream.end((err: Error | null | undefined) => (err ? reject(err) : resolve()));
 		});
 	}
+}
+
+/**
+ * Reconstructs a pi-native {@link AssistantMessage} from the recorded
+ * `/api/stream` events (SPEC §4.1) so the session JSONL replays with the
+ * model's reply (SPEC §6) instead of ending at the last user message.
+ * Content parts (text / thinking / toolCall) are reassembled per
+ * `contentIndex` in first-seen order. Returns null unless the stream ended
+ * with a `done` event: on error/abort the reply stays recorded only as
+ * `stream_event` custom entries.
+ */
+export function buildAssistantMessage(events: StreamEvent[], model: Model<any>): AssistantMessage | null {
+	const done = events.find((event) => event.type === "done");
+	if (!done) return null;
+
+	const order: number[] = [];
+	const texts = new Map<number, string>();
+	const thinkings = new Map<number, string>();
+	const toolCalls = new Map<number, { id: string; name: string; argsText: string }>();
+	const track = (contentIndex: number) => {
+		if (!order.includes(contentIndex)) order.push(contentIndex);
+	};
+
+	for (const event of events) {
+		switch (event.type) {
+			case "text_start":
+			case "text_end":
+				track(event.contentIndex);
+				break;
+			case "text_delta":
+				track(event.contentIndex);
+				texts.set(event.contentIndex, (texts.get(event.contentIndex) ?? "") + event.delta);
+				break;
+			case "thinking_start":
+			case "thinking_end":
+				track(event.contentIndex);
+				break;
+			case "thinking_delta":
+				track(event.contentIndex);
+				thinkings.set(event.contentIndex, (thinkings.get(event.contentIndex) ?? "") + event.delta);
+				break;
+			case "toolcall_start":
+				track(event.contentIndex);
+				toolCalls.set(event.contentIndex, { id: event.id, name: event.toolName, argsText: "" });
+				break;
+			case "toolcall_delta": {
+				const call = toolCalls.get(event.contentIndex);
+				if (call) call.argsText += event.delta;
+				break;
+			}
+		}
+	}
+
+	const content: AssistantMessage["content"] = [];
+	for (const contentIndex of order) {
+		const thinking = thinkings.get(contentIndex);
+		if (thinking) content.push({ type: "thinking", thinking });
+		const text = texts.get(contentIndex);
+		if (text) content.push({ type: "text", text });
+		const call = toolCalls.get(contentIndex);
+		if (call) {
+			// toolCall events are only emitted after outbound validation passed,
+			// so argsText is valid JSON; fall back to {} defensively.
+			let args: Record<string, unknown> = {};
+			try {
+				args = JSON.parse(call.argsText || "{}") as Record<string, unknown>;
+			} catch {
+				// keep {}
+			}
+			content.push({ type: "toolCall", id: call.id, name: call.name, arguments: args });
+		}
+	}
+
+	return {
+		role: "assistant",
+		content,
+		api: model.api,
+		provider: model.provider,
+		model: model.id,
+		usage: done.usage,
+		stopReason: done.reason,
+		timestamp: Date.now(),
+	};
 }

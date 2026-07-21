@@ -6,8 +6,8 @@ import { type GatewayChatRequest, GatewayClient } from "./gateway-client.ts";
 import { buildInjection } from "./injection.ts";
 import { toOpenAIRequest } from "./openai-compat.ts";
 import { retrieve } from "./retrieval.ts";
-import { SessionWriter } from "./session-writer.ts";
-import { validateToolCallStream } from "./toolcall-validator.ts";
+import { buildAssistantMessage, SessionWriter } from "./session-writer.ts";
+import { type StreamEvent, validateToolCallStream } from "./toolcall-validator.ts";
 import type { InjectionPayload, ProxyStreamOptions, StreamRequest } from "./types.ts";
 
 export interface ProxyHandlerOptions {
@@ -28,7 +28,12 @@ const RETRIEVAL_LIMIT = 8;
  * header, one `message` tree entry per request context message, an
  * `experience_injection` custom entry with the retrieved experience IDs, and
  * custom entries for the stream lifecycle (`response_started`, `stream_event`,
- * `response_completed` / `error` / `aborted`). The writer is closed exactly
+ * `response_completed` / `error` / `aborted`). When the stream ends with a
+ * `done` event, the gateway reply is additionally reconstructed from the
+ * accumulated stream events and written as a pi-native assistant `message`
+ * entry, so replayed/forked sessions include the model's turn. On stream
+ * error/abort no assistant message is written — the partial reply stays
+ * recorded only as `stream_event` customs. The writer is closed exactly
  * once, when the stream completes, errors, or is cancelled, so no tail
  * entries are lost.
  */
@@ -58,12 +63,13 @@ export async function handleStream(
 		const gateway = new GatewayClient(opts.gatewayUrl);
 		const stream = await gateway.stream(gatewayReq);
 		writer.writeCustomEntry("response_started");
+		const streamEvents: StreamEvent[] = [];
 		const validated = validateToolCallStream(stream, {
 			// Validate against the merged tool list: request tools plus any SOP
 			// schemas merged in by buildInjection (SPEC §4.1). Validating against
 			// body.context.tools alone would reject legitimate SOP toolCalls.
 			tools: injected.tools,
-			onEvent: (event) => writer.writeCustomEntry("stream_event", event),
+			onEvent: (event) => recordStreamEvent(writer, streamEvents, body.model, event),
 		});
 		return teeWithSessionClose(validated, writer);
 	} catch (err) {
@@ -88,6 +94,24 @@ function lastUserText(context: Context): string {
 		return text;
 	}
 	return "";
+}
+
+/**
+ * Records one stream event as a `stream_event` custom entry and, when the
+ * stream completed successfully (`done`), writes the reconstructed assistant
+ * reply as a pi-native `message` entry chained to the last written entry.
+ */
+function recordStreamEvent(
+	writer: SessionWriter,
+	streamEvents: StreamEvent[],
+	model: Model<any>,
+	event: StreamEvent,
+): void {
+	writer.writeCustomEntry("stream_event", event);
+	streamEvents.push(event);
+	if (event.type !== "done") return;
+	const reply = buildAssistantMessage(streamEvents, model);
+	if (reply) writer.writeMessage(reply);
 }
 
 function toGatewayRequest(

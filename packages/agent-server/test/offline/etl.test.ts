@@ -189,6 +189,66 @@ describe("etlSessionFiles", () => {
 		store.close();
 	});
 
+	it("mines the reply exactly once when both an assistant message entry and stream_event customs exist", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "etl-dedup-"));
+		const path = writeJsonl(dir, "session.jsonl", [
+			{ type: "session", version: 3, id: "s-10", timestamp: "2026-07-21T00:00:00Z", cwd: "/tmp" },
+			{
+				type: "message",
+				id: "m-1",
+				parentId: null,
+				timestamp: "2026-07-21T00:00:01Z",
+				message: { role: "user", content: "deploy the service", timestamp: 1 },
+			},
+			{
+				type: "custom",
+				id: "c-1",
+				parentId: "m-1",
+				timestamp: "2026-07-21T00:00:02Z",
+				customType: "stream_event",
+				data: { type: "text_delta", contentIndex: 0, delta: "Deployment finished without errors. " },
+			},
+			{
+				type: "custom",
+				id: "c-2",
+				parentId: "c-1",
+				timestamp: "2026-07-21T00:00:03Z",
+				customType: "stream_event",
+				data: { type: "text_delta", contentIndex: 0, delta: "Health checks all passed." },
+			},
+			{
+				type: "message",
+				id: "m-2",
+				parentId: "c-2",
+				timestamp: "2026-07-21T00:00:04Z",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "Deployment finished without errors. Health checks all passed." }],
+					timestamp: 2,
+				},
+			},
+			{
+				type: "custom",
+				id: "c-3",
+				parentId: "m-2",
+				timestamp: "2026-07-21T00:00:05Z",
+				customType: "response_completed",
+			},
+		]);
+		const store = await makeStore();
+		// Two sentences, mined from the message entry only — the stream_event
+		// customs of the same reply must not be mined a second time.
+		const count = await etlSessionFiles([path], store);
+		expect(count).toBe(2);
+		const fromMessage = await store.search("Deployment", 10);
+		expect(fromMessage).toHaveLength(1);
+		expect(fromMessage[0].sourceEntryId).toBe("m-2");
+		const health = await store.search("Health", 10);
+		expect(health).toHaveLength(1);
+		expect(health[0].sourceEntryId).toBe("m-2");
+		store.close();
+	});
+
 	it("is idempotent: rerunning on the same file inserts nothing", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "etl-idem-"));
 		const path = writeJsonl(dir, "session.jsonl", [
