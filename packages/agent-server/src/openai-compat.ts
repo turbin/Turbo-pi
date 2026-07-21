@@ -83,8 +83,9 @@ function toOpenAIMessage(msg: Message): OpenAIRequestMessage {
 	}
 
 	if (msg.role === "assistant") {
-		if (typeof msg.content === "string") {
-			const message: OpenAIRequestMessage = { role: "assistant", content: msg.content };
+		// OpenAI clients send `content: null` on pure tool_calls turns; treat it as "".
+		if (typeof msg.content === "string" || msg.content == null) {
+			const message: OpenAIRequestMessage = { role: "assistant", content: msg.content ?? "" };
 			const rawCalls = (msg as { tool_calls?: OpenAIToolCall[] }).tool_calls;
 			if (rawCalls?.length) message.tool_calls = rawCalls;
 			return message;

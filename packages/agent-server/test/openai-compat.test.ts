@@ -157,4 +157,26 @@ describe("toOpenAIRequest", () => {
 		expect(req.messages[0].tool_calls).toHaveLength(1);
 		expect(req.messages[1]).toEqual({ role: "tool", content: "12:00", tool_call_id: "call-9" });
 	});
+
+	// OpenAI clients send `content: null` on pure tool_calls turns; it must not
+	// fall into the pi-ai content-part branch and crash on `.filter`.
+	it("handles assistant messages with content: null and tool_calls", () => {
+		const payload = {
+			messages: [
+				{
+					role: "assistant",
+					content: null,
+					tool_calls: [{ id: "call-7", type: "function", function: { name: "get_time", arguments: "{}" } }],
+				},
+				{ role: "tool", content: "12:00", tool_call_id: "call-7" },
+			] as unknown as InjectionPayload["messages"],
+		};
+		const req = toOpenAIRequest(payload, model);
+		expect(req.messages[0]).toEqual({
+			role: "assistant",
+			content: "",
+			tool_calls: [{ id: "call-7", type: "function", function: { name: "get_time", arguments: "{}" } }],
+		});
+		expect(req.messages[1]).toEqual({ role: "tool", content: "12:00", tool_call_id: "call-7" });
+	});
 });
