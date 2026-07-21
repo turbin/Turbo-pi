@@ -1,6 +1,41 @@
 import Database from "better-sqlite3";
 import type { Experience } from "./types.ts";
 
+/**
+ * Offline evolution checkpoint (SPEC §7 `checkpoints` table). `kind` separates
+ * checkpoint streams (only "evolution" so far), `epoch` is the caller-supplied
+ * run timestamp (ms), `metric` the headline number of the run (promoted
+ * entries), and `snapshot` a JSON blob with the full run details.
+ */
+export interface Checkpoint {
+	id: string;
+	kind: string;
+	epoch: number;
+	metric: number;
+	snapshot: string;
+	createdAt: string;
+}
+
+interface CheckpointRow {
+	id: string;
+	kind: string;
+	epoch: number;
+	metric: number;
+	snapshot: string;
+	created_at: string;
+}
+
+function rowToCheckpoint(row: CheckpointRow): Checkpoint {
+	return {
+		id: row.id,
+		kind: row.kind,
+		epoch: row.epoch,
+		metric: row.metric,
+		snapshot: row.snapshot,
+		createdAt: row.created_at,
+	};
+}
+
 interface ExperienceRow {
 	id: string;
 	type: Experience["type"];
@@ -76,6 +111,15 @@ export class ExperienceStore {
 				title, search_text, content=experiences, content_rowid=rowid,
 				tokenize='unicode61'
 			);
+			CREATE TABLE IF NOT EXISTS checkpoints (
+				id TEXT PRIMARY KEY,
+				kind TEXT NOT NULL,
+				epoch INTEGER NOT NULL,
+				metric REAL NOT NULL,
+				snapshot TEXT NOT NULL,
+				created_at TEXT NOT NULL DEFAULT (datetime('now'))
+			);
+			CREATE INDEX IF NOT EXISTS idx_checkpoints_kind_epoch ON checkpoints(kind, epoch DESC);
 		`);
 	}
 
@@ -149,6 +193,36 @@ export class ExperienceStore {
 			`)
 			.all(query, limit) as ExperienceRow[];
 		return rows.map(rowToExperience);
+	}
+
+	async insertCheckpoint(checkpoint: Checkpoint): Promise<void> {
+		this.db
+			.prepare(`
+				INSERT INTO checkpoints (id, kind, epoch, metric, snapshot, created_at)
+				VALUES (?, ?, ?, ?, ?, ?)
+			`)
+			.run(
+				checkpoint.id,
+				checkpoint.kind,
+				checkpoint.epoch,
+				checkpoint.metric,
+				checkpoint.snapshot,
+				checkpoint.createdAt,
+			);
+	}
+
+	async getCheckpoint(id: string): Promise<Checkpoint | null> {
+		const row = this.db.prepare("SELECT * FROM checkpoints WHERE id = ?").get(id) as CheckpointRow | undefined;
+		if (!row) return null;
+		return rowToCheckpoint(row);
+	}
+
+	async getLatestCheckpoint(kind: string): Promise<Checkpoint | null> {
+		const row = this.db
+			.prepare("SELECT * FROM checkpoints WHERE kind = ? ORDER BY epoch DESC, created_at DESC LIMIT 1")
+			.get(kind) as CheckpointRow | undefined;
+		if (!row) return null;
+		return rowToCheckpoint(row);
 	}
 
 	close(): void {
