@@ -49,3 +49,41 @@ for metadata that must not enter model context.
 - `node ../../node_modules/vitest/dist/cli.js --run` in `packages/agent-server` (arm64 Node v24.15.0, matching the better-sqlite3 native binding): 14 files, 101 tests passed.
 - `npm run check` from repo root: clean (biome, pinned deps, ts imports, shrinkwrap, tsgo, browser smoke).
 - Not done: live replay of a written file through pi's `JsonlSessionStorage` (would require a pi-agent-core dependency or a manual check); format conformance is asserted structurally in tests against pi's parser rules instead.
+
+## Fix (2026-07-21, review follow-up): assistant reply recorded as pi-native `message` entry
+
+Driver: Task 8 review finding (important) — on pi-side replay (`packages/agent/src/harness/session/session.ts`
+`buildSessionContext`) the conversation ended at the last user message; the assistant turn lived only in
+`stream_event` custom entries, which are omitted from model context by default. Replayed/forked sessions
+silently lost the model's reply. Spec §6's example shows an assistant `message` entry.
+
+Changes:
+
+- `src/session-writer.ts`: new exported `buildAssistantMessage(events, model)` reconstructs a pi-native
+  `AssistantMessage` from the accumulated `/api/stream` events — text/thinking/toolCall parts reassembled per
+  `contentIndex` in first-seen order, `usage`/`stopReason` from the terminal `done` event, numeric ms
+  `timestamp` (matching the pi-ai message shape). Returns null without a `done` event.
+- `src/proxy-handler.ts`: the `onEvent` recorder keeps writing every `stream_event` custom and, on `done`,
+  additionally writes the reconstructed reply via `writer.writeMessage` (chained `parentId` to the last
+  written entry; `response_completed` then chains to the assistant message, so it becomes part of the
+  replayed branch). On stream error/abort nothing changes: customs only, no assistant message.
+- `src/offline/etl.ts`: dedup — stream parts whose reassembled text is already contained in an assistant
+  `message` entry's text are skipped, so the reply is mined exactly once; `stream_event` mining remains for
+  sessions lacking the message entry (error/aborted streams, pre-fix files). Thinking deltas never match
+  (message text extraction excludes thinking parts) and are still mined from the stream.
+- `src/offline/pipeline.ts`: unchanged — `collectTrajectories` never read `stream_event` customs, so the new
+  message entry flows in without double counting (regression test added).
+
+Decisions:
+
+1. **Reconstruct on `done`, not at tee close.** The `done` event is the only point carrying final
+   `usage`/`stopReason` and guaranteeing a successfully finished stream; the tee close only signals byte
+   stream end. Reason: correct metadata and a precise success criterion.
+2. **Error/abort keeps customs-only recording.** A partial reply is not a valid assistant turn for replay
+   (pi would send it back to the model as if complete); the raw `stream_event` customs still preserve it for
+   ETL. Reason: replay correctness beats completeness for failed turns.
+3. **ETL dedup by containment against assistant message texts, not by entry position.** Order-independent
+   and tolerant of multi-part content (the message entry joins all text parts, so per-contentIndex stream
+   parts match by substring). Reason: simple, no new file-format markers.
+4. **Thinking parts included in the reconstructed message.** pi-ai `AssistantMessage.content` supports
+   `ThinkingContent`, and replay benefits from the full turn. Reason: spec §6 alignment at zero extra cost.
