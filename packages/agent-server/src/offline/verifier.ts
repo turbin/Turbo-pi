@@ -60,7 +60,7 @@ export async function verifyAndCanonicalize(items: VerifyItem[], store: Experien
 		const hash = item.contentHash ?? contentHashFor(normalized);
 		const existing = await store.getByContentHash(hash);
 		if (existing) {
-			if (existing.status !== "active") {
+			if (existing.status === "dormant") {
 				await store.promoteToActive(existing.id, item.quality);
 				activeCount++;
 			}
@@ -139,6 +139,7 @@ export function skillsToStaged(skills: StagedSkill[]): VerifyItem[] {
 		payload: {
 			name: skill.name ?? "",
 			summary: skill.summary ?? "",
+			description: skill.summary ?? "",
 			content: skill.content ?? "",
 			utility: skill.utility ?? 0,
 			text: skill.content ?? "",

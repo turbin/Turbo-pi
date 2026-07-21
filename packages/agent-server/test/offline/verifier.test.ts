@@ -12,6 +12,7 @@ import {
 	sopsToStaged,
 	verifyAndCanonicalize,
 } from "../../src/offline/verifier.ts";
+import { buildSkillCatalog } from "../../src/skill-catalog.ts";
 import type { Experience } from "../../src/types.ts";
 
 const tempDirs: string[] = [];
@@ -138,6 +139,39 @@ describe("verifyAndCanonicalize", () => {
 		);
 		expect(count).toBe(0);
 		expect((await store.getById(existing.id))?.status).toBe("dormant");
+	});
+
+	it("does not resurrect a removed row that matches the verified contentHash", async () => {
+		const store = await makeStore();
+		const text = "obsolete advice that was removed from the store";
+		const removed: Experience = { ...dormantEvidence(text), status: "removed" };
+		await store.insert(removed);
+
+		const count = await verifyAndCanonicalize(
+			[{ quality: 0.9, title: removed.title, payload: { text }, contentHash: removed.contentHash }],
+			store,
+		);
+		expect(count).toBe(0);
+		expect((await store.getById(removed.id))?.status).toBe("removed");
+	});
+
+	it("offline-promoted skills render a non-empty description in the online skill catalog", async () => {
+		const store = await makeStore();
+		const count = await verifyAndCanonicalize(
+			skillsToStaged([
+				{
+					name: "retry-with-backoff",
+					summary: "Retry flaky steps with exponential backoff",
+					utility: 0.9,
+					content: "# Retry with backoff",
+				},
+			]),
+			store,
+		);
+		expect(count).toBe(1);
+
+		const { catalog } = await buildSkillCatalog(store, 10);
+		expect(catalog).toContain('<skill name="retry-with-backoff">Retry flaky steps with exponential backoff</skill>');
 	});
 });
 
