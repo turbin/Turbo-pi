@@ -24,9 +24,15 @@ export interface CheckpointInput {
 	snapshot: string;
 }
 
-/** Write a checkpoint row and return its id. */
+/**
+ * Write a checkpoint row and return its id. The id is deterministic: a sha256
+ * of (kind, epoch, snapshot) joined with explicit separators, so distinct
+ * inputs can never collide through concatenation. Re-writing the same
+ * checkpoint id is a no-op success (retry-safe: same id means same content).
+ */
 export async function writeCheckpoint(store: ExperienceStore, input: CheckpointInput): Promise<string> {
-	const id = `ckpt-${createHash("sha256").update(`${input.kind}${input.epoch}${input.snapshot}`).digest("hex").slice(0, 16)}`;
+	const hashInput = `${input.kind}:${input.epoch}:${input.snapshot}`;
+	const id = `ckpt-${createHash("sha256").update(hashInput).digest("hex").slice(0, 16)}`;
 	await store.insertCheckpoint({ id, ...input, createdAt: new Date().toISOString() });
 	return id;
 }

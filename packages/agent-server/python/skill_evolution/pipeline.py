@@ -352,6 +352,7 @@ def _cli(argv: list[str] | None = None) -> int:
     import argparse
     import json
     import os
+    import shutil
     import sys
     import tempfile
 
@@ -392,26 +393,31 @@ def _cli(argv: list[str] | None = None) -> int:
         return out
 
     if os.environ.get("LLM_BASE_URL") and (os.environ.get("LLM_MODEL") or os.environ.get("TEACHER_MODEL")):
-        llm = OpenAICompatClient(role="teacher")
+        llm = OpenAICompatClient.teacher_from_env()
     else:
         llm = MockLLM()
 
     workdir = args.workdir or tempfile.mkdtemp(prefix="skill-evolution-")
-    store = SkillStore(workdir)
-    runner = EvolutionRunner(store, llm, eval_fn, EvolutionConfig(max_iterations=iterations, H=2, seed=0))
-    val = [s for s in samples if s.get("solvable", True)] or samples
-    runner.seed(initial_skill, DEFAULT_META_SKILLS, val)
-    for t in range(1, iterations + 1):
-        rep = runner.run_iteration(t, samples, val)
-        if rep.status == "all_passed":
-            break
+    owns_workdir = args.workdir is None  # 仅自动创建的临时目录在结束后清理
+    try:
+        store = SkillStore(workdir)
+        runner = EvolutionRunner(store, llm, eval_fn, EvolutionConfig(max_iterations=iterations, H=2, seed=0))
+        val = [s for s in samples if s.get("solvable", True)] or samples
+        runner.seed(initial_skill, DEFAULT_META_SKILLS, val)
+        for t in range(1, iterations + 1):
+            rep = runner.run_iteration(t, samples, val)
+            if rep.status == "all_passed":
+                break
 
-    payload = get_active_skills(store)
-    store.close()
-    out = payload["skills"]  # 全文 skill（get_active_skills top_n=1）
-    with open(args.output, "w", encoding="utf-8") as f:
-        json.dump(out, f, ensure_ascii=False, indent=2)
-    return 0
+        payload = get_active_skills(store)
+        store.close()
+        out = payload["skills"]  # 全文 skill（get_active_skills top_n=1）
+        with open(args.output, "w", encoding="utf-8") as f:
+            json.dump(out, f, ensure_ascii=False, indent=2)
+        return 0
+    finally:
+        if owns_workdir:
+            shutil.rmtree(workdir, ignore_errors=True)
 
 
 if __name__ == "__main__":

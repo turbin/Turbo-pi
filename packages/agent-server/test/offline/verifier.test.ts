@@ -173,6 +173,19 @@ describe("verifyAndCanonicalize", () => {
 		const { catalog } = await buildSkillCatalog(store, 10);
 		expect(catalog).toContain('<skill name="retry-with-backoff">Retry flaky steps with exponential backoff</skill>');
 	});
+
+	it("rolls back the whole batch when one item fails mid-promotion", async () => {
+		const store = await makeStore();
+		// Distinct content (passes dedupe) but the same explicit id: the second
+		// insert violates the PRIMARY KEY and must roll back the first insert too.
+		const items = [
+			{ id: "dup", quality: 0.9, title: "first insight", payload: { text: "first insight" } },
+			{ id: "dup", quality: 0.8, title: "second insight", payload: { text: "second insight" } },
+		];
+		await expect(verifyAndCanonicalize(items, store)).rejects.toThrow(/UNIQUE constraint/);
+		expect(await store.getById("dup")).toBeNull();
+		expect(await store.listActive("EVIDENCE", 10)).toHaveLength(0);
+	});
 });
 
 describe("canonicalize helpers", () => {
@@ -300,5 +313,12 @@ describe("promoteStagedOutputs", () => {
 		const evidence = await store.listActive("EVIDENCE", 10);
 		expect(evidence).toHaveLength(1);
 		expect(evidence[0]?.title).toBe("card one");
+	});
+
+	it("names the missing staged file and the pipeline stage when outputs are absent", async () => {
+		const dir = makeTempDir();
+		const store = await makeStore();
+		await expect(promoteStagedOutputs(dir, store)).rejects.toThrow(/staged output .*skills\.json/);
+		await expect(promoteStagedOutputs(dir, store)).rejects.toThrow(/pipeline stage must run first/);
 	});
 });

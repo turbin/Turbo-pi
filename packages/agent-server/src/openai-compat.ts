@@ -56,7 +56,16 @@ export function toOpenAIRequest(payload: InjectionPayload, model: Model<"openai-
 	return request;
 }
 
-function toOpenAIMessage(msg: Message): OpenAIRequestMessage {
+/**
+ * What {@link toOpenAIMessage} actually accepts at runtime: pi-ai Context
+ * messages or the normalized OpenAI-style messages OpenAI-compatible clients
+ * send (server.ts forwards these after joining content part arrays into
+ * strings). The declared parameter type used to claim pi-ai only, which was
+ * dishonest about the OpenAI-shaped pass-through path.
+ */
+export type OpenAIInputMessage = Message | OpenAIRequestMessage;
+
+function toOpenAIMessage(msg: OpenAIInputMessage): OpenAIRequestMessage {
 	// OpenAI clients (e.g. Kimi Code) send the system prompt as a message and
 	// keep history in OpenAI shape; pass these through instead of letting them
 	// fall into the toolResult branch (which produced tool messages without
@@ -74,11 +83,11 @@ function toOpenAIMessage(msg: Message): OpenAIRequestMessage {
 		if (typeof msg.content === "string") {
 			return { role: "user", content: msg.content };
 		}
-		const content: OpenAIContentPart[] = msg.content.map((part) =>
-			part.type === "text"
-				? { type: "text", text: part.text }
-				: { type: "image_url", image_url: { url: `data:${part.mimeType};base64,${part.data}` } },
-		);
+		const content: OpenAIContentPart[] = (msg.content ?? []).map((part) => {
+			if (part.type === "text") return { type: "text", text: part.text };
+			if (part.type === "image_url") return part; // already OpenAI-shaped
+			return { type: "image_url", image_url: { url: `data:${part.mimeType};base64,${part.data}` } };
+		});
 		return { role: "user", content };
 	}
 
@@ -100,12 +109,12 @@ function toOpenAIMessage(msg: Message): OpenAIRequestMessage {
 		return message;
 	}
 
-	// toolResult
-	const toolCallId = msg.toolCallId ?? (msg as unknown as { tool_call_id?: string }).tool_call_id;
+	// toolResult (pi-ai) / tool (OpenAI-style)
+	const toolCallId = (msg as { toolCallId?: string }).toolCallId ?? (msg as { tool_call_id?: string }).tool_call_id;
 	if (typeof msg.content === "string") {
 		return { role: "tool", content: msg.content, tool_call_id: toolCallId };
 	}
-	const text = msg.content
+	const text = (msg.content ?? [])
 		.filter((part) => part.type === "text")
 		.map((part) => part.text)
 		.join("");

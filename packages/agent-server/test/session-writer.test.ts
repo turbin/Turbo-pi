@@ -142,6 +142,25 @@ describe("SessionWriter (pi-native session JSONL)", () => {
 		expect(() => writer.writeSessionHeader({ id: "s-8", cwd: "/tmp/work" })).toThrow(/header/);
 		await writer.close();
 	});
+
+	it("rejects a second writer on the same path until the first is closed", async () => {
+		const writer = new SessionWriter(path);
+		expect(() => new SessionWriter(path)).toThrow(/already open/);
+		await writer.close();
+		// close() releases the path, so a new writer can take it over.
+		const second = new SessionWriter(path);
+		second.writeSessionHeader({ id: "s-reuse", cwd: "/tmp/work" });
+		await second.close();
+	});
+
+	it("surfaces a mid-stream write error on the next write and on close", async () => {
+		const badPath = join(dir, "no-such-dir", "session.jsonl");
+		const writer = new SessionWriter(badPath);
+		// The open failure (ENOENT) arrives asynchronously as a stream 'error'.
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(() => writer.writeSessionHeader({ id: "s-x", cwd: "/tmp/work" })).toThrow(/ENOENT/);
+		await expect(writer.close()).rejects.toThrow(/ENOENT/);
+	});
 });
 
 describe("buildAssistantMessage", () => {
@@ -214,6 +233,11 @@ describe("buildAssistantMessage", () => {
 
 	it("returns null for an aborted stream with no terminal event", () => {
 		const events: StreamEvent[] = [{ type: "start" }, { type: "text_delta", contentIndex: 0, delta: "partial" }];
+		expect(buildAssistantMessage(events, model)).toBeNull();
+	});
+
+	it("returns null when the done stream produced no content parts", () => {
+		const events: StreamEvent[] = [{ type: "start" }, { type: "done", reason: "stop", usage: usage(3, 0) }];
 		expect(buildAssistantMessage(events, model)).toBeNull();
 	});
 });
@@ -332,5 +356,10 @@ describe("buildAssistantMessageFromOpenAI", () => {
 		expect(message?.content).toEqual([{ type: "text", text: "ok" }]);
 		expect(message?.stopReason).toBe("stop");
 		expect(message?.usage.totalTokens).toBe(0);
+	});
+
+	it("returns null when the completed stream produced no content", () => {
+		const chunks: OpenAIChatChunk[] = [{ choices: [{ delta: {}, finish_reason: "stop" }] }];
+		expect(buildAssistantMessageFromOpenAI(chunks, model)).toBeNull();
 	});
 });

@@ -370,4 +370,23 @@ describe("writeCheckpoint / readCheckpoint", () => {
 		expect((await latestCheckpoint(store, "evolution"))?.id).toBe(newer);
 		expect(await readCheckpoint(store, "ckpt-does-not-exist")).toBeNull();
 	});
+
+	it("separates hash inputs so concatenated values cannot collide", async () => {
+		const store = await makeStore();
+		// Without separators both hash "ev123" ("ev"+12+"3" == "ev1"+2+"3").
+		const a = await writeCheckpoint(store, { kind: "ev", epoch: 12, metric: 0, snapshot: "3" });
+		const b = await writeCheckpoint(store, { kind: "ev1", epoch: 2, metric: 0, snapshot: "3" });
+		expect(a).not.toBe(b);
+	});
+
+	it("treats re-writing the same checkpoint id as a no-op success (retry-safe)", async () => {
+		const store = await makeStore();
+		const input = { kind: "evolution", epoch: 42, metric: 7, snapshot: JSON.stringify({ promoted: 7 }) };
+		const id = await writeCheckpoint(store, input);
+		const retry = await writeCheckpoint(store, input);
+		expect(retry).toBe(id);
+		const checkpoint = await readCheckpoint(store, id);
+		expect(checkpoint?.epoch).toBe(42);
+		expect(checkpoint?.metric).toBe(7);
+	});
 });

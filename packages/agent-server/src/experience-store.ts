@@ -225,6 +225,25 @@ export class ExperienceStore {
 		return removed;
 	}
 
+	/**
+	 * Run `fn` inside a single SQLite transaction so a mid-batch failure rolls
+	 * back every write of the batch. Manual BEGIN/COMMIT instead of
+	 * db.transaction: the store's methods are async facades over synchronous
+	 * better-sqlite3 calls, and db.transaction rejects promise-returning
+	 * functions. Must not be nested (SQLite has no nested BEGIN).
+	 */
+	async transaction<T>(fn: () => Promise<T>): Promise<T> {
+		this.db.exec("BEGIN");
+		try {
+			const result = await fn();
+			this.db.exec("COMMIT");
+			return result;
+		} catch (err) {
+			this.db.exec("ROLLBACK");
+			throw err;
+		}
+	}
+
 	async search(query: string, limit: number): Promise<Experience[]> {
 		const rows = this.db
 			.prepare(`
@@ -239,10 +258,16 @@ export class ExperienceStore {
 		return rows.map(rowToExperience);
 	}
 
+	/**
+	 * Insert a checkpoint row. INSERT OR IGNORE keeps retries idempotent:
+	 * re-writing the same deterministic id is a no-op instead of a UNIQUE
+	 * constraint failure (checkpoint ids hash their content, so the same id
+	 * always carries the same content).
+	 */
 	async insertCheckpoint(checkpoint: Checkpoint): Promise<void> {
 		this.db
 			.prepare(`
-				INSERT INTO checkpoints (id, kind, epoch, metric, snapshot, created_at)
+				INSERT OR IGNORE INTO checkpoints (id, kind, epoch, metric, snapshot, created_at)
 				VALUES (?, ?, ?, ?, ?, ?)
 			`)
 			.run(

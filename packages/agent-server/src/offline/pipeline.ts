@@ -270,7 +270,12 @@ function extractText(content: unknown): string {
 }
 
 function readJsonArray(path: string): unknown[] {
-	const data: unknown = JSON.parse(readFileSync(path, "utf-8"));
+	let data: unknown;
+	try {
+		data = JSON.parse(readFileSync(path, "utf-8"));
+	} catch (err) {
+		throw new Error(`offline pipeline: failed to read JSON array from ${path}: ${(err as Error).message}`);
+	}
 	if (!Array.isArray(data)) throw new Error(`offline pipeline: expected a JSON array in ${path}`);
 	return data;
 }

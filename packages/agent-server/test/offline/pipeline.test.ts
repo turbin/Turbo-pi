@@ -1,13 +1,28 @@
 import type { spawn } from "node:child_process";
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { collectTrajectories, runDormantRescore, runOfflinePipeline } from "../../src/offline/pipeline.ts";
 
 type SpawnFn = typeof spawn;
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+	while (tempDirs.length > 0) {
+		const dir = tempDirs.pop();
+		if (dir) rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+function makeTempDir(prefix: string): string {
+	const dir = mkdtempSync(join(tmpdir(), prefix));
+	tempDirs.push(dir);
+	return dir;
+}
 
 function writeJsonl(dir: string, name: string, entries: (Record<string, unknown> | string)[]): string {
 	const path = join(dir, name);
@@ -58,8 +73,10 @@ function piNativeSession(): Record<string, unknown>[] {
 
 interface FakeSpawnFailure {
 	module: string;
-	code: number;
+	code: number | null;
 	stderr: string;
+	/** Set when the process was killed by a signal (e.g. spawn timeout SIGTERM) instead of exiting. */
+	signal?: string;
 }
 
 /**
@@ -77,7 +94,7 @@ function makeFakeSpawn(outputs: Record<string, unknown[]>, failure?: FakeSpawnFa
 		process.nextTick(() => {
 			if (failure && failure.module === module) {
 				proc.stderr.emit("data", failure.stderr);
-				proc.emit("close", failure.code, null);
+				proc.emit("close", failure.code, failure.signal ?? null);
 				return;
 			}
 			if (outPath && outputs[module]) writeFileSync(outPath, JSON.stringify(outputs[module]));
@@ -90,7 +107,7 @@ function makeFakeSpawn(outputs: Record<string, unknown[]>, failure?: FakeSpawnFa
 
 describe("collectTrajectories", () => {
 	it("parses a pi-native session JSONL and pairs toolCall parts with toolResults", () => {
-		const dir = mkdtempSync(join(tmpdir(), "pipeline-collect-"));
+		const dir = makeTempDir("pipeline-collect-");
 		writeJsonl(dir, "session-a.jsonl", piNativeSession());
 
 		const trajectories = collectTrajectories(dir);
@@ -112,7 +129,7 @@ describe("collectTrajectories", () => {
 	});
 
 	it("tolerates flat message entries and the custom request format", () => {
-		const dir = mkdtempSync(join(tmpdir(), "pipeline-collect-flat-"));
+		const dir = makeTempDir("pipeline-collect-flat-");
 		writeJsonl(dir, "flat.jsonl", [
 			{ type: "message", role: "user", content: "flat user task" },
 			{ type: "message", role: "assistant", content: "flat assistant reply" },
@@ -144,7 +161,7 @@ describe("collectTrajectories", () => {
 	});
 
 	it("counts the reply once when stream_event customs duplicate a reconstructed assistant message", () => {
-		const dir = mkdtempSync(join(tmpdir(), "pipeline-collect-dedup-"));
+		const dir = makeTempDir("pipeline-collect-dedup-");
 		writeJsonl(dir, "dup.jsonl", [
 			{ type: "session", version: 3, id: "s-3", timestamp: "2026-07-21T00:00:00Z", cwd: "/tmp" },
 			{
@@ -182,7 +199,7 @@ describe("collectTrajectories", () => {
 	});
 
 	it("skips malformed lines and files with no content, and ignores non-jsonl files", () => {
-		const dir = mkdtempSync(join(tmpdir(), "pipeline-collect-robust-"));
+		const dir = makeTempDir("pipeline-collect-robust-");
 		writeJsonl(dir, "good.jsonl", [
 			"{not json",
 			{
@@ -206,8 +223,8 @@ describe("collectTrajectories", () => {
 
 describe("runOfflinePipeline", () => {
 	it("runs the three Python stages and stages skills/sops/cards into outputDir", async () => {
-		const inputDir = mkdtempSync(join(tmpdir(), "pipeline-run-in-"));
-		const outputDir = join(mkdtempSync(join(tmpdir(), "pipeline-run-out-")), "out");
+		const inputDir = makeTempDir("pipeline-run-in-");
+		const outputDir = join(makeTempDir("pipeline-run-out-"), "out");
 		writeJsonl(inputDir, "session-a.jsonl", piNativeSession());
 
 		const outputs = {
@@ -230,8 +247,8 @@ describe("runOfflinePipeline", () => {
 	});
 
 	it("rejects with the stderr tail when a stage exits non-zero", async () => {
-		const inputDir = mkdtempSync(join(tmpdir(), "pipeline-fail-in-"));
-		const outputDir = join(mkdtempSync(join(tmpdir(), "pipeline-fail-out-")), "out");
+		const inputDir = makeTempDir("pipeline-fail-in-");
+		const outputDir = join(makeTempDir("pipeline-fail-out-"), "out");
 		writeJsonl(inputDir, "session-a.jsonl", piNativeSession());
 
 		const spawnFn = makeFakeSpawn(
@@ -243,9 +260,23 @@ describe("runOfflinePipeline", () => {
 		);
 	});
 
+	it("rejects with the signal and timeout when a stage is killed", async () => {
+		const inputDir = makeTempDir("pipeline-kill-in-");
+		const outputDir = join(makeTempDir("pipeline-kill-out-"), "out");
+		writeJsonl(inputDir, "session-a.jsonl", piNativeSession());
+
+		const spawnFn = makeFakeSpawn(
+			{ "skill_evolution.pipeline": [] },
+			{ module: "sop_lifecycle", code: null, signal: "SIGTERM", stderr: "" },
+		);
+		await expect(runOfflinePipeline(inputDir, outputDir, { spawnFn, timeoutMs: 1234 })).rejects.toThrow(
+			/python -m sop_lifecycle killed by SIGTERM \(timeout 1234ms\)/,
+		);
+	});
+
 	it("rejects when a stage writes a non-array output", async () => {
-		const inputDir = mkdtempSync(join(tmpdir(), "pipeline-badjson-in-"));
-		const outputDir = join(mkdtempSync(join(tmpdir(), "pipeline-badjson-out-")), "out");
+		const inputDir = makeTempDir("pipeline-badjson-in-");
+		const outputDir = join(makeTempDir("pipeline-badjson-out-"), "out");
 		writeJsonl(inputDir, "session-a.jsonl", piNativeSession());
 
 		// sop_lifecycle intentionally absent: the wrapper writes a non-array instead.
@@ -332,8 +363,8 @@ describe.runIf(hasPython3)("runOfflinePipeline (real vendored Python, MockLLM fa
 			savedEnv.set(key, process.env[key]);
 			delete process.env[key];
 		}
-		const inputDir = mkdtempSync(join(tmpdir(), "pipeline-e2e-in-"));
-		const outputDir = join(mkdtempSync(join(tmpdir(), "pipeline-e2e-out-")), "out");
+		const inputDir = makeTempDir("pipeline-e2e-in-");
+		const outputDir = join(makeTempDir("pipeline-e2e-out-"), "out");
 		writeJsonl(inputDir, "session-a.jsonl", piNativeSession());
 
 		const result = await runOfflinePipeline(inputDir, outputDir, { timeoutMs: 120_000 });

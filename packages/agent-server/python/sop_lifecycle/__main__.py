@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 import tempfile
 
@@ -74,26 +75,30 @@ def main(argv: list[str] | None = None) -> int:
     tools = {name: _echo_tool for name in tool_names}
     tool_docs = {name: f"{name}(**kwargs) -> str：会话轨迹中观测到的工具。" for name in tool_names}
     if os.environ.get("LLM_BASE_URL") and (os.environ.get("LLM_MODEL") or os.environ.get("TEACHER_MODEL")):
-        llm = OpenAICompatClient(role="teacher")
+        llm = OpenAICompatClient.teacher_from_env()
     else:
         llm = MockLLM()
 
     cfg = SopConfig(epochs=1, construct_epochs=1, batch_size=len(trajs), seed=0)
-    store = SkillStore(tempfile.mkdtemp(prefix="sop-lifecycle-"))
-    lifecycle = SopLifecycle(store, llm, tools, tool_docs, config=cfg)
-    lifecycle.run(trajs, [])
+    workdir = tempfile.mkdtemp(prefix="sop-lifecycle-")
+    try:
+        store = SkillStore(workdir)
+        lifecycle = SopLifecycle(store, llm, tools, tool_docs, config=cfg)
+        lifecycle.run(trajs, [])
 
-    out = [
-        {
-            "name": s["name"],
-            "code": s["code"],
-            "docstring": s["docstring"],
-            "schema": s["schema"],
-            "tools": s["tools"],
-        }
-        for s in store.get_sops("active")
-    ]
-    store.close()
+        out = [
+            {
+                "name": s["name"],
+                "code": s["code"],
+                "docstring": s["docstring"],
+                "schema": s["schema"],
+                "tools": s["tools"],
+            }
+            for s in store.get_sops("active")
+        ]
+        store.close()
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
     return 0

@@ -1,10 +1,25 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { ExperienceStore } from "../../src/experience-store.ts";
 import { etlSessionFiles } from "../../src/offline/etl.ts";
 import type { Experience } from "../../src/types.ts";
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+	while (tempDirs.length > 0) {
+		const dir = tempDirs.pop();
+		if (dir) rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+function makeTempDir(prefix: string): string {
+	const dir = mkdtempSync(join(tmpdir(), prefix));
+	tempDirs.push(dir);
+	return dir;
+}
 
 function writeJsonl(dir: string, name: string, entries: Record<string, unknown>[]): string {
 	const path = join(dir, name);
@@ -30,7 +45,7 @@ async function dormantMatching(store: ExperienceStore, text: string): Promise<Ex
 
 describe("etlSessionFiles", () => {
 	it("extracts evidence candidates from pi-native session JSONL", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "etl-pi-native-"));
+		const dir = makeTempDir("etl-pi-native-");
 		const path = writeJsonl(dir, "session.jsonl", [
 			{ type: "session", version: 3, id: "s-1", timestamp: "2026-07-20T00:00:00Z", cwd: "/tmp" },
 			{
@@ -87,7 +102,7 @@ describe("etlSessionFiles", () => {
 	});
 
 	it("extracts evidence candidates from the custom proxy-handler JSONL format", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "etl-custom-"));
+		const dir = makeTempDir("etl-custom-");
 		const path = writeJsonl(dir, "session.jsonl", [
 			{
 				type: "request",
@@ -143,7 +158,7 @@ describe("etlSessionFiles", () => {
 	});
 
 	it("mines the streamed reply from stream_event custom entries (Task 8 format)", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "etl-stream-event-"));
+		const dir = makeTempDir("etl-stream-event-");
 		const path = writeJsonl(dir, "session.jsonl", [
 			{ type: "session", version: 3, id: "s-9", timestamp: "2026-07-21T00:00:00Z", cwd: "/tmp" },
 			{
@@ -201,7 +216,7 @@ describe("etlSessionFiles", () => {
 	});
 
 	it("mines the reply exactly once when both an assistant message entry and stream_event customs exist", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "etl-dedup-"));
+		const dir = makeTempDir("etl-dedup-");
 		const path = writeJsonl(dir, "session.jsonl", [
 			{ type: "session", version: 3, id: "s-10", timestamp: "2026-07-21T00:00:00Z", cwd: "/tmp" },
 			{
@@ -261,7 +276,7 @@ describe("etlSessionFiles", () => {
 	});
 
 	it("is idempotent: rerunning on the same file inserts nothing", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "etl-idem-"));
+		const dir = makeTempDir("etl-idem-");
 		const path = writeJsonl(dir, "session.jsonl", [
 			{
 				type: "message",
@@ -284,7 +299,7 @@ describe("etlSessionFiles", () => {
 	});
 
 	it("skips malformed lines and filters out short fragments", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "etl-robust-"));
+		const dir = makeTempDir("etl-robust-");
 		const path = join(dir, "session.jsonl");
 		writeFileSync(
 			path,
@@ -310,6 +325,56 @@ describe("etlSessionFiles", () => {
 		const found = await dormantMatching(store, "cache");
 		expect(found).toHaveLength(1);
 		expect(found[0].payload.text).toContain("cache must be invalidated");
+		store.close();
+	});
+
+	it("mines only the text parts of an assistant message with mixed thinking+text content", async () => {
+		const dir = makeTempDir("etl-thinking-");
+		const path = writeJsonl(dir, "session.jsonl", [
+			{
+				type: "message",
+				id: "m-1",
+				parentId: null,
+				timestamp: "2026-07-21T00:00:01Z",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "thinking", thinking: "hidden reasoning that should never become a candidate." },
+						{ type: "text", text: "Always restart the gateway after rotating its auth token." },
+					],
+					timestamp: 1,
+				},
+			},
+		]);
+		const store = await makeStore();
+		const count = await etlSessionFiles([path], store);
+		expect(count).toBe(1);
+		expect(await dormantMatching(store, "restart the gateway")).toHaveLength(1);
+		expect(await dormantMatching(store, "hidden reasoning")).toHaveLength(0);
+		store.close();
+	});
+
+	it("skips assistant messages with empty content (no candidate pinned)", async () => {
+		const dir = makeTempDir("etl-empty-");
+		const path = writeJsonl(dir, "session.jsonl", [
+			{
+				type: "message",
+				id: "m-1",
+				parentId: null,
+				timestamp: "2026-07-21T00:00:01Z",
+				message: { role: "assistant", content: [], timestamp: 1 },
+			},
+			{
+				type: "message",
+				id: "m-2",
+				parentId: "m-1",
+				timestamp: "2026-07-21T00:00:02Z",
+				message: { role: "assistant", content: "", timestamp: 2 },
+			},
+		]);
+		const store = await makeStore();
+		expect(await etlSessionFiles([path], store)).toBe(0);
+		expect(await store.listDormant("EVIDENCE", 10)).toHaveLength(0);
 		store.close();
 	});
 });

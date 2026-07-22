@@ -47,6 +47,8 @@ export interface VerifyItem {
 /**
  * Promote verified items into the store. Returns the number of entries that
  * are active because of this call (new inserts + dormant rows promoted).
+ * The whole batch runs in one transaction: a mid-batch failure rolls back
+ * every insert/promotion of this call instead of leaving a half-promoted batch.
  */
 export async function verifyAndCanonicalize(items: VerifyItem[], store: ExperienceStore): Promise<number> {
 	const candidates = dedupeCandidates(
@@ -55,31 +57,33 @@ export async function verifyAndCanonicalize(items: VerifyItem[], store: Experien
 	);
 
 	let activeCount = 0;
-	for (const item of candidates) {
-		const normalized = normalizeItem(item);
-		const hash = item.contentHash ?? contentHashFor(normalized);
-		const existing = await store.getByContentHash(hash);
-		if (existing) {
-			if (existing.status === "dormant") {
-				await store.promoteToActive(existing.id, item.quality);
-				activeCount++;
+	await store.transaction(async () => {
+		for (const item of candidates) {
+			const normalized = normalizeItem(item);
+			const hash = item.contentHash ?? contentHashFor(normalized);
+			const existing = await store.getByContentHash(hash);
+			if (existing) {
+				if (existing.status === "dormant") {
+					await store.promoteToActive(existing.id, item.quality);
+					activeCount++;
+				}
+				continue;
 			}
-			continue;
+			await store.insert({
+				id: item.id ?? `exp-${hash.slice(0, 16)}`,
+				type: normalized.type,
+				title: normalized.title,
+				payload: normalized.payload,
+				quality: item.quality,
+				status: "active",
+				sourceSession: item.sourceSession ?? "",
+				sourceEntryId: item.sourceEntryId ?? "",
+				contentHash: hash,
+				createdAt: new Date().toISOString(),
+			});
+			activeCount++;
 		}
-		await store.insert({
-			id: item.id ?? `exp-${hash.slice(0, 16)}`,
-			type: normalized.type,
-			title: normalized.title,
-			payload: normalized.payload,
-			quality: item.quality,
-			status: "active",
-			sourceSession: item.sourceSession ?? "",
-			sourceEntryId: item.sourceEntryId ?? "",
-			contentHash: hash,
-			createdAt: new Date().toISOString(),
-		});
-		activeCount++;
-	}
+	});
 	return activeCount;
 }
 
@@ -197,7 +201,20 @@ export function cardsToStaged(cards: StagedCard[]): VerifyItem[] {
 }
 
 function readJsonArray(path: string): unknown[] {
-	const data: unknown = JSON.parse(readFileSync(path, "utf-8"));
+	let raw: string;
+	try {
+		raw = readFileSync(path, "utf-8");
+	} catch (err) {
+		throw new Error(
+			`verifier: staged output ${path} is missing or unreadable; the offline pipeline stage must run first (${(err as Error).message})`,
+		);
+	}
+	let data: unknown;
+	try {
+		data = JSON.parse(raw);
+	} catch (err) {
+		throw new Error(`verifier: failed to parse JSON in ${path}: ${(err as Error).message}`);
+	}
 	if (!Array.isArray(data)) throw new Error(`verifier: expected a JSON array in ${path}`);
 	return data;
 }

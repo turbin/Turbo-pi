@@ -278,8 +278,8 @@ def _cli(argv: list[str] | None = None) -> int:
         )
 
     if os.environ.get("LLM_BASE_URL") and (os.environ.get("LLM_MODEL") or os.environ.get("TEACHER_MODEL")):
-        student = OpenAICompatClient(role="student")
-        teacher = OpenAICompatClient(role="teacher")
+        student = OpenAICompatClient()  # 打分只需 student；配置走环境变量
+        teacher = OpenAICompatClient.teacher_from_env()
         judges = None  # 缺省复用 extractor 三次投票
     else:
         from .testing import make_judge_mock, make_scoring_mock, make_teacher_mock

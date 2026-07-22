@@ -27,13 +27,29 @@ export interface SessionHeaderOptions {
  * Entry ids are random UUIDs; pi's reader only requires unique non-empty
  * strings (pi itself uses uuidv7 tails).
  */
+/** Paths with an open SessionWriter; released on close(). */
+const openSessionPaths = new Set<string>();
+
 export class SessionWriter {
 	private stream: WriteStream;
+	private readonly path: string;
 	private headerWritten = false;
 	private lastEntryId: string | null = null;
+	/** First WriteStream error, captured at construction so a mid-stream disk failure surfaces on the next write/close. */
+	private streamError: Error | null = null;
 
 	constructor(path: string) {
+		if (openSessionPaths.has(path)) {
+			throw new Error(`SessionWriter: ${path} is already open by another SessionWriter`);
+		}
+		openSessionPaths.add(path);
+		this.path = path;
 		this.stream = createWriteStream(path, { flags: "a" });
+		// Record stream errors instead of letting them surface only at close
+		// (or crash as an unhandled 'error' event mid-stream).
+		this.stream.on("error", (err) => {
+			if (!this.streamError) this.streamError = err;
+		});
 	}
 
 	writeSessionHeader(options: SessionHeaderOptions): void {
@@ -74,12 +90,25 @@ export class SessionWriter {
 	}
 
 	private writeLine(entry: Record<string, unknown>): void {
+		if (this.streamError) throw this.streamError;
 		this.stream.write(`${JSON.stringify(entry)}\n`);
 	}
 
 	close(): Promise<void> {
 		return new Promise((resolve, reject) => {
-			this.stream.end((err: Error | null | undefined) => (err ? reject(err) : resolve()));
+			// An errored stream is already destroyed; end() would throw
+			// synchronously instead of invoking the callback.
+			if (this.streamError) {
+				openSessionPaths.delete(this.path);
+				reject(this.streamError);
+				return;
+			}
+			this.stream.end((err: Error | null | undefined) => {
+				openSessionPaths.delete(this.path);
+				const failure = err ?? this.streamError;
+				if (failure) reject(failure);
+				else resolve();
+			});
 		});
 	}
 }
@@ -91,7 +120,8 @@ export class SessionWriter {
  * Content parts (text / thinking / toolCall) are reassembled per
  * `contentIndex` in first-seen order. Returns null unless the stream ended
  * with a `done` event: on error/abort the reply stays recorded only as
- * `stream_event` custom entries.
+ * `stream_event` custom entries. Also returns null when the reassembled
+ * content is empty, so no empty assistant `message` entry is written.
  */
 export function buildAssistantMessage(events: StreamEvent[], model: Model<any>): AssistantMessage | null {
 	const done = events.find((event) => event.type === "done");
@@ -154,6 +184,9 @@ export function buildAssistantMessage(events: StreamEvent[], model: Model<any>):
 			content.push({ type: "toolCall", id: call.id, name: call.name, arguments: args });
 		}
 	}
+
+	// A completed stream with zero content writes no assistant message entry.
+	if (content.length === 0) return null;
 
 	return {
 		role: "assistant",
@@ -221,7 +254,9 @@ function mapFinishReason(reason: string): AssistantMessage["stopReason"] | null 
  * are reassembled into toolCall parts by `index` in first-seen order. The
  * final `usage` chunk and `finish_reason` map to `usage`/`stopReason`.
  * Returns null unless a mappable `finish_reason` was seen: on error/abort
- * the reply stays recorded only as `stream_event` custom entries.
+ * the reply stays recorded only as `stream_event` custom entries. Also
+ * returns null when the reassembled content is empty, so no empty assistant
+ * `message` entry is written.
  */
 export function buildAssistantMessageFromOpenAI(chunks: OpenAIChatChunk[], model: Model<any>): AssistantMessage | null {
 	let text = "";
@@ -279,6 +314,9 @@ export function buildAssistantMessageFromOpenAI(chunks: OpenAIChatChunk[], model
 		}
 		content.push({ type: "toolCall", id: call.id, name: call.name, arguments: args });
 	}
+
+	// A completed stream with zero content writes no assistant message entry.
+	if (content.length === 0) return null;
 
 	return {
 		role: "assistant",

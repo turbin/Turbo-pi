@@ -144,20 +144,24 @@ pi session JSONL → ETL → EVIDENCE 候选
 
 ## 6. pi session JSONL 格式
 
-替换 P0 的自定义 JSONL，对齐 pi 原生格式：
+替换 P0 的自定义 JSONL，对齐 pi 原生格式（v3，`packages/agent/src/harness/session/jsonl-storage.ts`）：
 
 ```jsonl
-{"type":"session","version":1,"id":"...","created_at":"..."}
-{"type":"message","id":"...","parentId":null,"role":"user","content":"...","timestamp":...}
-{"type":"message","id":"...","parentId":"...","role":"assistant","content":[{"type":"text","text":"..."}],"timestamp":...}
-{"type":"custom","name":"experience_injection","data":{"retrieved":["exp-1"]}}
+{"type":"session","version":3,"id":"...","timestamp":"2026-07-21T00:00:00.000Z","cwd":"...","metadata":{"model":"agent-auto","provider":"local"}}
+{"type":"message","id":"...","parentId":null,"timestamp":"...","message":{"role":"user","content":"...","timestamp":...}}
+{"type":"custom","id":"...","parentId":"...","timestamp":"...","customType":"experience_injection","data":{"retrieved":["exp-1"]}}
+{"type":"custom","id":"...","parentId":"...","timestamp":"...","customType":"custom_message","data":{"messages":[...],"systemPrompt":"...","tools":[...]}}
+{"type":"custom","id":"...","parentId":"...","timestamp":"...","customType":"response_started"}
+{"type":"custom","id":"...","parentId":"...","timestamp":"...","customType":"stream_event","data":{"type":"text_delta","contentIndex":0,"delta":"..."}}
+{"type":"message","id":"...","parentId":"...","timestamp":"...","message":{"role":"assistant","content":[{"type":"text","text":"..."}],"api":"openai-completions","provider":"local","model":"agent-auto","usage":{...},"stopReason":"stop","timestamp":...}}
+{"type":"custom","id":"...","parentId":"...","timestamp":"...","customType":"response_completed"}
 ```
 
 关键特性：
-- `type:"session"` header：记录 session 元数据。
-- `id`/`parentId`：支持分支/回退的树状结构。
-- `custom` entry：存经验元数据不进上下文。
-- `custom_message` entry：注入后随会话重放。
+- `type:"session"` header（`version:3`）：记录 session 元数据（id/timestamp/cwd/metadata）。
+- 树状 entry（`{type, id, parentId, timestamp, ...}`）：`parentId` 链向前一条 entry，支持分支/回退；消息嵌套在 `message` payload 下。
+- `type:"custom"` entry 以 `customType` 区分：`experience_injection`（检索结果）、`custom_message`（注入后的完整上下文，随会话重放）、`stream_event`（流事件）、`response_started`/`response_completed`/`error`/`aborted`（终态标记）。
+- 流正常完成时重建的 assistant `message` entry 与 `stream_event` 并存；error/abort 时只留 `stream_event` + 终态 custom entry。
 
 ---
 
