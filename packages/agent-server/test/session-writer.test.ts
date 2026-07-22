@@ -3,7 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Model, Usage } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { buildAssistantMessage, SessionWriter } from "../src/session-writer.ts";
+import {
+	buildAssistantMessage,
+	buildAssistantMessageFromOpenAI,
+	type OpenAIChatChunk,
+	SessionWriter,
+} from "../src/session-writer.ts";
 import type { StreamEvent } from "../src/toolcall-validator.ts";
 
 /**
@@ -210,5 +215,122 @@ describe("buildAssistantMessage", () => {
 	it("returns null for an aborted stream with no terminal event", () => {
 		const events: StreamEvent[] = [{ type: "start" }, { type: "text_delta", contentIndex: 0, delta: "partial" }];
 		expect(buildAssistantMessage(events, model)).toBeNull();
+	});
+});
+
+describe("buildAssistantMessageFromOpenAI", () => {
+	const model: Model<any> = {
+		id: "agent-auto",
+		name: "agent-auto",
+		api: "openai-completions",
+		provider: "local",
+		baseUrl: "http://127.0.0.1:8367/v1",
+		reasoning: false,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 128000,
+		maxTokens: 8192,
+	};
+
+	it("maps text, thinking, toolCall fragments and usage from OpenAI chunks", () => {
+		const chunks: OpenAIChatChunk[] = [
+			{ choices: [{ delta: { reasoning_content: "let me " } }] },
+			{ choices: [{ delta: { reasoning: "think" } }] },
+			{ choices: [{ delta: { content: "Hello" } }] },
+			{ choices: [{ delta: { content: " world" } }] },
+			{
+				choices: [
+					{
+						delta: {
+							tool_calls: [{ index: 0, id: "call_1", function: { name: "run_tests", arguments: '{"fil' } }],
+						},
+					},
+				],
+			},
+			{ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: 'ter":"unit"}' } }] } }] },
+			{
+				choices: [{ delta: {}, finish_reason: "tool_calls" }],
+				usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+			},
+		];
+		const message = buildAssistantMessageFromOpenAI(chunks, model);
+		expect(message).not.toBeNull();
+		expect(message).toMatchObject({
+			role: "assistant",
+			api: "openai-completions",
+			provider: "local",
+			model: "agent-auto",
+			stopReason: "toolUse",
+			usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15 },
+		});
+		expect(typeof message?.timestamp).toBe("number");
+		expect(message?.content).toEqual([
+			{ type: "thinking", thinking: "let me think" },
+			{ type: "text", text: "Hello world" },
+			{ type: "toolCall", id: "call_1", name: "run_tests", arguments: { filter: "unit" } },
+		]);
+	});
+
+	it("reassembles multiple toolCalls by index in first-seen order", () => {
+		const chunks: OpenAIChatChunk[] = [
+			{
+				choices: [
+					{
+						delta: {
+							tool_calls: [
+								{ index: 0, id: "call_1", function: { name: "read", arguments: '{"path":"a"}' } },
+								{ index: 1, id: "call_2", function: { name: "read", arguments: '{"path":"b"}' } },
+							],
+						},
+					},
+				],
+			},
+			{ choices: [{ delta: {}, finish_reason: "tool_calls" }] },
+		];
+		const message = buildAssistantMessageFromOpenAI(chunks, model);
+		expect(message?.content).toEqual([
+			{ type: "toolCall", id: "call_1", name: "read", arguments: { path: "a" } },
+			{ type: "toolCall", id: "call_2", name: "read", arguments: { path: "b" } },
+		]);
+	});
+
+	it("returns null when no finish_reason was seen (error/abort)", () => {
+		const chunks: OpenAIChatChunk[] = [{ choices: [{ delta: { content: "partial" } }] }];
+		expect(buildAssistantMessageFromOpenAI(chunks, model)).toBeNull();
+	});
+
+	it("returns null for an unmappable finish_reason", () => {
+		const chunks: OpenAIChatChunk[] = [
+			{ choices: [{ delta: { content: "partial" }, finish_reason: "content_filter" }] },
+		];
+		expect(buildAssistantMessageFromOpenAI(chunks, model)).toBeNull();
+	});
+
+	it("falls back to {} for truncated toolCall arguments", () => {
+		const chunks: OpenAIChatChunk[] = [
+			{
+				choices: [
+					{ delta: { tool_calls: [{ index: 0, id: "call_1", function: { name: "read", arguments: '{"pa' } }] } },
+				],
+			},
+			{ choices: [{ delta: {}, finish_reason: "length" }] },
+		];
+		const message = buildAssistantMessageFromOpenAI(chunks, model);
+		expect(message?.stopReason).toBe("length");
+		expect(message?.content).toEqual([{ type: "toolCall", id: "call_1", name: "read", arguments: {} }]);
+	});
+
+	it("tolerates chunks without choices or deltas", () => {
+		const chunks: OpenAIChatChunk[] = [
+			{},
+			{ choices: [] },
+			{ choices: [{}] },
+			{ choices: [{ delta: { content: null } }] },
+			{ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] },
+		];
+		const message = buildAssistantMessageFromOpenAI(chunks, model);
+		expect(message?.content).toEqual([{ type: "text", text: "ok" }]);
+		expect(message?.stopReason).toBe("stop");
+		expect(message?.usage.totalTokens).toBe(0);
 	});
 });

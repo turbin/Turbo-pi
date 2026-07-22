@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
+import type { Model } from "@earendil-works/pi-ai";
 import Fastify, { type FastifyInstance } from "fastify";
 import { ExperienceStore } from "./experience-store.ts";
 import { GatewayClient } from "./gateway-client.ts";
@@ -11,6 +12,7 @@ import { buildInjection } from "./injection.ts";
 import { toOpenAIRequest } from "./openai-compat.ts";
 import { handleStream } from "./proxy-handler.ts";
 import { retrieve } from "./retrieval.ts";
+import { buildAssistantMessageFromOpenAI, type OpenAIChatChunk, SessionWriter } from "./session-writer.ts";
 import type { StreamRequest } from "./types.ts";
 
 export interface CreateServerOptions {
@@ -112,25 +114,48 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 		try {
 			if (body.stream === true) {
 				// OpenAI-compatible clients expect raw OpenAI SSE, not pi-ai events.
-				// Do retrieval/injection manually, then forward to gateway.
-				const query =
-					messages
-						.filter((m: any) => m.role === "user")
-						.map((m: any) => String(m.content))
-						.filter((content: string) => !content.startsWith("<system-reminder>"))
-						.pop() ?? "";
-				console.log("[agent-server] stream query:", query);
-				const retrieved = await retrieve(store, query, 8);
-				console.log(
-					"[agent-server] stream retrieved:",
-					retrieved.map((r) => r.experience.id),
-				);
-				const injected = await buildInjection(context as any, retrieved, { store });
-				const openaiReq = toOpenAIRequest(injected, model as any);
-				const gateway = new GatewayClient(gatewayUrl);
-				const gatewayStream = await gateway.stream({ ...openaiReq, stream: true });
-				reply.header("content-type", "text/event-stream");
-				return reply.send(Readable.fromWeb(gatewayStream as unknown as NodeReadableStream<Uint8Array>));
+				// Do retrieval/injection manually, then forward to gateway. The raw
+				// SSE bytes pass through untouched, but the session is recorded in
+				// the same pi-native JSONL shape handleStream writes.
+				mkdirSync(dirname(sessionPath), { recursive: true });
+				const writer = new SessionWriter(sessionPath);
+				writer.writeSessionHeader({
+					id: basename(sessionPath, ".jsonl"),
+					cwd: process.cwd(),
+					metadata: { model: model.id, provider: model.provider },
+				});
+				try {
+					const query =
+						messages
+							.filter((m: any) => m.role === "user")
+							.map((m: any) => String(m.content))
+							.filter((content: string) => !content.startsWith("<system-reminder>"))
+							.pop() ?? "";
+					console.log("[agent-server] stream query:", query);
+					const retrieved = await retrieve(store, query, 8);
+					console.log(
+						"[agent-server] stream retrieved:",
+						retrieved.map((r) => r.experience.id),
+					);
+					const injected = await buildInjection(context as any, retrieved, { store });
+					const openaiReq = toOpenAIRequest(injected, model as any);
+
+					for (const message of messages) {
+						writer.writeMessage(message);
+					}
+					writer.writeCustomEntry("experience_injection", { retrieved: retrieved.map((r) => r.experience.id) });
+
+					const gateway = new GatewayClient(gatewayUrl);
+					const gatewayStream = await gateway.stream({ ...openaiReq, stream: true });
+					writer.writeCustomEntry("response_started");
+					reply.header("content-type", "text/event-stream");
+					const tee = teeOpenAISSEWithSession(gatewayStream, writer, model as Model<any>);
+					return reply.send(Readable.fromWeb(tee as unknown as NodeReadableStream<Uint8Array>));
+				} catch (err) {
+					writer.writeCustomEntry("error", { message: String(err) });
+					await writer.close();
+					throw err;
+				}
 			}
 
 			const stream = await handleStream({ model, context, options }, { store, gatewayUrl, sessionPath });
@@ -178,6 +203,79 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 	});
 
 	return fastify;
+}
+
+/**
+ * Pass the gateway's raw OpenAI SSE bytes through unchanged while recording
+ * the session: each parsed `data: {...}` chat.completion.chunk payload is
+ * written as a `stream_event` custom entry, and when the stream completes the
+ * accumulated chunks are reconstructed into a pi-native assistant `message`
+ * entry via {@link buildAssistantMessageFromOpenAI}. Malformed payloads are
+ * skipped without disturbing the passthrough. The writer is closed exactly
+ * once, with a terminal custom entry on completion, mid-stream error, or
+ * cancel (`response_completed` / `error` / `aborted`), and no assistant
+ * message is written on error/abort — the same semantics as
+ * proxy-handler.ts's teeWithSessionClose.
+ */
+function teeOpenAISSEWithSession(
+	source: ReadableStream<Uint8Array>,
+	writer: SessionWriter,
+	model: Model<any>,
+): ReadableStream<Uint8Array> {
+	const reader = source.getReader();
+	const decoder = new TextDecoder();
+	const chunks: OpenAIChatChunk[] = [];
+	let buffer = "";
+	let closed = false;
+	const closeWriter = async (customType: string, data?: unknown) => {
+		if (closed) return;
+		closed = true;
+		writer.writeCustomEntry(customType, data);
+		await writer.close();
+	};
+	const handleLine = (line: string) => {
+		if (!line.startsWith("data:")) return;
+		const payload = line.slice(5).trim();
+		if (!payload || payload === "[DONE]") return;
+		try {
+			const chunk = JSON.parse(payload) as OpenAIChatChunk;
+			chunks.push(chunk);
+			writer.writeCustomEntry("stream_event", chunk);
+		} catch {
+			// Malformed SSE payloads are skipped; the passthrough must not crash.
+		}
+	};
+	return new ReadableStream<Uint8Array>({
+		async pull(controller) {
+			try {
+				const { done, value } = await reader.read();
+				if (done) {
+					buffer += decoder.decode();
+					if (buffer.trim()) handleLine(buffer.trim());
+					const assistantMessage = buildAssistantMessageFromOpenAI(chunks, model);
+					if (assistantMessage) writer.writeMessage(assistantMessage);
+					await closeWriter("response_completed");
+					controller.close();
+					return;
+				}
+				buffer += decoder.decode(value, { stream: true });
+				let newline = buffer.indexOf("\n");
+				while (newline !== -1) {
+					handleLine(buffer.slice(0, newline).trimEnd());
+					buffer = buffer.slice(newline + 1);
+					newline = buffer.indexOf("\n");
+				}
+				controller.enqueue(value);
+			} catch (err) {
+				await closeWriter("error", { message: String(err) });
+				controller.error(err);
+			}
+		},
+		async cancel(reason) {
+			await reader.cancel(reason).catch(() => {});
+			await closeWriter("aborted", { reason: String(reason) });
+		},
+	});
 }
 
 export async function startServer(port = 8788): Promise<void> {

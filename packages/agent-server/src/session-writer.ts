@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createWriteStream, type WriteStream } from "node:fs";
-import type { AssistantMessage, Message, Model } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Message, Model, Usage } from "@earendil-works/pi-ai";
 import type { StreamEvent } from "./toolcall-validator.ts";
 
 export interface SessionHeaderOptions {
@@ -163,6 +163,131 @@ export function buildAssistantMessage(events: StreamEvent[], model: Model<any>):
 		model: model.id,
 		usage: done.usage,
 		stopReason: done.reason,
+		timestamp: Date.now(),
+	};
+}
+
+/** One parsed `data: {...}` payload of an OpenAI chat.completion.chunk SSE stream. */
+export interface OpenAIChatChunk {
+	choices?: {
+		delta?: {
+			content?: string | null;
+			reasoning_content?: string;
+			reasoning?: string;
+			reasoning_text?: string;
+			tool_calls?: {
+				index?: number;
+				id?: string;
+				function?: { name?: string; arguments?: string };
+			}[];
+		};
+		finish_reason?: string | null;
+	}[];
+	usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+}
+
+function zeroUsage(): Usage {
+	return {
+		input: 0,
+		output: 0,
+		cacheRead: 0,
+		cacheWrite: 0,
+		totalTokens: 0,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+	};
+}
+
+function mapFinishReason(reason: string): AssistantMessage["stopReason"] | null {
+	switch (reason) {
+		case "stop":
+			return "stop";
+		case "length":
+			return "length";
+		case "tool_calls":
+		case "function_call":
+			return "toolUse";
+		default:
+			return null;
+	}
+}
+
+/**
+ * Reconstructs a pi-native {@link AssistantMessage} from the raw OpenAI
+ * chat.completion.chunk payloads of the `/v1/chat/completions` streaming
+ * branch, mirroring {@link buildAssistantMessage} for sessions whose bytes
+ * pass through to OpenAI-compatible clients untransformed. `delta.content`
+ * accumulates into a text part, `delta.reasoning_content` / `reasoning` /
+ * `reasoning_text` into a thinking part, and `delta.tool_calls[]` fragments
+ * are reassembled into toolCall parts by `index` in first-seen order. The
+ * final `usage` chunk and `finish_reason` map to `usage`/`stopReason`.
+ * Returns null unless a mappable `finish_reason` was seen: on error/abort
+ * the reply stays recorded only as `stream_event` custom entries.
+ */
+export function buildAssistantMessageFromOpenAI(chunks: OpenAIChatChunk[], model: Model<any>): AssistantMessage | null {
+	let text = "";
+	let thinking = "";
+	let finishReason: string | null = null;
+	const usage = zeroUsage();
+	const order: number[] = [];
+	const toolCalls = new Map<number, { id: string; name: string; argsText: string }>();
+
+	for (const chunk of chunks) {
+		if (chunk.usage) {
+			usage.input = chunk.usage.prompt_tokens ?? 0;
+			usage.output = chunk.usage.completion_tokens ?? 0;
+			usage.totalTokens = chunk.usage.total_tokens ?? usage.input + usage.output;
+		}
+		const choice = chunk.choices?.[0];
+		if (!choice) continue;
+		if (choice.finish_reason) finishReason = choice.finish_reason;
+
+		const delta = choice.delta;
+		if (!delta) continue;
+		if (typeof delta.content === "string") text += delta.content;
+		const thought = [delta.reasoning_content, delta.reasoning, delta.reasoning_text].find(
+			(v): v is string => typeof v === "string" && v.length > 0,
+		);
+		if (thought) thinking += thought;
+		for (const call of delta.tool_calls ?? []) {
+			const index = call.index ?? 0;
+			if (!order.includes(index)) order.push(index);
+			const pending = toolCalls.get(index) ?? { id: "", name: "", argsText: "" };
+			if (call.id) pending.id = call.id;
+			if (call.function?.name) pending.name = call.function.name;
+			if (call.function?.arguments) pending.argsText += call.function.arguments;
+			toolCalls.set(index, pending);
+		}
+	}
+
+	if (!finishReason) return null;
+	const stopReason = mapFinishReason(finishReason);
+	if (!stopReason) return null;
+
+	const content: AssistantMessage["content"] = [];
+	if (thinking) content.push({ type: "thinking", thinking });
+	if (text) content.push({ type: "text", text });
+	for (const index of order) {
+		const call = toolCalls.get(index);
+		if (!call) continue;
+		// Argument fragments concatenate into the full arguments JSON; fall
+		// back to {} defensively when the stream was truncated.
+		let args: Record<string, unknown> = {};
+		try {
+			args = JSON.parse(call.argsText || "{}") as Record<string, unknown>;
+		} catch {
+			// keep {}
+		}
+		content.push({ type: "toolCall", id: call.id, name: call.name, arguments: args });
+	}
+
+	return {
+		role: "assistant",
+		content,
+		api: model.api,
+		provider: model.provider,
+		model: model.id,
+		usage,
+		stopReason,
 		timestamp: Date.now(),
 	};
 }
