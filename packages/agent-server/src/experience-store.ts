@@ -183,6 +183,18 @@ export class ExperienceStore {
 		return rows.map(rowToExperience);
 	}
 
+	async listDormant(type: Experience["type"], limit: number): Promise<Experience[]> {
+		const rows = this.db
+			.prepare(`
+				SELECT * FROM experiences
+				WHERE type = ? AND status = 'dormant'
+				ORDER BY created_at ASC
+				LIMIT ?
+			`)
+			.all(type, limit) as ExperienceRow[];
+		return rows.map(rowToExperience);
+	}
+
 	async search(query: string, limit: number): Promise<Experience[]> {
 		const rows = this.db
 			.prepare(`

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ExperienceStore } from "../../src/experience-store.ts";
 import { etlSessionFiles } from "../../src/offline/etl.ts";
+import type { Experience } from "../../src/types.ts";
 
 function writeJsonl(dir: string, name: string, entries: Record<string, unknown>[]): string {
 	const path = join(dir, name);
@@ -15,6 +16,16 @@ async function makeStore(): Promise<ExperienceStore> {
 	const store = new ExperienceStore(":memory:");
 	await store.initSchema();
 	return store;
+}
+
+/**
+ * FTS `search` only returns active rows (P2 Task 2 status filter); ETL
+ * assertions need the dormant candidates it inserts, so filter listDormant
+ * by text here instead.
+ */
+async function dormantMatching(store: ExperienceStore, text: string): Promise<Experience[]> {
+	const rows = await store.listDormant("EVIDENCE", 100);
+	return rows.filter((r) => `${r.title} ${JSON.stringify(r.payload)}`.includes(text));
 }
 
 describe("etlSessionFiles", () => {
@@ -63,7 +74,7 @@ describe("etlSessionFiles", () => {
 		const count = await etlSessionFiles([path], store);
 		expect(count).toBeGreaterThan(0);
 
-		const candidates = await store.search("mock", 10);
+		const candidates = await dormantMatching(store, "mock");
 		expect(candidates.length).toBeGreaterThan(0);
 		for (const c of candidates) {
 			expect(c.type).toBe("EVIDENCE");
@@ -124,9 +135,9 @@ describe("etlSessionFiles", () => {
 		const count = await etlSessionFiles([path], store);
 		expect(count).toBeGreaterThan(0);
 
-		const fromRequest = await store.search("migration", 10);
+		const fromRequest = await dormantMatching(store, "migration");
 		expect(fromRequest.length).toBeGreaterThan(0);
-		const fromStream = await store.search("Deployment", 10);
+		const fromStream = await dormantMatching(store, "Deployment");
 		expect(fromStream.length).toBeGreaterThan(0);
 		store.close();
 	});
@@ -184,7 +195,7 @@ describe("etlSessionFiles", () => {
 		const store = await makeStore();
 		const count = await etlSessionFiles([path], store);
 		expect(count).toBeGreaterThan(0);
-		const fromStream = await store.search("Deployment", 10);
+		const fromStream = await dormantMatching(store, "Deployment");
 		expect(fromStream.length).toBeGreaterThan(0);
 		store.close();
 	});
@@ -240,10 +251,10 @@ describe("etlSessionFiles", () => {
 		// customs of the same reply must not be mined a second time.
 		const count = await etlSessionFiles([path], store);
 		expect(count).toBe(2);
-		const fromMessage = await store.search("Deployment", 10);
+		const fromMessage = await dormantMatching(store, "Deployment");
 		expect(fromMessage).toHaveLength(1);
 		expect(fromMessage[0].sourceEntryId).toBe("m-2");
-		const health = await store.search("Health", 10);
+		const health = await dormantMatching(store, "Health");
 		expect(health).toHaveLength(1);
 		expect(health[0].sourceEntryId).toBe("m-2");
 		store.close();
@@ -296,7 +307,7 @@ describe("etlSessionFiles", () => {
 		const store = await makeStore();
 		const count = await etlSessionFiles([path], store);
 		expect(count).toBe(1);
-		const found = await store.search("cache", 10);
+		const found = await dormantMatching(store, "cache");
 		expect(found).toHaveLength(1);
 		expect(found[0].payload.text).toContain("cache must be invalidated");
 		store.close();
