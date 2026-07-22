@@ -393,7 +393,7 @@ def _cli(argv: list[str] | None = None) -> int:
         return out
 
     if os.environ.get("LLM_BASE_URL") and (os.environ.get("LLM_MODEL") or os.environ.get("TEACHER_MODEL")):
-        llm = OpenAICompatClient.teacher_from_env()
+        llm = OpenAICompatClient(role="teacher")
     else:
         llm = MockLLM()
 

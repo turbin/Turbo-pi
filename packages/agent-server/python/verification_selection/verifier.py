@@ -116,7 +116,16 @@ def expected_from_top_logprobs(top_logprobs: list[dict], scale: LetterScale) -> 
 
 
 def extract_tag_distribution(logprobs: list[dict], tag: str) -> list[dict]:
-    """在 per-token logprobs 中定位 ``<tag>`` 之后第一个非空 token，返回其 top_logprobs。"""
+    """在 per-token logprobs 中定位 ``<tag>`` 之后第一个非空 token，返回其 top_logprobs。
+
+    logprobs 可能来自两种来源：
+    - ``chat_with_logprobs`` 返回的原生 per-token list（列表中每个元素有 token 字段）；
+    - 测试/回退通路包装的 ``{"content": [...], "prompt_logprobs": ...}`` dict。
+    这里同时支持两种入参形式。
+    """
+    # 兼容包装层：logprobs = {"content": per_token_list, "prompt_logprobs": ...}
+    if isinstance(logprobs, dict):
+        logprobs = logprobs.get("content", []) or []
     text = "".join(str(e.get("token", "")) for e in logprobs)
     marker = f"<{tag}>"
     idx = text.find(marker)
@@ -227,9 +236,46 @@ class Verifier:
         text, logprobs = self.client.chat_with_logprobs(
             self.build_messages(task, traj_a, traj_b, criterion, reasoning),
             top_logprobs=self.top_logprobs)
-        raw_a = expected_from_top_logprobs(extract_tag_distribution(logprobs, "score_A"), self.scale)
-        raw_b = expected_from_top_logprobs(extract_tag_distribution(logprobs, "score_B"), self.scale)
+        # 双通路兼容：有 logprobs 走期望化；无 logprobs（如 MLX 后端）回退文本解析
+        use_text_fallback = False
+        if isinstance(logprobs, dict):
+            # skill_evolution 客户端返回 {"content": ..., "prompt_logprobs": ...} dict
+            content_tokens = logprobs.get("content")
+            if content_tokens:
+                raw_a = expected_from_top_logprobs(extract_tag_distribution(logprobs, "score_A"), self.scale)
+                raw_b = expected_from_top_logprobs(extract_tag_distribution(logprobs, "score_B"), self.scale)
+            else:
+                use_text_fallback = True
+        elif isinstance(logprobs, list):
+            # verification_selection 客户端返回原生 per-token list（可能空）
+            if logprobs:
+                raw_a = expected_from_top_logprobs(extract_tag_distribution(logprobs, "score_A"), self.scale)
+                raw_b = expected_from_top_logprobs(extract_tag_distribution(logprobs, "score_B"), self.scale)
+            else:
+                use_text_fallback = True
+        else:
+            use_text_fallback = True
+        if use_text_fallback:
+            raw_a, raw_b = self._extract_scores_from_text(text)
         return self.scale.normalize(raw_a), self.scale.normalize(raw_b)
+
+    def _extract_scores_from_text(self, text: str) -> tuple[float, float]:
+        """Fallback: regex-extract <score_N> LETTER </score_N> from plain text output
+        when logprobs are unavailable. Parses the first letter token inside each tag
+        and maps it to the letter scale position."""
+        import re
+        score_a_letter = None
+        score_b_letter = None
+        m = re.search(r"<score_A>\s*([A-Z])\s*</score_A>", text)
+        if m:
+            score_a_letter = m.group(1)
+        m = re.search(r"<score_B>\s*([A-Z])\s*</score_B>", text)
+        if m:
+            score_b_letter = m.group(1)
+        if score_a_letter is None or score_b_letter is None:
+            raise ScoreExtractionError(f"logprobs 不可用且文本中未找到 <score_A>/<score_B> 标签: {text[:200]}")
+        return (float(self.scale.tokens.index(score_a_letter) + 1),
+                float(self.scale.tokens.index(score_b_letter) + 1))
 
     # -- C×K 聚合 -----------------------------------------------------------
     def score_pair(self, task: str, traj_a: str, traj_b: str,
