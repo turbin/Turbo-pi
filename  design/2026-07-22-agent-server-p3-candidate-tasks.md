@@ -2,7 +2,7 @@
 
 日期：2026-07-22
 来源：` design/2026-07-22-agent-server-p2-closeout.md` 的 P3 候选清单。
-状态：**未立项**。本文档是任务书草案，供用户审阅后分发给其他 agent 执行。每个任务书自包含（零上下文 agent 可直接执行）。
+状态：**已立项（2026-07-22 用户拍板）**。决策已定：P3-2 仅生成文件（不自动启用）；P3-3 observe-only（用户未作答，按任务书推荐方案 A 锁定）。每个任务书自包含（零上下文 agent 可直接执行）。
 
 ## 通用约束（所有任务适用）
 
@@ -77,7 +77,7 @@ P2 Task 5 接入的 benchmark 是用户手工维护的 JSON（`benchmark/benchma
 
 ### 目标
 
-新增一个派生器：从 `var/sessions/*.jsonl`（或 ETL 产出的 dormant EVIDENCE 候选）生成 benchmark.json，并提供 CLI/脚本入口；`runDailyEvolution` 在未显式配置 benchmark 时可选用派生结果（**这是一个需要用户拍板的行为决策**，见下）。
+新增一个派生器：从 `var/sessions/*.jsonl`（或 ETL 产出的 dormant EVIDENCE 候选）生成 benchmark.json，并提供 CLI/脚本入口。**决策已定（2026-07-22 用户拍板）：仅生成文件，仍由用户显式配置 `AGENT_SERVER_BENCHMARK` 启用，scheduler 不自动派生。**
 
 ### 要求
 
@@ -87,7 +87,7 @@ P2 Task 5 接入的 benchmark 是用户手工维护的 JSON（`benchmark/benchma
    - `concept`：从 question/回复中抽取关键概念（规则化即可——如提取主题词/技术名词；**不要用 LLM**，保持离线确定性，理由写进决策记录）。
    - `solvable`：默认 true；有明确失败信号的 session（error custom entry、无 assistant message）置 false 或跳过。
    - 去重（同 question 不重复入样）、上限（如 50 条，参数可调）。
-2. 接线决策（**先问用户再动手**）：(a) 仅生成文件，仍由用户显式配置 `AGENT_SERVER_BENCHMARK`；(b) 未配置时 scheduler 自动派生。默认建议 (a)，(b) 会改变离线运行行为。
+2. 接线：**仅提供生成入口（CLI 参数或 tsx 脚本），不改 `runDailyEvolution` 的 benchmark 解析逻辑**（决策已定，见上）。
 3. 测试：fixture session 文件 → 输出 benchmark 的结构/去重/上限/solvable 判定；空目录输出空 samples。
 4. 端到端：用派生的 benchmark 跑一次 `runDailyEvolution`（MockLLM），确认 skill 管线消费正常。
 
@@ -110,20 +110,15 @@ P2 Task 5 接入的 benchmark 是用户手工维护的 JSON（`benchmark/benchma
 
 流式分支对 OpenAI SSE chunk 中的 `delta.tool_calls` 做校验，行为与 `validateToolCallStream` 的语义对齐（对照注入后 tools 白名单 + 参数 JSON 合法性）。
 
-### 关键设计决策（**先问用户再动手**）
+### 方案（**已定：observe-only**，用户未单独作答，按任务书推荐锁定；阻断式留作后续增强）
 
-raw SSE 透传契约不能像 handleStream 那样重写事件流。两种方案：
-
-- **方案 A（observe-only，推荐）**：tee 中解析并累积 tool_calls，校验结果记录到 session（新 custom entry，如 `toolcall_validation`）+ stderr 日志；违规不阻断转发。优点：契约零风险；缺点：客户端仍会执行坏 toolCall。
-- **方案 B（阻断式）**：缓存含 tool_calls 的尾部 chunk，流末组装校验，违规时改发错误 chunk/截断。优点：真正拦截；缺点：改动 SSE 字节流，时序复杂，客户端兼容性风险。
-
-推荐 A 起步，B 作为后续增强；若用户选 B，需补充分的 Kimi 端兼容性测试。
+raw SSE 透传契约不能像 handleStream 那样重写事件流。本任务按方案 A 执行：tee 中解析并累积 tool_calls，校验结果记录到 session（新 custom entry，如 `toolcall_validation`）+ stderr 日志；违规不阻断转发。契约零风险；已知局限是客户端仍会执行坏 toolCall（决策记录中注明）。阻断式（缓存尾部 chunk、流末校验、违规改发错误 chunk）如未来需要，另立项并补 Kimi 端兼容性测试。
 
 ### 要求
 
 1. 复用 `toolcall-validator.ts` 的校验逻辑（tool 白名单、参数 schema 校验），不要复制实现；如需要，把可复用部分提取成对两种事件形态（pi-ai StreamEvent / OpenAI chunk）都适用的核心函数。
 2. 校验上下文：`buildInjection` 返回的 injected.tools（与非流式路径同一白名单来源）。
-3. 测试（`test/server.test.ts`）：合法 tool_calls 透传且记录校验通过；未知工具名/非法参数被记录为违规（方案 A）或拦截（方案 B）；多 tool_calls 按 index 组装的边界。
+3. 测试（`test/server.test.ts`）：合法 tool_calls 透传且记录校验通过；未知工具名/非法参数被记录为违规 custom entry 且字节透传不变；多 tool_calls 按 index 组装的边界。
 4. 更新 `src/server.ts` 流式分支注释与 P2 文档中"裸透传"的描述。
 
 ### 验收
@@ -163,10 +158,10 @@ raw SSE 透传契约不能像 handleStream 那样重写事件流。两种方案�
 | 任务 | 预估行数 | 预估 token | 依赖 |
 |---|---|---|---|
 | P3-1 真实 LLM live 验证 | ~50 | ~80k | 无（需本机 omlx 环境） |
-| P3-2 benchmark 自动派生 | ~400 | ~200k | 有一个行为决策需用户拍板 |
-| P3-3 流式 toolCall 校验 | ~250 | ~150k | 有一个方案决策需用户拍板（推荐 A） |
+| P3-2 benchmark 自动派生 | ~400 | ~200k | 决策已定：仅生成文件 |
+| P3-3 流式 toolCall 校验 | ~250 | ~150k | 决策已定：observe-only |
 | P3-4 tsconfig 修复 | ~20 | ~40k | 无 |
-| **合计** | **~720 行 / 4 提交** | **~470k** | P3-1 与 P3-4 可立即并行；P3-2/P3-3 待决策 |
+| **合计** | **~720 行 / 4 提交** | **~470k** | 全部可分发 |
 
 估算口径同 P2（subagent 上下文装载 + 实现 + 评审 + 修复 + 决策文档）。
 
@@ -174,4 +169,4 @@ raw SSE 透传契约不能像 handleStream 那样重写事件流。两种方案�
 
 - P3-4 最小、无依赖，适合作为第一个分发的任务验证流程。
 - P3-1 依赖本机 omlx 环境（含密钥），只能分给能在本机执行的 agent。
-- P3-2 与 P3-3 各有一个悬而未决的决策点，分发前请用户先拍板（任务书中已标注推荐方案）。
+- P3-2/P3-3 决策已锁定（2026-07-22），四个任务均可直接分发；文件互不重叠，可并行。
