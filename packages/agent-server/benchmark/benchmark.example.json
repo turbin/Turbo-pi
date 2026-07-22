@@ -1,0 +1,18 @@
+{
+	"initial_skill": "# Task Skill\n\nFollow the repo conventions: pinned deps, minimal diffs, run checks before committing.\n",
+	"iterations": 3,
+	"samples": [
+		{
+			"id": "sample-1",
+			"concept": "pinned deps",
+			"question": "Add a new runtime dependency to the repo following its install rules.",
+			"solvable": true
+		},
+		{
+			"id": "sample-2",
+			"concept": "minimal diffs",
+			"question": "Fix a failing test without touching unrelated code.",
+			"solvable": true
+		}
+	]
+}

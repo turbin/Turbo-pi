@@ -28,6 +28,13 @@ export interface DailyEvolutionOptions {
 	inputDir?: string;
 	/** Directory for staged pipeline outputs. Default: ./var/evolution (cwd-relative). */
 	outputDir?: string;
+	/**
+	 * Training task set for the skill evolution stage (SPEC §4.2 step 2), a
+	 * benchmark JSON as documented in benchmark/benchmark.example.json.
+	 * Default: env AGENT_SERVER_BENCHMARK; omitted => the skill stage outputs [].
+	 * An explicit pipelineOptions.benchmarkPath wins over this.
+	 */
+	benchmarkPath?: string;
 	/** Extra options forwarded to runOfflinePipeline. */
 	pipelineOptions?: OfflinePipelineOptions;
 	/** Epoch source. Default: Date.now. */
@@ -60,7 +67,9 @@ export async function runDailyEvolution(store: ExperienceStore, options: DailyEv
 		.map((name) => join(inputDir, name));
 
 	const etlInserted = await etlFn(sessionFiles, store);
-	const pipeline = await pipelineFn(inputDir, outputDir, options.pipelineOptions ?? {});
+	const benchmarkPath =
+		options.pipelineOptions?.benchmarkPath ?? options.benchmarkPath ?? process.env.AGENT_SERVER_BENCHMARK;
+	const pipeline = await pipelineFn(inputDir, outputDir, { ...options.pipelineOptions, benchmarkPath });
 	const promoted = await promoteFn(outputDir, store);
 
 	return writeCheckpoint(store, {

@@ -134,6 +134,56 @@ describe("runDailyEvolution", () => {
 		expect((await latestCheckpoint(store, "evolution"))?.id).toBe(checkpointId);
 	});
 
+	it("forwards benchmarkPath to the pipeline (option > env), defaulting to undefined", async () => {
+		const sessionDir = makeTempDir();
+		writeSessionFile(sessionDir);
+		const outputDir = join(makeTempDir(), "evolution");
+		const store = await makeStore();
+
+		const seen: (string | undefined)[] = [];
+		const pipelineFn = async (_inputDir: string, outDir: string, opts?: { benchmarkPath?: string }) => {
+			seen.push(opts?.benchmarkPath);
+			return makeFakePipeline({ skills: 1, sops: 1, cards: 2 })(_inputDir, outDir);
+		};
+
+		process.env.AGENT_SERVER_BENCHMARK = "/tmp/env-benchmark.json";
+		// Distinct epochs: checkpoint ids are deterministic per (kind, epoch).
+		let epoch = 1_800_000_000_000;
+		const now = () => ++epoch;
+		try {
+			// Explicit option wins over the env var.
+			await runDailyEvolution(store, {
+				inputDir: sessionDir,
+				outputDir,
+				benchmarkPath: "/tmp/opt-benchmark.json",
+				pipelineFn,
+				now,
+			});
+			// Env var is the fallback.
+			await runDailyEvolution(store, { inputDir: sessionDir, outputDir, pipelineFn, now });
+			// pipelineOptions.benchmarkPath wins over both.
+			await runDailyEvolution(store, {
+				inputDir: sessionDir,
+				outputDir,
+				benchmarkPath: "/tmp/opt-benchmark.json",
+				pipelineOptions: { benchmarkPath: "/tmp/explicit-benchmark.json" },
+				pipelineFn,
+				now,
+			});
+		} finally {
+			delete process.env.AGENT_SERVER_BENCHMARK;
+		}
+		// No option and no env: undefined is forwarded (skill stage outputs []).
+		await runDailyEvolution(store, { inputDir: sessionDir, outputDir, pipelineFn, now });
+
+		expect(seen).toEqual([
+			"/tmp/opt-benchmark.json",
+			"/tmp/env-benchmark.json",
+			"/tmp/explicit-benchmark.json",
+			undefined,
+		]);
+	});
+
 	it("leaves no checkpoint behind when the pipeline fails", async () => {
 		const sessionDir = makeTempDir();
 		writeSessionFile(sessionDir);
