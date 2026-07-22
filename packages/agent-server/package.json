@@ -5,6 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"test": "vitest run",
+		"test:python": "PYTHONPATH=python python3 -m pytest python/tests/ -v",
 		"check": "tsgo --noEmit"
 	},
 	"dependencies": {
