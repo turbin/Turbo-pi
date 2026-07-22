@@ -31,6 +31,24 @@ export interface ToolSchemaSource {
 	parameters?: unknown;
 }
 
+/** Intermediate shape of an OpenAI tool_call assembled from SSE delta chunks. */
+export interface AccumulatedToolCall {
+	/** `call.index` field from the SSE delta; used to group delta chunks by call identity. */
+	streamIndex: number;
+	/** The tool call's id (from the first delta that carries one). */
+	id: string;
+	/** The tool name (from the first delta that carries one). */
+	name: string;
+	/** Concatenated JSON arguments fragments across successive deltas. */
+	argsText: string;
+}
+
+/** One validated call paired with its result. */
+export interface ToolCallValidationReport {
+	call: AccumulatedToolCall;
+	result: ToolCallValidationResult;
+}
+
 export interface ValidateStreamOptions {
 	/** Tools from the request context; toolCalls are validated against their schemas. */
 	tools?: ToolSchemaSource[];
@@ -71,6 +89,39 @@ export function validateToolCall(
 		}
 	}
 	return { allowed: true };
+}
+
+/**
+ * Validate every accumulated tool call against the tool whitelist.
+ * Returns one report per call. Unknown tool names and invalid JSON arguments
+ * are recorded as `allowed: false` reports — nothing is dropped, so the
+ * caller can log every finding without altering the byte stream.
+ * This is the shared core used by both `validateToolCallStream` (non-streaming
+ * path that can reject tool calls before emitting) and the streaming pass-through
+ * tee (P3-3 observe-only path that records validation results to the session).
+ */
+export function validateAccumulatedToolCalls(
+	toolCalls: AccumulatedToolCall[],
+	tools?: ToolSchemaSource[],
+): ToolCallValidationReport[] {
+	const reports: ToolCallValidationReport[] = [];
+	for (const call of toolCalls) {
+		let args: unknown;
+		try {
+			args = JSON.parse(call.argsText || "{}");
+		} catch {
+			reports.push({ call, result: { allowed: false, reason: `toolCall ${call.name}: invalid arguments JSON` } });
+			continue;
+		}
+		const schema = tools?.find((t) => t.name === call.name);
+		if (!schema) {
+			reports.push({ call, result: { allowed: false, reason: `toolCall ${call.name}: unknown tool` } });
+			continue;
+		}
+		const result = validateToolCall({ name: call.name, arguments: args }, schema.parameters);
+		reports.push({ call, result });
+	}
+	return reports;
 }
 
 function matchesJsonType(value: unknown, type: string): boolean {

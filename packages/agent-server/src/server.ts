@@ -13,6 +13,11 @@ import { toOpenAIRequest } from "./openai-compat.ts";
 import { handleStream } from "./proxy-handler.ts";
 import { retrieve } from "./retrieval.ts";
 import { buildAssistantMessageFromOpenAI, type OpenAIChatChunk, SessionWriter } from "./session-writer.ts";
+import {
+	type AccumulatedToolCall,
+	type ToolCallValidationReport,
+	validateAccumulatedToolCalls,
+} from "./toolcall-validator.ts";
 import type { StreamRequest } from "./types.ts";
 
 export interface CreateServerOptions {
@@ -156,7 +161,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 					const gatewayStream = await gateway.stream({ ...openaiReq, stream: true });
 					writer.writeCustomEntry("response_started");
 					reply.header("content-type", "text/event-stream");
-					const tee = teeOpenAISSEWithSession(gatewayStream, writer, model as Model<any>);
+					const tee = teeOpenAISSEWithSession(gatewayStream, writer, model as Model<any>, injected.tools);
 					return reply.send(Readable.fromWeb(tee as unknown as NodeReadableStream<Uint8Array>));
 				} catch (err) {
 					writer.writeCustomEntry("error", { message: String(err) });
@@ -223,15 +228,22 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
  * cancel (`response_completed` / `error` / `aborted`), and no assistant
  * message is written on error/abort — the same semantics as
  * proxy-handler.ts's teeWithSessionClose.
+ *
+ * In addition, delta.tool_calls chunks are accumulated per call index and
+ * validated against the injection tool whitelist after the stream ends.
+ * The validation report is written as a `toolcall_validation` custom entry
+ * (observe-only: violations are logged but the raw bytes are never altered).
  */
 function teeOpenAISSEWithSession(
 	source: ReadableStream<Uint8Array>,
 	writer: SessionWriter,
 	model: Model<any>,
+	tools?: { name: string; parameters?: unknown }[],
 ): ReadableStream<Uint8Array> {
 	const reader = source.getReader();
 	const decoder = new TextDecoder();
 	const chunks: OpenAIChatChunk[] = [];
+	const pendingToolCalls: AccumulatedToolCall[] = [];
 	let buffer = "";
 	let closed = false;
 	const closeWriter = async (customType: string, data?: unknown) => {
@@ -248,6 +260,18 @@ function teeOpenAISSEWithSession(
 			const chunk = JSON.parse(payload) as OpenAIChatChunk;
 			chunks.push(chunk);
 			writer.writeCustomEntry("stream_event", chunk);
+			// Accumulate tool_call deltas by index for post-stream validation.
+			for (const call of chunk.choices?.[0]?.delta?.tool_calls ?? []) {
+				const streamIndex = call.index ?? 0;
+				let pending = pendingToolCalls.find((t) => t.streamIndex === streamIndex);
+				if (!pending) {
+					pending = { streamIndex, id: "", name: "", argsText: "" };
+					pendingToolCalls.push(pending);
+				}
+				if (call.id) pending.id = call.id;
+				if (call.function?.name) pending.name = call.function.name;
+				if (call.function?.arguments) pending.argsText += call.function.arguments;
+			}
 		} catch {
 			// Malformed SSE payloads are skipped; the passthrough must not crash.
 		}
@@ -261,6 +285,21 @@ function teeOpenAISSEWithSession(
 					if (buffer.trim()) handleLine(buffer.trim());
 					const assistantMessage = buildAssistantMessageFromOpenAI(chunks, model);
 					if (assistantMessage) writer.writeMessage(assistantMessage);
+					// Post-stream toolCall validation (observe-only): validate accumulated
+					// delta.tool_calls against the injection tool whitelist and record the
+					// report without altering the raw SSE bytes.
+					if (pendingToolCalls.length > 0 && tools && tools.length > 0) {
+						const reports: ToolCallValidationReport[] = validateAccumulatedToolCalls(pendingToolCalls, tools);
+						writer.writeCustomEntry("toolcall_validation", { reports });
+						// Log violations to stderr for live observability.
+						const violations = reports.filter((r) => !r.result.allowed);
+						if (violations.length > 0) {
+							console.error(
+								"[agent-server] streaming toolCall violations:",
+								violations.map((v) => v.result.reason),
+							);
+						}
+					}
 					await closeWriter("response_completed");
 					controller.close();
 					return;
