@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+	type AccumulatedToolCall,
 	type StreamEvent,
 	type ValidateStreamOptions,
+	validateAccumulatedToolCalls,
 	validateToolCall,
 	validateToolCallStream,
 } from "../src/toolcall-validator.ts";
@@ -197,5 +199,89 @@ describe("validateToolCallStream", () => {
 	it("emits an error event when the stream ends without finish_reason", async () => {
 		const events = await runStream(['data: {"choices":[{"delta":{"content":"hi"}}]}\n\n'], { tools: [] });
 		expect(events[events.length - 1]).toMatchObject({ type: "error", reason: "error" });
+	});
+});
+
+describe("validateAccumulatedToolCalls", () => {
+	const TOOLS = [
+		{
+			name: "read",
+			parameters: {
+				type: "object",
+				required: ["path"],
+				properties: { path: { type: "string" }, offset: { type: "number" } },
+			},
+		},
+		{ name: "search", parameters: { type: "object", properties: { query: { type: "string" } } } },
+	];
+
+	it("allows a valid single toolCall matching the whitelist", () => {
+		const calls: AccumulatedToolCall[] = [
+			{ streamIndex: 0, id: "call_1", name: "read", argsText: '{"path":"/tmp/a","offset":10}' },
+		];
+		const reports = validateAccumulatedToolCalls(calls, TOOLS);
+		expect(reports).toHaveLength(1);
+		expect(reports[0].call).toEqual(calls[0]);
+		expect(reports[0].result).toEqual({ allowed: true });
+	});
+
+	it("allows multiple toolCalls across different stream indices", () => {
+		const calls: AccumulatedToolCall[] = [
+			{ streamIndex: 0, id: "call_1", name: "read", argsText: '{"path":"/tmp/a"}' },
+			{ streamIndex: 1, id: "call_2", name: "search", argsText: '{"query":"hello"}' },
+		];
+		const reports = validateAccumulatedToolCalls(calls, TOOLS);
+		expect(reports).toHaveLength(2);
+		expect(reports[0].result).toEqual({ allowed: true });
+		expect(reports[1].result).toEqual({ allowed: true });
+	});
+
+	it("reports unknown tool name as not allowed", () => {
+		const calls: AccumulatedToolCall[] = [{ streamIndex: 0, id: "call_1", name: "exec", argsText: "{}" }];
+		const reports = validateAccumulatedToolCalls(calls, TOOLS);
+		expect(reports).toHaveLength(1);
+		expect(reports[0].result.allowed).toBe(false);
+		expect(reports[0].result.reason).toContain("unknown tool");
+		expect(reports[0].call.name).toBe("exec");
+	});
+
+	it("reports invalid JSON arguments as not allowed", () => {
+		const calls: AccumulatedToolCall[] = [
+			{ streamIndex: 0, id: "call_1", name: "read", argsText: "{not valid json" },
+		];
+		const reports = validateAccumulatedToolCalls(calls, TOOLS);
+		expect(reports).toHaveLength(1);
+		expect(reports[0].result.allowed).toBe(false);
+		expect(reports[0].result.reason).toContain("invalid arguments JSON");
+	});
+
+	it("reports missing required property as not allowed", () => {
+		const calls: AccumulatedToolCall[] = [{ streamIndex: 0, id: "call_1", name: "read", argsText: '{"offset":42}' }];
+		const reports = validateAccumulatedToolCalls(calls, TOOLS);
+		expect(reports).toHaveLength(1);
+		expect(reports[0].result.allowed).toBe(false);
+		expect(reports[0].result.reason).toContain("missing required property path");
+	});
+
+	it("reports wrong property type as not allowed", () => {
+		const calls: AccumulatedToolCall[] = [{ streamIndex: 0, id: "call_1", name: "read", argsText: '{"path":42}' }];
+		const reports = validateAccumulatedToolCalls(calls, TOOLS);
+		expect(reports).toHaveLength(1);
+		expect(reports[0].result.allowed).toBe(false);
+		expect(reports[0].result.reason).toContain("path");
+	});
+
+	it("accumulates with empty argsText as parseable safe fallback", () => {
+		const calls: AccumulatedToolCall[] = [{ streamIndex: 0, id: "call_1", name: "read", argsText: "" }];
+		const reports = validateAccumulatedToolCalls(calls, TOOLS);
+		expect(reports).toHaveLength(1);
+		// empty argsText → parse {} → "path" is missing required → not allowed
+		expect(reports[0].result.allowed).toBe(false);
+		expect(reports[0].result.reason).toContain("missing required property path");
+	});
+
+	it("returns empty reports for empty toolCalls list", () => {
+		const reports = validateAccumulatedToolCalls([], TOOLS);
+		expect(reports).toHaveLength(0);
 	});
 });

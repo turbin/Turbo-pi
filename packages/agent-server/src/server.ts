@@ -234,7 +234,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
  * The validation report is written as a `toolcall_validation` custom entry
  * (observe-only: violations are logged but the raw bytes are never altered).
  */
-function teeOpenAISSEWithSession(
+export function teeOpenAISSEWithSession(
 	source: ReadableStream<Uint8Array>,
 	writer: SessionWriter,
 	model: Model<any>,

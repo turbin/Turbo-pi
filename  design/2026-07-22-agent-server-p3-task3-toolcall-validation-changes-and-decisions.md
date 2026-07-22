@@ -31,6 +31,6 @@
 
 ## 验收
 
-- agent-server 全套测试通过（79 测试，8 文件）
+- agent-server 全套测试通过（175 测试，18 文件）
 - 根 `npm run check` 干净
 - 流式路径 bytes 不改动，仅追加 `toolcall_validation` custom entry

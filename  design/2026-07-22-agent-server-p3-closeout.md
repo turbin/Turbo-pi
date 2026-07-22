@@ -37,7 +37,7 @@
 
 ## 验证基线
 
-- **agent-server 全套 88 测试通过**（P2 基线 148，本分支减少因 toolcall-validator/offline-pipeline 测试在其他文件，agent-server 自有测试 9 文件 88 测试全部通过）
+- **agent-server 全套 175 测试通过**（18 文件，含新增 P3-2 benchmark 测试 9 个、P3-3 toolCall 校验测试 8 个 unit + 10 个 integration）
 - 根 `npm run check` 干净
 - 所有变更仅限 `packages/agent-server/` 范围内，未修改 omlx 配置
 
@@ -54,5 +54,5 @@ ae89f479 P3-2: benchmark 自动从 session 派生
 
 ## 与 P2 closeout 的差异
 
-- P2 基线：148 tests（16 files），本分支 agent-server 测试（`packages/agent-server/test/`）：88 tests（9 files，含新增 benchmark 测试 9 个）。
+- P2 基线：148 tests（16 files），本分支 agent-server 测试（`packages/agent-server/test/`）：175 tests（18 files，含 P3-2 benchmark 测试 9 个、P3-3 toolCall 校验测试 18 个）。
 - Python 侧：P3 新增 verifier 文本回退逻辑（`_extract_scores_from_text`）+ `extract_tag_distribution` 入参兼容，P2 的 MockLLM 路径不受影响。
