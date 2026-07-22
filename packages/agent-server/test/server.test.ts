@@ -23,11 +23,24 @@ function postChatCompletion(app: ReturnType<typeof createServer>) {
 }
 
 describe("server /v1/chat/completions debug dump", () => {
+	const tempDirs: string[] = [];
+
 	afterEach(() => {
 		vi.unstubAllEnvs();
 		vi.restoreAllMocks();
 		rmSync(DUMP_PATH, { force: true });
+		while (tempDirs.length > 0) {
+			const dir = tempDirs.pop();
+			if (dir) rmSync(dir, { recursive: true, force: true });
+		}
 	});
+
+	function makeApp() {
+		// Keep session writes out of the repo's var/ (default is cwd-relative).
+		const sessionDir = mkdtempSync(join(tmpdir(), "agent-server-dump-test-"));
+		tempDirs.push(sessionDir);
+		return createServer({ store: makeStore(), gatewayUrl: "http://127.0.0.1:1", sessionDir });
+	}
 
 	it("does not dump the request body to /tmp by default", async () => {
 		vi.stubEnv("AGENT_SERVER_DEBUG_DUMP", "");
@@ -35,7 +48,7 @@ describe("server /v1/chat/completions debug dump", () => {
 		// No gateway is listening, so the request fails downstream with 502;
 		// the dump (or its absence) happens before that.
 		vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("no gateway"));
-		const app = createServer({ store: makeStore(), gatewayUrl: "http://127.0.0.1:1" });
+		const app = makeApp();
 		const res = await postChatCompletion(app);
 		expect(res.statusCode).toBe(502);
 		expect(existsSync(DUMP_PATH)).toBe(false);
@@ -46,7 +59,7 @@ describe("server /v1/chat/completions debug dump", () => {
 		vi.stubEnv("AGENT_SERVER_DEBUG_DUMP", "1");
 		rmSync(DUMP_PATH, { force: true });
 		vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("no gateway"));
-		const app = createServer({ store: makeStore(), gatewayUrl: "http://127.0.0.1:1" });
+		const app = makeApp();
 		const res = await postChatCompletion(app);
 		expect(res.statusCode).toBe(502);
 		expect(existsSync(DUMP_PATH)).toBe(true);
