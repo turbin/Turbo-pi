@@ -1,11 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import Fastify, { type FastifyInstance } from "fastify";
 import { ExperienceStore } from "./experience-store.ts";
+import { GatewayClient } from "./gateway-client.ts";
+import { buildInjection } from "./injection.ts";
+import { toOpenAIRequest } from "./openai-compat.ts";
 import { handleStream } from "./proxy-handler.ts";
+import { retrieve } from "./retrieval.ts";
 import type { StreamRequest } from "./types.ts";
 
 export interface CreateServerOptions {
@@ -52,8 +57,11 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 	// collect the SSE events and return a single chat.completion JSON body.
 	fastify.post("/v1/chat/completions", async (request, reply) => {
 		const body = request.body as Record<string, unknown>;
-		const fs = await import("node:fs/promises");
-		await fs.writeFile("/tmp/agent-server-request.json", JSON.stringify(body, null, 2));
+		// Opt-in request dump for debugging; off by default so user prompts and
+		// code are not written outside var/ (review finding: fixed /tmp path).
+		if (process.env.AGENT_SERVER_DEBUG_DUMP === "1") {
+			await writeFile("/tmp/agent-server-request.json", JSON.stringify(body, null, 2));
+		}
 		const model = {
 			id: String(body.model ?? "agent-auto"),
 			name: String(body.model ?? "agent-auto"),
@@ -73,9 +81,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 			if (Array.isArray(msg.content)) {
 				return {
 					...msg,
-					content: msg.content
-						.map((part: any) => (typeof part === "string" ? part : (part?.text ?? "")))
-						.join(""),
+					content: msg.content.map((part: any) => (typeof part === "string" ? part : (part?.text ?? ""))).join(""),
 				};
 			}
 			return msg;
@@ -107,18 +113,18 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 			if (body.stream === true) {
 				// OpenAI-compatible clients expect raw OpenAI SSE, not pi-ai events.
 				// Do retrieval/injection manually, then forward to gateway.
-				const { retrieve } = await import("./retrieval.ts");
-				const { buildInjection } = await import("./injection.ts");
-				const { toOpenAIRequest } = await import("./openai-compat.ts");
-				const { GatewayClient } = await import("./gateway-client.ts");
-				const query = messages
-					.filter((m: any) => m.role === "user")
-					.map((m: any) => String(m.content))
-					.filter((content: string) => !content.startsWith("<system-reminder>"))
-					.pop() ?? "";
+				const query =
+					messages
+						.filter((m: any) => m.role === "user")
+						.map((m: any) => String(m.content))
+						.filter((content: string) => !content.startsWith("<system-reminder>"))
+						.pop() ?? "";
 				console.log("[agent-server] stream query:", query);
 				const retrieved = await retrieve(store, query, 8);
-				console.log("[agent-server] stream retrieved:", retrieved.map((r) => r.experience.id));
+				console.log(
+					"[agent-server] stream retrieved:",
+					retrieved.map((r) => r.experience.id),
+				);
 				const injected = await buildInjection(context as any, retrieved, { store });
 				const openaiReq = toOpenAIRequest(injected, model as any);
 				const gateway = new GatewayClient(gatewayUrl);
@@ -127,10 +133,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 				return reply.send(Readable.fromWeb(gatewayStream as unknown as NodeReadableStream<Uint8Array>));
 			}
 
-			const stream = await handleStream(
-				{ model, context, options },
-				{ store, gatewayUrl, sessionPath },
-			);
+			const stream = await handleStream({ model, context, options }, { store, gatewayUrl, sessionPath });
 			const reader = stream.getReader();
 			const chunks: string[] = [];
 			let done: Record<string, unknown> | null = null;
