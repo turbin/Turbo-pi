@@ -159,8 +159,16 @@ describe("POST /v1/chat/completions streaming session recording", () => {
 		const injection = entries.find((e) => e.customType === "experience_injection");
 		expect(injection?.data.retrieved).toEqual(["exp-1"]);
 		expect(injection?.parentId).toBe(messages[0].id);
+		// custom_message records the injected context the model actually saw.
+		const customMessage = entries.find((e) => e.customType === "custom_message");
+		expect(customMessage?.parentId).toBe(injection?.id);
+		const injectedTexts = (customMessage?.data.messages as { role: string; content: unknown }[]).map((m) =>
+			typeof m.content === "string" ? m.content : "",
+		);
+		expect(injectedTexts.some((text) => text.includes("用户说你好时偏好简洁的中文回复"))).toBe(true);
 		const customTypes = entries.filter((e) => e.type === "custom").map((e) => e.customType);
-		expect(customTypes[1]).toBe("response_started");
+		expect(customTypes[1]).toBe("custom_message");
+		expect(customTypes[2]).toBe("response_started");
 		expect(customTypes[customTypes.length - 1]).toBe("response_completed");
 		const streamEvents = entries.filter((e) => e.customType === "stream_event");
 		expect(streamEvents).toHaveLength(5);

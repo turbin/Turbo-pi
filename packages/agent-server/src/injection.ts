@@ -15,8 +15,9 @@ const SOP_SCHEMA_LIMIT = 15;
  * catalog is appended to the system prompt as `<available_skills>` and SOP
  * tool schemas are merged into the tool list (SPEC §4.1).
  *
- * `ExperienceStore.search` does not filter by status, so `removed`
- * experiences are dropped here before they can reach the prompt.
+ * `ExperienceStore.search` already filters to `status='active'` at the SQL
+ * level (P2 Task 2); the belt-and-suspenders filter below also drops any
+ * non-active rows a caller passed in directly.
  */
 export async function buildInjection(
 	context: Context,

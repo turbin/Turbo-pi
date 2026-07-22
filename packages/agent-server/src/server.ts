@@ -144,6 +144,13 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 						writer.writeMessage(message);
 					}
 					writer.writeCustomEntry("experience_injection", { retrieved: retrieved.map((r) => r.experience.id) });
+					// SPEC §6: record the injected context the model actually saw
+					// (same custom_message entry handleStream writes).
+					writer.writeCustomEntry("custom_message", {
+						messages: injected.messages,
+						systemPrompt: injected.systemPrompt,
+						tools: injected.tools,
+					});
 
 					const gateway = new GatewayClient(gatewayUrl);
 					const gatewayStream = await gateway.stream({ ...openaiReq, stream: true });

@@ -26,9 +26,11 @@ const RETRIEVAL_LIMIT = 8;
  * protocol (SPEC §4.1) with toolCall outbound validation (SPEC §5.1 step 7).
  * Every step is recorded to a pi-native session JSONL (SPEC §6): a session
  * header, one `message` tree entry per request context message, an
- * `experience_injection` custom entry with the retrieved experience IDs, and
- * custom entries for the stream lifecycle (`response_started`, `stream_event`,
- * `response_completed` / `error` / `aborted`). When the stream ends with a
+ * `experience_injection` custom entry with the retrieved experience IDs, a
+ * `custom_message` custom entry with the injected context the model actually
+ * saw (SPEC §6), and custom entries for the stream lifecycle
+ * (`response_started`, `stream_event`, `response_completed` / `error` /
+ * `aborted`). When the stream ends with a
  * `done` event, the gateway reply is additionally reconstructed from the
  * accumulated stream events and written as a pi-native assistant `message`
  * entry, so replayed/forked sessions include the model's turn. On stream
@@ -59,6 +61,13 @@ export async function handleStream(
 			writer.writeMessage(message);
 		}
 		writer.writeCustomEntry("experience_injection", { retrieved: retrieved.map((r) => r.experience.id) });
+		// SPEC §6: record the injected context the model actually saw, so
+		// replayed sessions reflect the real prompt (finding 23).
+		writer.writeCustomEntry("custom_message", {
+			messages: injected.messages,
+			systemPrompt: injected.systemPrompt,
+			tools: injected.tools,
+		});
 
 		const gateway = new GatewayClient(opts.gatewayUrl);
 		const stream = await gateway.stream(gatewayReq);
