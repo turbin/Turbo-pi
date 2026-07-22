@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { collectTrajectories, runOfflinePipeline } from "../../src/offline/pipeline.ts";
+import { collectTrajectories, runDormantRescore, runOfflinePipeline } from "../../src/offline/pipeline.ts";
 
 type SpawnFn = typeof spawn;
 
@@ -269,6 +269,52 @@ describe("runOfflinePipeline", () => {
 const hasPython3 = spawnSync("python3", ["-c", "import sys"], { stdio: "ignore" }).status === 0;
 const llmEnvKeys = ["LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL", "TEACHER_MODEL"] as const;
 
+describe("runDormantRescore", () => {
+	it("spawns the rescore CLI and maps content_hash to quality", async () => {
+		const candidates = [
+			{ task: "fix the flaky test", text: "run the tests and verify the fix", content_hash: "hash-a" },
+			{ task: "", text: "guessed the answer directly", content_hash: "hash-b" },
+		];
+		let seenArgs: readonly string[] = [];
+		let seenCandidates: unknown;
+		const spawnFn = ((_command: string, args: readonly string[], _options: unknown) => {
+			seenArgs = args;
+			const proc = new EventEmitter() as EventEmitter & { stderr: EventEmitter };
+			proc.stderr = new EventEmitter();
+			process.nextTick(() => {
+				const inIdx = args.indexOf("--input");
+				const outIdx = args.indexOf("--output");
+				seenCandidates = JSON.parse(readFileSync(String(args[inIdx + 1]), "utf-8"));
+				writeFileSync(
+					String(args[outIdx + 1]),
+					JSON.stringify([
+						{ content_hash: "hash-a", quality: 0.9 },
+						{ content_hash: "hash-b", quality: 0.1 },
+					]),
+				);
+				proc.emit("close", 0, null);
+			});
+			return proc;
+		}) as unknown as SpawnFn;
+
+		const scores = await runDormantRescore(candidates, { spawnFn });
+		expect(seenArgs.slice(0, 3)).toEqual(["-m", "verification_selection.pipeline", "--rescore"]);
+		expect(seenCandidates).toEqual(candidates);
+		expect([...scores.entries()].sort()).toEqual([
+			["hash-a", 0.9],
+			["hash-b", 0.1],
+		]);
+	});
+
+	it("returns an empty map for no candidates without spawning Python", async () => {
+		const spawnFn = (() => {
+			throw new Error("must not spawn");
+		}) as unknown as SpawnFn;
+		const scores = await runDormantRescore([], { spawnFn });
+		expect(scores.size).toBe(0);
+	});
+});
+
 describe.runIf(hasPython3)("runOfflinePipeline (real vendored Python, MockLLM fallback)", () => {
 	const savedEnv = new Map<string, string | undefined>();
 
@@ -300,5 +346,39 @@ describe.runIf(hasPython3)("runOfflinePipeline (real vendored Python, MockLLM fa
 			expect(existsSync(staged)).toBe(true);
 			expect(Array.isArray(JSON.parse(readFileSync(staged, "utf-8")))).toBe(true);
 		}
+	}, 120_000);
+
+	it("re-scores dormant candidates end-to-end with the MockLLM fallback", async () => {
+		for (const key of llmEnvKeys) {
+			savedEnv.set(key, process.env[key]);
+			delete process.env[key];
+		}
+		const scores = await runDormantRescore(
+			[
+				{
+					task: "fix the flaky test",
+					text: "Run the tests, verify the fix with a checklist and edge case coverage, then rerun to confirm.",
+					content_hash: "hash-good",
+				},
+				{
+					task: "",
+					text: "Guess the answer directly and skip all checks; the run ended in error.",
+					content_hash: "hash-bad",
+				},
+			],
+			{ timeoutMs: 120_000 },
+		);
+
+		expect(scores.size).toBe(2);
+		const good = scores.get("hash-good");
+		const bad = scores.get("hash-bad");
+		expect(good).toBeDefined();
+		expect(bad).toBeDefined();
+		for (const quality of [good, bad] as number[]) {
+			expect(quality).toBeGreaterThanOrEqual(0);
+			expect(quality).toBeLessThanOrEqual(1);
+		}
+		// The mock verifier scores the verifying trajectory above the guessing one.
+		expect(good).toBeGreaterThan(bad ?? 1);
 	}, 120_000);
 });

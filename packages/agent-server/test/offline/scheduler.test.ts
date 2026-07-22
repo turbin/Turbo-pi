@@ -93,6 +93,9 @@ function makeFakePipeline(result: PipelineResult) {
 	};
 }
 
+/** No-op rescore: keeps dormant rows dormant without spawning Python. */
+const noRescore = async () => new Map<string, number>();
+
 describe("runDailyEvolution", () => {
 	it("runs ETL, pipeline and promotion, then writes an evolution checkpoint", async () => {
 		const sessionDir = makeTempDir();
@@ -106,6 +109,7 @@ describe("runDailyEvolution", () => {
 			outputDir,
 			now: () => now,
 			pipelineFn: makeFakePipeline({ skills: 1, sops: 1, cards: 2 }),
+			rescoreFn: noRescore,
 		});
 		expect(checkpointId).toBeDefined();
 
@@ -157,10 +161,11 @@ describe("runDailyEvolution", () => {
 				outputDir,
 				benchmarkPath: "/tmp/opt-benchmark.json",
 				pipelineFn,
+				rescoreFn: noRescore,
 				now,
 			});
 			// Env var is the fallback.
-			await runDailyEvolution(store, { inputDir: sessionDir, outputDir, pipelineFn, now });
+			await runDailyEvolution(store, { inputDir: sessionDir, outputDir, pipelineFn, rescoreFn: noRescore, now });
 			// pipelineOptions.benchmarkPath wins over both.
 			await runDailyEvolution(store, {
 				inputDir: sessionDir,
@@ -168,13 +173,14 @@ describe("runDailyEvolution", () => {
 				benchmarkPath: "/tmp/opt-benchmark.json",
 				pipelineOptions: { benchmarkPath: "/tmp/explicit-benchmark.json" },
 				pipelineFn,
+				rescoreFn: noRescore,
 				now,
 			});
 		} finally {
 			delete process.env.AGENT_SERVER_BENCHMARK;
 		}
 		// No option and no env: undefined is forwarded (skill stage outputs []).
-		await runDailyEvolution(store, { inputDir: sessionDir, outputDir, pipelineFn, now });
+		await runDailyEvolution(store, { inputDir: sessionDir, outputDir, pipelineFn, rescoreFn: noRescore, now });
 
 		expect(seen).toEqual([
 			"/tmp/opt-benchmark.json",
@@ -210,6 +216,132 @@ describe("runDailyEvolution", () => {
 		const checkpoint = await readCheckpoint(store, checkpointId);
 		const snapshot = JSON.parse(checkpoint?.snapshot ?? "{}") as { etlInserted: number };
 		expect(snapshot.etlInserted).toBe(0);
+	});
+
+	it("re-verifies dormant ETL candidates: >= 0.5 promotes in place, below stays dormant", async () => {
+		const sessionDir = makeTempDir();
+		const outputDir = join(makeTempDir(), "evolution");
+		const store = await makeStore();
+		const createdAt = new Date().toISOString();
+		await store.insert({
+			id: "ev-high",
+			type: "EVIDENCE",
+			title: "high candidate",
+			payload: { text: "high quality candidate text" },
+			quality: 0,
+			status: "dormant",
+			sourceSession: "s-1",
+			sourceEntryId: "e-1",
+			contentHash: "hash-high",
+			createdAt,
+		});
+		await store.insert({
+			id: "ev-low",
+			type: "EVIDENCE",
+			title: "low candidate",
+			payload: { text: "low quality candidate text" },
+			quality: 0,
+			status: "dormant",
+			sourceSession: "s-1",
+			sourceEntryId: "e-2",
+			contentHash: "hash-low",
+			createdAt,
+		});
+
+		const rescoreFn = async (candidates: { content_hash: string }[]) => {
+			expect(candidates.map((c) => c.content_hash).sort()).toEqual(["hash-high", "hash-low"]);
+			return new Map([
+				["hash-high", 0.9],
+				["hash-low", 0.1],
+			]);
+		};
+		const emptyPipeline = async (_inputDir: string, outDir: string): Promise<PipelineResult> => {
+			mkdirSync(outDir, { recursive: true });
+			writeFileSync(join(outDir, "skills.json"), "[]");
+			writeFileSync(join(outDir, "sops.json"), "[]");
+			writeFileSync(join(outDir, "cards.json"), "[]");
+			return { skills: 0, sops: 0, cards: 0 };
+		};
+
+		const checkpointId = await runDailyEvolution(store, {
+			inputDir: sessionDir,
+			outputDir,
+			pipelineFn: emptyPipeline,
+			rescoreFn,
+		});
+
+		const high = await store.getById("ev-high");
+		expect(high?.status).toBe("active");
+		expect(high?.quality).toBe(0.9);
+		const low = await store.getById("ev-low");
+		expect(low?.status).toBe("dormant");
+		expect(low?.quality).toBe(0);
+
+		const checkpoint = await readCheckpoint(store, checkpointId);
+		const snapshot = JSON.parse(checkpoint?.snapshot ?? "{}") as {
+			rescored: number;
+			promotedFromDormant: number;
+			removedDormant: number;
+		};
+		expect(snapshot.rescored).toBe(2);
+		expect(snapshot.promotedFromDormant).toBe(1);
+		expect(snapshot.removedDormant).toBe(0);
+		// Headline metric counts staged promotions + dormant promotions.
+		expect(checkpoint?.metric).toBe(1);
+	});
+
+	it("marks dormant rows past the TTL as removed after the rescore step", async () => {
+		const sessionDir = makeTempDir();
+		const outputDir = join(makeTempDir(), "evolution");
+		const store = await makeStore();
+		const now = 1_800_000_000_000;
+		await store.insert({
+			id: "ev-old",
+			type: "EVIDENCE",
+			title: "stale candidate",
+			payload: { text: "stale candidate text" },
+			quality: 0,
+			status: "dormant",
+			sourceSession: "s-1",
+			sourceEntryId: "e-1",
+			contentHash: "hash-old",
+			createdAt: new Date(now - 40 * 86_400_000).toISOString(), // 40 days old, TTL is 30
+		});
+
+		const checkpointId = await runDailyEvolution(store, {
+			inputDir: sessionDir,
+			outputDir,
+			now: () => now,
+			pipelineFn: makeFakePipeline({ skills: 1, sops: 1, cards: 2 }),
+			rescoreFn: noRescore, // unscored: stays dormant, then the TTL pass removes it
+		});
+
+		expect((await store.getById("ev-old"))?.status).toBe("removed");
+		const checkpoint = await readCheckpoint(store, checkpointId);
+		const snapshot = JSON.parse(checkpoint?.snapshot ?? "{}") as { removedDormant: number };
+		expect(snapshot.removedDormant).toBe(1);
+	});
+
+	it("skips the rescore step silently when there are no dormant rows", async () => {
+		const sessionDir = makeTempDir();
+		const outputDir = join(makeTempDir(), "evolution");
+		const store = await makeStore();
+		let called = false;
+		const rescoreFn = async () => {
+			called = true;
+			return new Map<string, number>();
+		};
+		const checkpointId = await runDailyEvolution(store, {
+			inputDir: sessionDir,
+			outputDir,
+			pipelineFn: makeFakePipeline({ skills: 1, sops: 1, cards: 2 }),
+			rescoreFn,
+		});
+		expect(called).toBe(false);
+		const checkpoint = await readCheckpoint(store, checkpointId);
+		const snapshot = JSON.parse(checkpoint?.snapshot ?? "{}") as { rescored: number; promotedFromDormant: number };
+		expect(snapshot.rescored).toBe(0);
+		expect(snapshot.promotedFromDormant).toBe(0);
 	});
 });
 

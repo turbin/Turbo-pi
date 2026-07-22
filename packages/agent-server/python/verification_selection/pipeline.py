@@ -183,12 +183,62 @@ def select_experiences(
 # agent-server offline CLI（ vendored into pi 时新增；handoff 原始代码以上为准 ）
 #
 #   python -m verification_selection.pipeline --input trajectories.json --output cards.json
+#   python -m verification_selection.pipeline --rescore --input candidates.json --output scores.json
 #
 # input:  [{ "taskId": str, "task": str, "text": str, ... }]（agent-server 会话轨迹）
 # output: [{ "taskId": str, "quality": float, "card": {五元组} }]
 # 配置 LLM_BASE_URL + LLM_MODEL/TEACHER_MODEL 时走真实 OpenAI 兼容端点，
 # 否则回退到确定性 MockLLM（离线联调用，不证明真实增益）。
+#
+# --rescore（SPEC §5.2/§6 Stage 3 的 dormant 候选重打分）：
+# input:  [{ "task": str, "text": str, "content_hash": str }]（dormant EVIDENCE 载荷文本）
+# output: [{ "content_hash": str, "quality": float }]（quality ∈ [0,1]，与主管线
+#          vs_reference 口径一致：对 REFERENCE_TRAJECTORY 的 Bradley-Terry 偏好概率）
 # ---------------------------------------------------------------------------
+
+
+def _rescore_cli(input_path: str, output_path: str) -> int:
+    """对 dormant ETL 候选逐条重打分：候选文本 vs REFERENCE_TRAJECTORY 的偏好概率。
+
+    复用主管线单轨迹任务的打分通路（Verifier.score_pair + vs_reference 口径），
+    不引入新的打分框架；空候选数组输出 [] 并以 0 退出。
+    """
+    import json
+    import os
+
+    from .verifier import LetterScale
+
+    with open(input_path, encoding="utf-8") as f:
+        raw = json.load(f)
+
+    candidates = [
+        {
+            "task": str(item.get("task") or ""),
+            "text": str(item.get("text") or ""),
+            "content_hash": str(item.get("content_hash") or ""),
+        }
+        for item in raw
+    ]
+    candidates = [c for c in candidates if c["text"].strip()]
+
+    scores: list[dict] = []
+    if candidates:
+        if os.environ.get("LLM_BASE_URL") and (os.environ.get("LLM_MODEL") or os.environ.get("TEACHER_MODEL")):
+            from .llm_client import OpenAICompatClient
+
+            student = OpenAICompatClient()  # 打分只需 student；配置走环境变量
+        else:
+            from .testing import make_scoring_mock
+
+            student = make_scoring_mock()
+        verifier = Verifier(student, scale=LetterScale(20), K=2)
+        for c in candidates:
+            ps = verifier.score_pair(c["task"], c["text"], REFERENCE_TRAJECTORY)
+            scores.append({"content_hash": c["content_hash"], "quality": round(ps.preference, 6)})
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(scores, f, ensure_ascii=False, indent=2)
+    return 0
 
 
 def _cli(argv: list[str] | None = None) -> int:
@@ -201,10 +251,15 @@ def _cli(argv: list[str] | None = None) -> int:
     from .verifier import LetterScale
 
     parser = argparse.ArgumentParser(prog="verification_selection.pipeline")
-    parser.add_argument("--input", required=True, help="trajectories.json 路径")
-    parser.add_argument("--output", required=True, help="cards.json 输出路径")
+    parser.add_argument("--input", required=True, help="trajectories.json 路径（--rescore 时为 candidates.json）")
+    parser.add_argument("--output", required=True, help="cards.json 输出路径（--rescore 时为 scores.json）")
     parser.add_argument("--score-threshold", type=float, default=0.5)
+    parser.add_argument("--rescore", action="store_true",
+                        help="dormant 候选重打分模式：输入 [{task, text, content_hash}]，输出 [{content_hash, quality}]")
     args = parser.parse_args(argv)
+
+    if args.rescore:
+        return _rescore_cli(args.input, args.output)
 
     with open(args.input, encoding="utf-8") as f:
         raw = json.load(f)

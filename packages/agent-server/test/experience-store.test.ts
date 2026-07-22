@@ -116,4 +116,106 @@ describe("ExperienceStore", () => {
 		expect(row?.status).toBe("active");
 		expect(row?.quality).toBe(0.9);
 	});
+
+	it("removeDormantBefore removes dormant rows older than the cutoff", async () => {
+		const store = new ExperienceStore(":memory:");
+		await store.initSchema();
+		const now = Date.now();
+		const iso = (daysAgo: number) => new Date(now - daysAgo * 86_400_000).toISOString();
+		const insertDormant = (id: string, daysAgo: number) =>
+			store.insert({
+				id,
+				type: "EVIDENCE",
+				title: `dormant ${id}`,
+				payload: { text: `text ${id}` },
+				quality: 0,
+				status: "dormant",
+				sourceSession: "session-1",
+				sourceEntryId: "entry-1",
+				contentHash: `hash-${id}`,
+				createdAt: iso(daysAgo),
+			});
+		await insertDormant("d-old", 40);
+		await insertDormant("d-new", 1);
+		// An old but active row must not be touched.
+		await store.insert({
+			id: "a-old",
+			type: "EVIDENCE",
+			title: "active old",
+			payload: { text: "text a-old" },
+			quality: 0.9,
+			status: "active",
+			sourceSession: "session-1",
+			sourceEntryId: "entry-2",
+			contentHash: "hash-a-old",
+			createdAt: iso(40),
+		});
+
+		const removed = await store.removeDormantBefore(iso(30));
+		expect(removed).toBe(1);
+		expect((await store.getById("d-old"))?.status).toBe("removed");
+		expect((await store.getById("d-new"))?.status).toBe("dormant");
+		expect((await store.getById("a-old"))?.status).toBe("active");
+	});
+
+	it("removeDormantBefore trims the oldest excess when the dormant count exceeds the cap", async () => {
+		const store = new ExperienceStore(":memory:");
+		await store.initSchema();
+		const now = Date.now();
+		for (const [i, daysAgo] of [3, 2, 1].entries()) {
+			await store.insert({
+				id: `d-${i}`,
+				type: "EVIDENCE",
+				title: `dormant ${i}`,
+				payload: { text: `text ${i}` },
+				quality: 0,
+				status: "dormant",
+				sourceSession: "session-1",
+				sourceEntryId: "entry-1",
+				contentHash: `hash-${i}`,
+				createdAt: new Date(now - daysAgo * 86_400_000).toISOString(),
+			});
+		}
+
+		// Nothing older than the 30-day cutoff; the cap trims d-0 (oldest).
+		const removed = await store.removeDormantBefore(new Date(now - 30 * 86_400_000).toISOString(), 2);
+		expect(removed).toBe(1);
+		expect((await store.getById("d-0"))?.status).toBe("removed");
+		expect((await store.getById("d-1"))?.status).toBe("dormant");
+		expect((await store.getById("d-2"))?.status).toBe("dormant");
+	});
+
+	it("keeps rows removed by a plain status UPDATE out of FTS search", async () => {
+		const store = new ExperienceStore(":memory:");
+		await store.initSchema();
+		const now = Date.now();
+		await store.insert({
+			id: "d-gone",
+			type: "EVIDENCE",
+			title: "flaky removed candidate",
+			payload: { text: "flaky text that stays indexed" },
+			quality: 0,
+			status: "dormant",
+			sourceSession: "session-1",
+			sourceEntryId: "entry-1",
+			contentHash: "hash-gone",
+			createdAt: new Date(now - 40 * 86_400_000).toISOString(),
+		});
+		await store.insert({
+			id: "a-kept",
+			type: "EVIDENCE",
+			title: "flaky active candidate",
+			payload: { text: "flaky active text" },
+			quality: 0.9,
+			status: "active",
+			sourceSession: "session-1",
+			sourceEntryId: "entry-2",
+			contentHash: "hash-kept",
+			createdAt: new Date(now).toISOString(),
+		});
+
+		await store.removeDormantBefore(new Date(now - 30 * 86_400_000).toISOString());
+		const results = await store.search("flaky", 10);
+		expect(results.map((r) => r.id)).toEqual(["a-kept"]);
+	});
 });

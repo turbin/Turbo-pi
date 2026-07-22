@@ -18,8 +18,13 @@ import { fileURLToPath } from "node:url";
  * The subprocesses pick a real OpenAI-compatible endpoint when LLM_BASE_URL +
  * LLM_MODEL/TEACHER_MODEL are set, otherwise they fall back to deterministic
  * MockLLM implementations. Verification/canonicalize and ExperienceStore
- * promotion are Task 7; this stage only runs extraction and stages the
- * intermediate JSON files in `outputDir`.
+ * promotion live in verifier.ts; this stage only runs extraction and stages
+ * the intermediate JSON files in `outputDir`.
+ *
+ * `runDormantRescore` is the companion re-verification entry point (SPEC §5.2
+ * / §6 Stage 3): it feeds dormant ETL candidates to
+ * `verification_selection.pipeline --rescore` and returns their continuous
+ * quality scores keyed by contentHash.
  */
 
 export interface PipelineResult {
@@ -106,6 +111,66 @@ export async function runOfflinePipeline(
 		copyFileSync(cardsPath, join(outputDir, "cards.json"));
 
 		return { skills: skills.length, sops: sops.length, cards: cards.length };
+	} finally {
+		rmSync(tempDir, { recursive: true, force: true });
+	}
+}
+
+/** One dormant ETL candidate for the Python `--rescore` CLI (wire format, snake_case). */
+export interface DormantRescoreCandidate {
+	/** Task context for the pairwise scorer; may be "". */
+	task: string;
+	/** Dormant EVIDENCE payload text. */
+	text: string;
+	/** Existing store contentHash (ETL hashes sha256(text)); passed through unchanged. */
+	content_hash: string;
+}
+
+/**
+ * Re-score dormant ETL candidates via
+ * `python -m verification_selection.pipeline --rescore`. Returns a
+ * contentHash -> quality map (quality in [0,1], same vs-reference scale as
+ * the main pipeline). An empty candidate list short-circuits without
+ * spawning Python.
+ */
+export async function runDormantRescore(
+	candidates: DormantRescoreCandidate[],
+	options: OfflinePipelineOptions = {},
+): Promise<Map<string, number>> {
+	const scores = new Map<string, number>();
+	if (candidates.length === 0) return scores;
+
+	const pythonBin = options.pythonBin ?? process.env.AGENT_SERVER_PYTHON ?? "python3";
+	const pythonDir = options.pythonDir ?? process.env.AGENT_SERVER_PYTHON_DIR ?? defaultPythonDir();
+	const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+	const spawnFn = options.spawnFn ?? spawn;
+
+	const tempDir = mkdtempSync(join(tmpdir(), "agent-server-rescore-"));
+	try {
+		const inputPath = join(tempDir, "candidates.json");
+		const outputPath = join(tempDir, "scores.json");
+		writeFileSync(inputPath, JSON.stringify(candidates));
+
+		const env = {
+			...process.env,
+			PYTHONPATH: process.env.PYTHONPATH ? `${pythonDir}${delimiter}${process.env.PYTHONPATH}` : pythonDir,
+		};
+		await runPython(
+			spawnFn,
+			pythonBin,
+			"verification_selection.pipeline",
+			["--rescore", "--input", inputPath, "--output", outputPath],
+			env,
+			timeoutMs,
+		);
+
+		for (const entry of readJsonArray(outputPath)) {
+			const e = entry as { content_hash?: unknown; quality?: unknown };
+			if (typeof e.content_hash === "string" && typeof e.quality === "number") {
+				scores.set(e.content_hash, e.quality);
+			}
+		}
+		return scores;
 	} finally {
 		rmSync(tempDir, { recursive: true, force: true });
 	}

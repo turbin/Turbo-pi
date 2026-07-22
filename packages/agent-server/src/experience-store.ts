@@ -195,6 +195,36 @@ export class ExperienceStore {
 		return rows.map(rowToExperience);
 	}
 
+	/**
+	 * Bound dormant-row growth (SPEC §5.2 lifecycle): mark dormant rows older
+	 * than `cutoffIso` as 'removed', then, if dormant rows still exceed `cap`,
+	 * mark the oldest excess as 'removed'. Returns the number of rows removed
+	 * in this call. FTS needs no handling: rows stay indexed but `search`
+	 * filters status='active', so a plain status UPDATE suffices.
+	 */
+	async removeDormantBefore(cutoffIso: string, cap?: number): Promise<number> {
+		let removed = this.db
+			.prepare("UPDATE experiences SET status = 'removed' WHERE status = 'dormant' AND created_at < ?")
+			.run(cutoffIso).changes;
+		if (cap !== undefined) {
+			const { n } = this.db.prepare("SELECT COUNT(*) AS n FROM experiences WHERE status = 'dormant'").get() as {
+				n: number;
+			};
+			const excess = n - cap;
+			if (excess > 0) {
+				removed += this.db
+					.prepare(`
+						UPDATE experiences SET status = 'removed'
+						WHERE id IN (
+							SELECT id FROM experiences WHERE status = 'dormant' ORDER BY created_at ASC LIMIT ?
+						)
+					`)
+					.run(excess).changes;
+			}
+		}
+		return removed;
+	}
+
 	async search(query: string, limit: number): Promise<Experience[]> {
 		const rows = this.db
 			.prepare(`
