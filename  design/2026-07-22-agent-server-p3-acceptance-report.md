@@ -53,3 +53,19 @@ P2 Task 7 把 `sop_lifecycle`/`skill_evolution` 的 LLM 客户端构造改成 `t
 1. **P3-3 补测试（阻塞项）**：约 100-150 行测试——tee 注入含 `delta.tool_calls` 的 SSE fixture，断言 `toolcall_validation` 条目内容、字节透传不变、多 index 组装边界、未知工具/非法 JSON 参数违规记录。
 2. **文档数字修正**：P3-3 决策记录与 P3 closeout 的测试统计改为实际口径（157/17）。
 3. 可选：P3-1 的 verifier 文本回退（`_extract_scores_from_text`）无自动化测试覆盖，Python 侧目前靠 live 验证背书，建议后续补单测。
+
+---
+
+## 复验（2026-07-22 二次验收）：**通过**
+
+P3-3 执行 agent 返工后复验，两项阻塞/失真问题均已解决：
+
+1. **测试已补齐**（未提交改动，待返工 agent 提交）：
+   - 新增 `test/tee-toolcall-validation.test.ts`（300 行，10 个集成测试）：合法 toolCall 透传字节不变 + `toolcall_validation` 条目、未知工具名违规、非法 JSON 参数违规、缺必填属性违规、多 toolCall 跨 index 独立校验、参数分片组装、混合 allowed/violation、无白名单跳过、空 toolCalls 跳过、条目顺序（assistant message 先于 toolcall_validation）。任务书要求的三个场景全部覆盖。
+   - `test/toolcall-validator.test.ts` +87 行（8 个 `validateAccumulatedToolCalls` 单测）。
+   - `src/server.ts` 仅 1 行改动（`teeOpenAISSEWithSession` 导出供测试），实现无变动。
+2. **文档数字已修正**：P3-3 决策记录与 P3 closeout 改为 175 测试 / 18 文件，与实测一致。
+
+复验基线（实测）：agent-server 全套 **18 文件 / 175 测试全部通过**；根 `npm run check` 退出码 0。
+
+**最终结论：P3 四项任务全部验收通过。** 注意：返工改动（4 个文件 + 1 个新测试文件）在验收时**尚未提交**，需由返工 agent 提交后 P3 方告完整关闭。
