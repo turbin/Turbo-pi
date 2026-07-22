@@ -107,6 +107,7 @@ export class ExperienceStore {
 			);
 			CREATE INDEX IF NOT EXISTS idx_exp_type_status ON experiences(type, status);
 			CREATE INDEX IF NOT EXISTS idx_exp_quality ON experiences(quality DESC);
+			CREATE INDEX IF NOT EXISTS idx_exp_content_hash ON experiences(content_hash);
 			CREATE VIRTUAL TABLE IF NOT EXISTS experiences_fts USING fts5(
 				title, search_text, content=experiences, content_rowid=rowid,
 				tokenize='unicode61'
@@ -188,6 +189,7 @@ export class ExperienceStore {
 				SELECT e.* FROM experiences_fts fts
 				JOIN experiences e ON e.rowid = fts.rowid
 				WHERE experiences_fts MATCH ?
+				AND e.status = 'active'
 				ORDER BY bm25(experiences_fts)
 				LIMIT ?
 			`)

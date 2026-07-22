@@ -60,6 +60,23 @@ describe("ExperienceStore", () => {
 		expect(results.map((r) => r.id)).toEqual(["exp-1"]);
 	});
 
+	it("excludes dormant and removed rows from FTS search", async () => {
+		const store = new ExperienceStore(":memory:");
+		await store.initSchema();
+		const base = {
+			type: "EVIDENCE" as const,
+			payload: { text: "hello" },
+			quality: 0,
+			sourceSession: "session-1",
+			sourceEntryId: "entry-1",
+			createdAt: new Date().toISOString(),
+		};
+		await store.insert({ ...base, id: "exp-active", title: "flaky active", status: "active", contentHash: "h1" });
+		await store.insert({ ...base, id: "exp-dormant", title: "flaky dormant", status: "dormant", contentHash: "h2" });
+		const results = await store.search("flaky", 10);
+		expect(results.map((r) => r.id)).toEqual(["exp-active"]);
+	});
+
 	it("looks up rows by contentHash", async () => {
 		const store = new ExperienceStore(":memory:");
 		await store.initSchema();
