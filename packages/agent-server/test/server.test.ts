@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ExperienceStore } from "../src/experience-store.ts";
+import { writeCheckpoint } from "../src/offline/checkpoint.ts";
 import { createServer } from "../src/server.ts";
 import type { Experience } from "../src/types.ts";
 
@@ -241,6 +242,60 @@ describe("POST /v1/chat/completions streaming session recording", () => {
 		expect(last.customType).toBe("error");
 		expect(last.data.message).toContain("gateway stream reset");
 		expect(entries.filter((e) => e.type === "message")).toHaveLength(1);
+		await app.close();
+	});
+});
+
+describe("GET /api/evolution/status", () => {
+	it("returns 404 and never_run when no checkpoint exists", async () => {
+		const store = makeStore();
+		const app = createServer({ store, gatewayUrl: "http://127.0.0.1:1" });
+		const res = await app.inject({ method: "GET", url: "/api/evolution/status" });
+		expect(res.statusCode).toBe(404);
+		const body = JSON.parse(res.body);
+		expect(body.status).toBe("never_run");
+		await app.close();
+	});
+
+	it("returns the latest evolution checkpoint when one exists", async () => {
+		const store = makeStore();
+		await writeCheckpoint(store, {
+			kind: "evolution",
+			epoch: 1700000000000,
+			metric: 42,
+			snapshot: JSON.stringify({ etlInserted: 200, promoted: 42 }),
+		});
+		const app = createServer({ store, gatewayUrl: "http://127.0.0.1:1" });
+		const res = await app.inject({ method: "GET", url: "/api/evolution/status" });
+		expect(res.statusCode).toBe(200);
+		const body = JSON.parse(res.body);
+		expect(body.status).toBe("found");
+		expect(body.metric).toBe(42);
+		expect(body.id).toBeTruthy();
+		expect(body.snapshot.promoted).toBe(42);
+		await app.close();
+	});
+
+	it("returns the latest checkpoint when multiple kinds exist", async () => {
+		const store = makeStore();
+		await writeCheckpoint(store, {
+			kind: "other",
+			epoch: 1700000000000,
+			metric: 99,
+			snapshot: JSON.stringify({}),
+		});
+		await writeCheckpoint(store, {
+			kind: "evolution",
+			epoch: 1700000001000,
+			metric: 7,
+			snapshot: JSON.stringify({ promoted: 7 }),
+		});
+		const app = createServer({ store, gatewayUrl: "http://127.0.0.1:1" });
+		const res = await app.inject({ method: "GET", url: "/api/evolution/status" });
+		expect(res.statusCode).toBe(200);
+		const body = JSON.parse(res.body);
+		expect(body.status).toBe("found");
+		expect(body.metric).toBe(7);
 		await app.close();
 	});
 });

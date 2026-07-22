@@ -46,6 +46,27 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 		void store.initSchema();
 	}
 
+	// -- offline evolution status (SPEC B3: expose last checkpoint to monitoring) --
+	fastify.get("/api/evolution/status", async (_request, reply) => {
+		const latest = await store.getLatestCheckpoint("evolution");
+		if (!latest) {
+			return reply.code(404).send({ status: "never_run" });
+		}
+		let snapshot: unknown;
+		try {
+			snapshot = JSON.parse(latest.snapshot);
+		} catch {
+			snapshot = latest.snapshot;
+		}
+		return reply.send({
+			status: "found",
+			id: latest.id,
+			epoch: new Date(latest.epoch).toISOString(),
+			metric: latest.metric,
+			snapshot,
+		});
+	});
+
 	fastify.post("/api/stream", async (request, reply) => {
 		const body = request.body as StreamRequest;
 		const sessionPath = join(sessionDir, `${Date.now()}-${randomUUID()}.jsonl`);
