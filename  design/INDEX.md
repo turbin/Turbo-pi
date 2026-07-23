@@ -1,7 +1,7 @@
 # design 目录索引（INDEX）
 
 维护说明：本索引概述 ` design/`（目录名带前导空格）下每份文档的内容，并记录从 agent-server P0 起各阶段决策的变化时间线。**新增设计文档时请同步更新本索引。**
-最后更新：2026-07-23（覆盖 56 份文档 + progress/ 目录）。
+最后更新：2026-07-23（覆盖 57 份文档 + progress/ 目录）。
 
 阅读指引：
 - **通用约束 canonical 版本**（工程内改动、omlx 不可动、提交格式、git 纪律）：`2026-07-22-agent-server-p3-candidate-tasks.md` 的"通用约束"一节，后续任务书均为引用。
@@ -115,6 +115,7 @@
 |---|---|
 | 2026-07-23-agent-server-r-real-teacher-tasks.md | **R 任务书（当前最新）**：R1 真实 LLM teacher 全链路 E2E（含 rescore 超时治理）、R2 Mock vs 真实对照评估与切换建议、R3 C-重 Go/No-Go 评审 |
 | 2026-07-23-agent-server-r1-real-teacher-e2e-changes-and-decisions.md | R1 决策记录：真实 teacher 全链路 2m31s 通过（4 张新 Method、quality 脱离 Mock 关键词档）；rescore 因 dormant=0 未触发，超时暂不治理（触发条件记录） |
+| 2026-07-23-agent-server-r2-mock-vs-real-evaluation.md | R2 对照评估：role 偏倚为 Mock 门控产物（真实单轮 4 Method 0 Workflow）；截断与并存行两触发条件命中但均评审无需动作；切换真实 teacher 的 plist 指令（用户动作）+ 成本估算（增量派生观察项）；基线已刷新为真实 teacher 版 |
 | progress/2026-07-23-r-real-teacher.md | R 里程碑进度与交接：R1-R3 状态表、LLM 切换机制等共享环境事实、断点恢复指引 |
 
 进度跟踪目录 ` design/progress/`：每个里程碑一个进度文件，多 agent 交接 + 断点恢复用；规范见 `progress/README.md`。
@@ -196,6 +197,7 @@
 - 【立】R 里程碑立项：真实 LLM teacher 全链路验证 + Mock/真实对照评估 + C-重提前评审；动因是基线 §8.1/§8.4 的 Mock 路径结构性失真（评分关键词驱动、role 偏 Workflow）
 - 【留】P3-1 发现的 rescore 真实 LLM 超时（120s/12 次调用）→ R1 未复现（dormant=0 未触发），维持暂不治理，触发条件：dormant 积压后真实 run 超时
 - 【验】R1 通过：真实 teacher 下同 5 session 产 4 张 Method（Mock 仅 1），role 分布失真解除；quality 0.724-0.731 脱离关键词档，但区分度有限待 R2 评估
+- 【评】R2：切换真实 teacher 建议交付（plist env 指令，用户动作）；两触发评审形式命中——Method 库存 6 截断（被截不可惜，上限维持）、并存行 proxy 0→3（同轨迹不同 role 非重复，不立项清理）；新观察项：增量派生、rescore 规模化、verifier 回退粒度粗
 
 ### C3 follow-up（07-23）
 
