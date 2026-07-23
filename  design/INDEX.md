@@ -104,6 +104,8 @@
 | 2026-07-23-agent-server-post-c-tasks.md | **N1/N2/N3 任务书（当前最新）**：N1 FTS tokenizer 修正（拉丁整词 + CJK bigram + 重建 CLI，含 10 条 TDD 用例表）、N2 Docker 镜像首次构建验证（colima 红线）、N3 上线观察期启动（dry-run 审查 + 安装指令 + 观察 runbook） |
 | 2026-07-23-agent-server-n1-fts-tokenizer-changes-and-decisions.md | N1 决策记录：tokenizeForFts 重写（拉丁整词 + CJK char/bigram 对齐 retrieval.ts）、FTS 重建 DROP+CREATE 方案（外部内容表 DELETE 不可用）、rebuild-fts CLI（--dry-run）、不自动迁移；10 条 TDD 用例全绿 + live sanity（jitter 0→2 命中） |
 | 2026-07-23-agent-server-n2-docker-build-changes-and-decisions.md | N2 构建验证：首次成功构建 agent-server:local（145MB）；Dockerfile 3 处修改（移除 npm run build、npm ci 不跳 scripts、NPM_REGISTRY/NODE_DISTURL/HOST 参数）+ server.ts HOST 环境变量；单容器冒烟 + compose 双服务 checkpoint 确认 |
+| 2026-07-23-agent-server-n3-go-live-changes-and-decisions.md | N3 上线观察期启动：dry-run 审查（doctor/install/uninstall 三命令）；重点审查项——plist 无 env 变量（EXPERIENCE_STORE_PATH 无需设置、AGENT_SERVER_BENCHMARK 需手动添加、PYTHONPATH 由代码自行设置）+ Node PATH 问题（LaunchAgent 环境 PATH 受限，推荐 with-node25.sh 方案）；安装/卸载/自查指令（agent 未执行 install）；观察 runbook 交付 |
+| 2026-07-23-agent-server-observation-runbook.md | 观察 Runbook：每周对照基线 SQL 集（§1 库存/§3 quality/§4 并存行/§5 截断/§6 checkpoint）、触发评审动作表（C 方案 5 项决策观察项）、客户端接线说明（Kimi Code → 8788 → 8787 → 8000）、周报模板（附录 A） |
 | progress/README.md | progress 目录规范：里程碑单文件方案、状态值、更新纪律（认领即写/完成即写/中断必写/随工作提交） |
 | progress/2026-07-23-post-c-operations.md | Post-C 里程碑进度与交接：N1-N3 状态表、跨 agent 共享环境事实、断点恢复指引 |
 
