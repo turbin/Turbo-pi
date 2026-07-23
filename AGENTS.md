@@ -20,9 +20,20 @@ Packages:
 Other notable entries:
 
 - `.pi/` — this repo's own pi configuration (extensions, prompt templates, skills) used when running pi here.
-- ` design/` — design documents (note: the directory name contains a leading space).
+- ` design/` — design documents (note: the directory name contains a leading space). See "Design Documents" below for how to read it.
 - `scripts/` — repo tooling (release, shrinkwrap generation, checks, stats).
 - `packages/coding-agent/docs/` — user documentation; `packages/coding-agent/examples/` — extension examples (some are their own workspaces).
+
+## Design Documents (` design/`)
+
+All design specs, per-task decision records, live verification reports, phase closeouts, and acceptance reports live in ` design/` (**the directory name starts with a space** — quote it in shell commands: `ls " design/"`; naive `ls design/` or unquoted globbing will miss it or hit a stray wrong directory).
+
+How to read it:
+
+- **Start at ` design/INDEX.md`**: one-line summary of every document (grouped by phase), a decision-change timeline from P0 onward (【立】created /【改】revised /【废】retired /【留】deferred, with each retired decision traced to the change that replaced it), and a "living decisions" quick-reference table of what is currently in force.
+- **Per-phase reading order**: phase spec/plan → per-task `*-changes-and-decisions.md` records → live verification report → closeout / acceptance report.
+- **Cross-task constraints** (repo-only modifications, omlx untouchable, commit format, git discipline) have a single canonical home: the "通用约束" section of ` design/2026-07-22-agent-server-p3-candidate-tasks.md`. Later task briefs reference it — change it there, not per document.
+- **Maintenance rule**: when adding a new design document, update ` design/INDEX.md` in the same commit.
 
 ## Technology Stack
 
