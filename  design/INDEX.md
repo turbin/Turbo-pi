@@ -1,7 +1,7 @@
 # design 目录索引（INDEX）
 
 维护说明：本索引概述 ` design/`（目录名带前导空格）下每份文档的内容，并记录从 agent-server P0 起各阶段决策的变化时间线。**新增设计文档时请同步更新本索引。**
-最后更新：2026-07-23（覆盖 53 份文档 + progress/ 目录）。
+最后更新：2026-07-23（覆盖 55 份文档 + progress/ 目录）。
 
 阅读指引：
 - **通用约束 canonical 版本**（工程内改动、omlx 不可动、提交格式、git 纪律）：`2026-07-22-agent-server-p3-candidate-tasks.md` 的"通用约束"一节，后续任务书均为引用。
@@ -109,6 +109,13 @@
 | progress/README.md | progress 目录规范：里程碑单文件方案、状态值、更新纪律（认领即写/完成即写/中断必写/随工作提交） |
 | progress/2026-07-23-post-c-operations.md | Post-C 里程碑进度与交接：N1-N3 状态表、跨 agent 共享环境事实、断点恢复指引 |
 
+### 阶段 7：R 真实化（2026-07-23 立项，进行中）
+
+| 文件 | 内容 |
+|---|---|
+| 2026-07-23-agent-server-r-real-teacher-tasks.md | **R 任务书（当前最新）**：R1 真实 LLM teacher 全链路 E2E（含 rescore 超时治理）、R2 Mock vs 真实对照评估与切换建议、R3 C-重 Go/No-Go 评审 |
+| progress/2026-07-23-r-real-teacher.md | R 里程碑进度与交接：R1-R3 状态表、LLM 切换机制等共享环境事实、断点恢复指引 |
+
 进度跟踪目录 ` design/progress/`：每个里程碑一个进度文件，多 agent 交接 + 断点恢复用；规范见 `progress/README.md`。
 
 ---
@@ -182,6 +189,11 @@
 - 【立】观察基线固化：零自然 Method/Guard 产出，库存 Stats + 迭代建议 → **同日 follow-up 刷新**（自然 Method 1 条入库，库存/分布更新）
 - 【观】FTS5 content=experiences 同步：`ExperienceStore.insert()` 路径正常，直接 INSERT 不触发
 - 【观】MockLLM 默认 role=Workflow：当前 session 数据 + benchmark 样本不足以触发真实 teacher 路径的 Method/Guard 分支 → **follow-up 证伪“不足以触发”：构造含关键词 session 即触发**
+
+### R 真实化（07-23 立项）
+
+- 【立】R 里程碑立项：真实 LLM teacher 全链路验证 + Mock/真实对照评估 + C-重提前评审；动因是基线 §8.1/§8.4 的 Mock 路径结构性失真（评分关键词驱动、role 偏 Workflow）
+- 【留】P3-1 发现的 rescore 真实 LLM 超时（120s/12 次调用）→ R1 治理（timeoutMs 默认 300s 未实测）
 
 ### C3 follow-up（07-23）
 
