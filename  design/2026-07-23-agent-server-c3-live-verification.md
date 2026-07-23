@@ -87,9 +87,19 @@ WHERE a.type='ABILITY' AND e.type='EVIDENCE';
 
 **结果：零行。**（当前无 ABILITY 行，不存在并存）
 
-### 场景 1 判定：**PASS（条件性）**
+### 场景 1 判定：**PASS**（2026-07-23 follow-up 由条件性 PASS 升级为完整 PASS）
 
-C1 代码路由正确（C1 10 条单测全绿），live 管线因数据特征未产出 Method/Guard card——不是代码缺陷，是当前 session 数据 + MockLLM 模板的局限。**这本身就是 C3 观察基线的一部分（见下文场景 3）。**
+C1 代码路由正确（C1 10 条单测全绿）。初次执行时 live 管线因数据特征未产出 Method/Guard card——不是代码缺陷，是当时 session 数据 + MockLLM 关键词门控的局限。
+
+**Follow-up（2026-07-23）**：构造含 retry/backoff 关键词的 session（`1784792682394-*.jsonl`）放入 `var/sessions`，重跑 `runDailyEvolution`（checkpoint `ckpt-847e1d89f7e98401`），观察到自然 Method ABILITY 入库：
+
+```
+exp-13a22197b1df92fe | ABILITY | active | role=Method | quality=0.652847
+  taskId = 1784792682394-37b98075-6185-4a17-836d-1a4f2a7bc508
+  name = Bounded Exponential-Backoff Retry for Flaky APIs
+```
+
+并存行统计（Q2）follow-up 后仍为 0 行；生产 `retrieve()` 路径验证该条目可被检索（查询 "How should I retry a flaky API call with backoff?" 命中，top-8 排第 2）。完整过程与证据见 ` design/2026-07-23-agent-server-c3-followup-natural-method-changes-and-decisions.md`。
 
 ---
 

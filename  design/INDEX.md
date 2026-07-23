@@ -1,7 +1,7 @@
 # design 目录索引（INDEX）
 
 维护说明：本索引概述 ` design/`（目录名带前导空格）下每份文档的内容，并记录从 agent-server P0 起各阶段决策的变化时间线。**新增设计文档时请同步更新本索引。**
-最后更新：2026-07-23（覆盖 50 份文档）。
+最后更新：2026-07-23（覆盖 51 份文档）。
 
 阅读指引：
 - **通用约束 canonical 版本**（工程内改动、omlx 不可动、提交格式、git 纪律）：`2026-07-22-agent-server-p3-candidate-tasks.md` 的"通用约束"一节，后续任务书均为引用。
@@ -94,7 +94,8 @@
 | 2026-07-22-agent-server-infra-node-pinning-and-container-changes-and-decisions.md | 基础设施决策：Node 25.9.0 仓库内固定（.tools + with-node25.sh）、agent-server 容器化（Dockerfile/compose/loop 调度）、tm/temp 入 gitignore |
 | 2026-07-23-agent-server-c3-live-verification.md | C3 live 验证：3 BDD 场景执行记录（进化管线、SQL 审计、注入路径验证、截断观察）；管线只产 Workflow cards（MockLLM 关键词门控，session 轨迹未命中 Method/Guard 关键词）——代码路由正确，数据面未触发分流（根因表述经 07-23 验收修正） |
 | 2026-07-23-agent-server-c3-observation-baseline.md | C3 观察基线：库存全景、quality 分布、并存行统计（当前 0）、截断状态、checkpoint 历史、会话特征——"上线运行后迭代"对照起点 |
-| 2026-07-23-agent-server-c3-acceptance-report.md | C3 验收报告：**有条件通过**（213 测试全绿、DB 数字独立复核一致；修正 MockLLM 根因误述——关键词门控而非固定 Workflow；场景 2 走临时注入服务为已记录偏差） |
+| 2026-07-23-agent-server-c3-acceptance-report.md | C3 验收报告：**通过**（213 测试全绿、DB 数字独立复核一致；修正 MockLLM 根因误述——关键词门控而非固定 Workflow；场景 2 走临时注入服务为已记录偏差；场景 1 条件性 PASS 已被同日 follow-up 升级为完整 PASS） |
+| 2026-07-23-agent-server-c3-followup-natural-method-changes-and-decisions.md | C3 follow-up：构造含 retry/backoff 关键词 session 重跑进化，自然 Method ABILITY 入库（场景 1 升级为完整 PASS）；基线全量刷新；新发现 FTS 拉丁正文不可检索（仅记录，建议单独立项） |
 
 ---
 
@@ -164,9 +165,15 @@
 
 ### C3 live 验证（07-23）
 
-- 【立】观察基线固化：零自然 Method/Guard 产出，库存 Stats + 迭代建议
+- 【立】观察基线固化：零自然 Method/Guard 产出，库存 Stats + 迭代建议 → **同日 follow-up 刷新**（自然 Method 1 条入库，库存/分布更新）
 - 【观】FTS5 content=experiences 同步：`ExperienceStore.insert()` 路径正常，直接 INSERT 不触发
-- 【观】MockLLM 默认 role=Workflow：当前 session 数据 + benchmark 样本不足以触发真实 teacher 路径的 Method/Guard 分支
+- 【观】MockLLM 默认 role=Workflow：当前 session 数据 + benchmark 样本不足以触发真实 teacher 路径的 Method/Guard 分支 → **follow-up 证伪“不足以触发”：构造含关键词 session 即触发**
+
+### C3 follow-up（07-23）
+
+- 【立】场景 1 完整化：构造含 retry/backoff 关键词的最小 session（user+assistant 两条消息）重跑 runDailyEvolution，自然 Method ABILITY 入库（quality 0.652847），场景 1 由条件性 PASS 升级为完整 PASS
+- 【立】增量重跑验证幂等：不清 DB 直接重跑，旧 cards contentHash 去重跳过、ETL 幂等，与 cron 日常运行形态一致
+- 【观】FTS 拉丁正文不可检索：tokenizeForFts 对非 CJK 也逐字拆，词查询只命中未拆字的 title 列；中文靠 bigram 不受影响 → 写入基线迭代建议第 5 条，建议单独立项修正
 
 ---
 
@@ -176,11 +183,11 @@
 |---|---|---|
 | 架构分层 | TS agent-server（经验代理，8788）+ Python gateway（模型路由，8787）+ omlx（8000） | P0 spec |
 | 检索 | FTS bm25 top-24（SQL 过滤 active）→ 余弦 top-8 | P2 task2 |
-| 注入 | SKILL catalog ≤10、SOP schema ≤15、EVIDENCE/Method/Guard 合成消息、**Method/Guard 各限 5**（C，待实现） | P1 + C |
+| 注入 | SKILL catalog ≤10、SOP schema ≤15、EVIDENCE/Method/Guard 合成消息、**Method/Guard 各限 5**（C2 已实现） | P1 + C |
 | session 格式 | pi 原生 v3 + custom_message + 流式全量落盘 | P1 task8 + P2 task3/4 |
 | 离线闭环 | ETL → 三管线 → ≥0.5 晋升 → dormant rescore → TTL/cap 清理 → checkpoint（含失败） | P1 + P2 task6 + B3 |
 | 晋升阈值 | 0.5 统一（SOP 例外固定 1.0 占位） | P1 task7 |
-| ABILITY | cards role 分流 Method/Guard（C-轻，待实现） | C 决策 1 |
+| ABILITY | cards role 分流 Method/Guard（C-轻，C1 已实现；07-23 follow-up 验证自然 Method 入库） | C 决策 1 |
 | 触发 | 外部化：run-evolution CLI + cron/launchd/k8s/--loop | B3 |
 | 负面知识 | 不建负面库，低分丢弃，Guard 只来自验证通过的 cards | P1 + C 决策 3 |
 | 工程约束 | 改动仅限工程内、omlx 不可动、提交格式 COMPLETED/TODO/Refer Spec + conventional 前缀 | P3 任务书 |
