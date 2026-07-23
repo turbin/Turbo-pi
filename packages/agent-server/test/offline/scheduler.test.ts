@@ -129,10 +129,11 @@ describe("runDailyEvolution", () => {
 		expect(snapshot.promoted).toBe(3);
 		expect(snapshot.etlInserted).toBeGreaterThanOrEqual(1);
 
-		// Promoted experiences are active in the store.
+		// Promoted experiences are active in the store. The promoted card is
+		// role Method, so it is stored as ABILITY, not EVIDENCE.
 		expect(await store.listActive("SKILL", 10)).toHaveLength(1);
 		expect(await store.listActive("SOP", 10)).toHaveLength(1);
-		expect((await store.listActive("EVIDENCE", 10)).some((e) => e.title === "isolate before retry")).toBe(true);
+		expect((await store.listActive("ABILITY", 10)).some((e) => e.title === "isolate before retry")).toBe(true);
 
 		// The written checkpoint is the latest of its kind.
 		expect((await latestCheckpoint(store, "evolution"))?.id).toBe(checkpointId);

@@ -16,7 +16,12 @@ import { contentHashFor, dedupeCandidates } from "./canonicalize.ts";
  *
  * - quality >= PROMOTION_THRESHOLD (0.5, SPEC §6 Stage 2c) -> active;
  * - below threshold -> not inserted (low-score trajectories are dropped, per
- *   the handoff simplification "no negative experience library");
+ *   the handoff simplification "no negative experience library"; Guards come
+ *   only from the boundary field of verified cards, never from failed
+ *   trajectories);
+ * - cards with role "Method"/"Guard" are promoted as type "ABILITY" (the
+ *   five-tuple payload feeds buildInjection); all other cards stay
+ *   "EVIDENCE";
  * - canonicalize dedup via contentHash: a batch-internal duplicate is
  *   dropped, an already-active store row is left alone, and a dormant ETL
  *   candidate carrying the same contentHash is promoted in place.
@@ -174,14 +179,19 @@ export function sopsToStaged(sops: StagedSop[]): VerifyItem[] {
 	}));
 }
 
-/** cards.json: [{taskId, quality, card:{五元组}}] — quality = verifier continuous score. */
+/**
+ * cards.json: [{taskId, quality, card:{五元组}}] — quality = verifier
+ * continuous score. Method/Guard cards are routed to ABILITY (consumed by
+ * buildInjection); Workflow, missing and unknown roles stay EVIDENCE.
+ */
 export function cardsToStaged(cards: StagedCard[]): VerifyItem[] {
 	const items: VerifyItem[] = [];
 	for (const entry of cards) {
 		const card = entry.card;
 		if (!card) continue;
+		const type = card.role === "Method" || card.role === "Guard" ? "ABILITY" : "EVIDENCE";
 		items.push({
-			type: "EVIDENCE",
+			type,
 			title: card.name ?? ((card.trigger ?? "").slice(0, 50) || "unnamed-card"),
 			quality: typeof entry.quality === "number" ? entry.quality : 0,
 			payload: {
