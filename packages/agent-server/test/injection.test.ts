@@ -114,6 +114,129 @@ describe("buildInjection", () => {
 	});
 });
 
+describe("buildInjection Method/Guard quality caps", () => {
+	function methodExp(id: string, quality: number, procedure: unknown = `PROC-${id}`): Experience {
+		return makeExp({ id, type: "ABILITY", quality, payload: { role: "Method", procedure } });
+	}
+
+	function guardExp(id: string, quality: number, boundary: unknown = `BOUND-${id}`): Experience {
+		return makeExp({ id, type: "ABILITY", quality, payload: { role: "Guard", boundary } });
+	}
+
+	async function injectedContent(...experiences: Experience[]): Promise<string> {
+		const context: Context = { messages: [userMsg("hello")] };
+		const result = await buildInjection(context, retrieved(...experiences));
+		const injected = result.messages[result.messages.length - 2];
+		return typeof injected?.content === "string" ? injected.content : "";
+	}
+
+	function methodLines(content: string): string[] {
+		return content.split("\n").filter((line) => line.startsWith("PROC-"));
+	}
+
+	function guardLines(content: string): string[] {
+		return content.split("\n").filter((line) => line.startsWith("注意：BOUND-"));
+	}
+
+	// Case 1: 7 Methods, shuffled input -> top 5 by quality, descending.
+	it("caps Method entries at 5, keeping the highest qualities in descending order", async () => {
+		const shuffled = [0.8, 0.5, 0.95, 0.6, 0.9, 0.55, 0.7];
+		const content = await injectedContent(...shuffled.map((q) => methodExp(`m-${q}`, q)));
+		expect(methodLines(content)).toEqual([0.95, 0.9, 0.8, 0.7, 0.6].map((q) => `PROC-m-${q}`));
+		expect(content).not.toContain("PROC-m-0.55");
+		expect(content).not.toContain("PROC-m-0.5");
+	});
+
+	// Case 2: 7 Guards, shuffled input -> top 5 by quality, descending.
+	it("caps Guard entries at 5, keeping the highest qualities in descending order", async () => {
+		const shuffled = [0.8, 0.5, 0.95, 0.6, 0.9, 0.55, 0.7];
+		const content = await injectedContent(...shuffled.map((q) => guardExp(`g-${q}`, q)));
+		expect(guardLines(content)).toEqual([0.95, 0.9, 0.8, 0.7, 0.6].map((q) => `注意：BOUND-g-${q}`));
+		expect(content).not.toContain("BOUND-g-0.55");
+		expect(content).not.toContain("BOUND-g-0.5");
+	});
+
+	// Case 3: exactly 5 Methods (off-by-one boundary) -> all injected, no truncation.
+	it("injects all 5 Methods when exactly at the limit", async () => {
+		const content = await injectedContent(...[0.9, 0.8, 0.7, 0.6, 0.5].map((q) => methodExp(`m-${q}`, q)));
+		expect(methodLines(content)).toHaveLength(5);
+		expect(content).toContain("PROC-m-0.5");
+	});
+
+	// Case 4: fewer than the limit -> everything injected.
+	it("injects all Methods when below the limit", async () => {
+		const content = await injectedContent(...[0.9, 0.7, 0.5].map((q) => methodExp(`m-${q}`, q)));
+		expect(methodLines(content)).toHaveLength(3);
+	});
+
+	// Case 5: no Method/Guard entries -> no Method/Guard block, no empty block.
+	it("produces no Method/Guard block when there are none", async () => {
+		const context: Context = { messages: [userMsg("hello")] };
+		const empty = await buildInjection(context, retrieved());
+		expect(empty.messages).toHaveLength(1);
+
+		const content = await injectedContent(makeExp({ type: "EVIDENCE", payload: { text: "证据文本" } }));
+		expect(content).toContain("<Extra Info>");
+		expect(methodLines(content)).toHaveLength(0);
+		expect(guardLines(content)).toHaveLength(0);
+		expect(content).not.toContain("注意：");
+	});
+
+	// Case 6: quality ties keep their relative input order (stable sort), total still <= 5.
+	it("keeps a stable relative order for quality ties", async () => {
+		const content = await injectedContent(
+			methodExp("top", 0.9),
+			methodExp("tie-first", 0.8),
+			methodExp("mid", 0.7),
+			methodExp("tie-second", 0.8),
+			methodExp("low", 0.6),
+			methodExp("cut", 0.5),
+		);
+		expect(methodLines(content)).toEqual(["PROC-top", "PROC-tie-first", "PROC-tie-second", "PROC-mid", "PROC-low"]);
+	});
+
+	// Case 7: empty/non-string procedure is filtered before ranking, so it cannot consume a slot.
+	it("filters malformed Method procedures before applying the limit", async () => {
+		const content = await injectedContent(
+			methodExp("empty", 0.99, ""),
+			methodExp("non-string", 0.98, 42),
+			methodExp("m-0.9", 0.9),
+			methodExp("m-0.8", 0.8),
+			methodExp("m-0.7", 0.7),
+			methodExp("m-0.6", 0.6),
+			methodExp("m-0.5", 0.5),
+		);
+		expect(methodLines(content)).toEqual(["PROC-m-0.9", "PROC-m-0.8", "PROC-m-0.7", "PROC-m-0.6", "PROC-m-0.5"]);
+	});
+
+	// Case 8: dormant Method entries stay out and do not count toward the 5.
+	it("excludes dormant Method entries from the capped set", async () => {
+		const content = await injectedContent(
+			makeExp({
+				id: "dormant",
+				type: "ABILITY",
+				quality: 0.99,
+				status: "dormant",
+				payload: { role: "Method", procedure: "PROC-dormant" },
+			}),
+			...[0.9, 0.8, 0.7, 0.6].map((q) => methodExp(`m-${q}`, q)),
+		);
+		expect(methodLines(content)).toHaveLength(4);
+		expect(content).not.toContain("PROC-dormant");
+	});
+
+	// Case 9: Method and Guard caps are independent.
+	it("caps Method and Guard independently", async () => {
+		const methods = [0.95, 0.9, 0.8, 0.7, 0.6, 0.5].map((q) => methodExp(`m-${q}`, q));
+		const guards = [0.95, 0.9, 0.8, 0.7, 0.6, 0.5].map((q) => guardExp(`g-${q}`, q));
+		const content = await injectedContent(...methods, ...guards);
+		expect(methodLines(content)).toHaveLength(5);
+		expect(guardLines(content)).toHaveLength(5);
+		expect(content).not.toContain("PROC-m-0.5");
+		expect(content).not.toContain("BOUND-g-0.5");
+	});
+});
+
 describe("buildInjection with skill/SOP store", () => {
 	function makeSkill(overrides: Partial<Experience>): Experience {
 		return makeExp({

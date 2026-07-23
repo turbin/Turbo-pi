@@ -7,11 +7,16 @@ import type { InjectionPayload, RetrievedExperience } from "./types.ts";
 /** SPEC §4.1: skill catalog is capped at 10 entries; SOP tool schemas at 15. */
 const SKILL_CATALOG_LIMIT = 10;
 const SOP_SCHEMA_LIMIT = 15;
+/** ABILITY distillation: Method/Guard blocks are capped at the 5 highest-quality entries each. */
+const METHOD_LIMIT = 5;
+const GUARD_LIMIT = 5;
 
 /**
  * Assemble the replay injection payload: evidence pool, Method, and Guard
  * blocks are merged into one synthetic user message inserted before the last
- * real user message (SPEC §5.1 step 4). When a store is provided, the SKILL
+ * real user message (SPEC §5.1 step 4). Method and Guard blocks are each
+ * capped at the METHOD_LIMIT/GUARD_LIMIT highest-quality entries after
+ * filtering malformed payloads. When a store is provided, the SKILL
  * catalog is appended to the system prompt as `<available_skills>` and SOP
  * tool schemas are merged into the tool list (SPEC §4.1).
  *
@@ -28,23 +33,37 @@ export async function buildInjection(
 	const active = retrieved.filter((r) => r.experience.status === "active");
 
 	const evidence: string[] = [];
-	const methods: string[] = [];
-	const guards: string[] = [];
+	const methods: { quality: number; text: string }[] = [];
+	const guards: { quality: number; text: string }[] = [];
 	for (const r of active) {
 		const { type, payload } = r.experience;
 		if (type === "EVIDENCE") {
 			if (typeof payload.text === "string" && payload.text) evidence.push(payload.text);
 		} else if (type === "ABILITY" && payload.role === "Method") {
-			if (typeof payload.procedure === "string" && payload.procedure) methods.push(payload.procedure);
+			if (typeof payload.procedure === "string" && payload.procedure)
+				methods.push({ quality: r.experience.quality, text: payload.procedure });
 		} else if (type === "ABILITY" && payload.role === "Guard") {
-			if (typeof payload.boundary === "string" && payload.boundary) guards.push(`注意：${payload.boundary}`);
+			if (typeof payload.boundary === "string" && payload.boundary)
+				guards.push({ quality: r.experience.quality, text: `注意：${payload.boundary}` });
 		}
 	}
 
+	// Filter (in the loop above) before ranking before capping: malformed
+	// entries must not consume limit slots. Array.prototype.sort is stable,
+	// so quality ties keep the retrieval order.
+	const topMethods = methods
+		.sort((a, b) => b.quality - a.quality)
+		.slice(0, METHOD_LIMIT)
+		.map((m) => m.text);
+	const topGuards = guards
+		.sort((a, b) => b.quality - a.quality)
+		.slice(0, GUARD_LIMIT)
+		.map((g) => g.text);
+
 	const blocks: string[] = [];
 	if (evidence.length) blocks.push(`<Extra Info>\n${evidence.join("\n")}\n</Extra Info>`);
-	if (methods.length) blocks.push(methods.join("\n"));
-	if (guards.length) blocks.push(guards.join("\n"));
+	if (topMethods.length) blocks.push(topMethods.join("\n"));
+	if (topGuards.length) blocks.push(topGuards.join("\n"));
 
 	const messages = [...context.messages];
 	let lastUserIdx = -1;
