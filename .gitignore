@@ -41,3 +41,12 @@ plans/
 .pi/hf-sessions/
 .pi/hf-sessions-backup/
 collect.sh
+
+# Scratch files (user process files; never tracked)
+**/tm
+**/tm.*
+**/temp
+**/temp.*
+
+# Repo-local pinned Node toolchain (see scripts/with-node25.sh)
+.tools/
