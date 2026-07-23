@@ -13,6 +13,16 @@ How to read it:
 - **Cross-task constraints** (modifications limited to this repo, omlx config/models untouchable, commit message format `COMPLETED/TODO/Refer Spec` with a conventional prefix, git discipline) have a single canonical home: the "通用约束" section of ` design/2026-07-22-agent-server-p3-candidate-tasks.md`. Change them there, not per document.
 - **Maintenance rule**: when adding a new design document, update ` design/INDEX.md` in the same commit.
 
+## Testing requirements (mandatory, strictly enforced)
+
+These apply to every code-change task in this repo, including work delegated to sub-agents:
+
+- **TDD flow**: write the failing test first (red), then the minimal implementation to pass it (green), then refactor. Tests and implementation land in the same commit — never an implementation-only commit.
+- **All unit tests must be green** before a task is submitted for acceptance: the full package vitest run plus root `npm run check`. No skipping, `.skip`, or loosening existing assertions to force green; if an existing assertion must change, justify it in the decision record.
+- **Boundary coverage**: unit tests must strictly exercise interface-parameter boundaries — empty/missing/undefined inputs, threshold edges (e.g. exactly at vs. just below a cutoff), off-by-one at limits (exactly N vs. N+1 items), and unknown/invalid enum-like values.
+- **Exception design and coverage**: define explicit behavior for invalid input (throw vs. skip vs. default) and cover every one of those paths with a test. Silent swallowing is not acceptable unless the decision record says why.
+- Acceptance checks test presence case-by-case against the task spec, not just the pass/fail count.
+
 ## Key rules (summary; AGENTS.md is authoritative)
 
 - Commit only files you changed in this session; stage explicit paths; never `git add -A`, `git reset --hard`, `git stash`, or `git commit --no-verify`; never commit unless asked.
