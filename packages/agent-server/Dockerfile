@@ -13,6 +13,14 @@
 FROM node:25.9.0-bookworm-slim AS build
 WORKDIR /app
 
+# Optional npm registry mirror (e.g. https://registry.npmmirror.com for
+# builds behind the GFW where registry.npmjs.org is unreachable).
+# NODE_DISTURL: mirror for Node.js headers needed by node-gyp source compiles
+# (e.g. https://cdn.npmmirror.com/binaries/node).
+ARG NPM_REGISTRY
+ARG NODE_DISTURL
+RUN if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi
+
 # make/g++ are the node-gyp fallback for better-sqlite3 (linux prebuilds
 # normally apply); python3 is the offline-pipeline runtime (vendored packages
 # are stdlib-only).
@@ -28,15 +36,16 @@ COPY packages/tui/package.json packages/tui/
 COPY packages/coding-agent/package.json packages/coding-agent/
 COPY packages/orchestrator/package.json packages/orchestrator/
 COPY packages/agent-server/package.json packages/agent-server/
-RUN npm ci --ignore-scripts
+RUN npm_config_disturl=${NODE_DISTURL:-https://nodejs.org/download/release} npm ci
 
 COPY . .
-# @earendil-works/pi-ai resolves to dist/ at runtime, so build the TS
-# packages; then rebuild the native binding against this image's Node and
-# drop devDependencies from the runtime tree.
-RUN npm run build \
-	&& npm rebuild better-sqlite3 \
-	&& npm prune --omit=dev
+# agent-server runs .ts directly via Node 25 erasable TypeScript; all
+# @earendil-works/pi-ai imports are `import type` (erased at runtime), so
+# no workspace TS build is needed. Drop devDependencies from the runtime tree.
+# npm ci (without --ignore-scripts) lets better-sqlite3 download its prebuild
+# from GitHub releases during install, avoiding a node-gyp source compile
+# that would need Node headers from nodejs.org.
+RUN npm prune --omit=dev
 
 FROM node:25.9.0-bookworm-slim
 RUN apt-get update \
@@ -46,6 +55,7 @@ RUN apt-get update \
 
 WORKDIR /app
 ENV NODE_ENV=production \
+	HOST=0.0.0.0 \
 	PORT=8788 \
 	EXPERIENCE_STORE_PATH=/data/experience.db \
 	AGENT_SERVER_SESSION_DIR=/data/sessions \

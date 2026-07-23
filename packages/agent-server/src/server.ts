@@ -347,6 +347,7 @@ export function teeOpenAISSEWithSession(
 
 export async function startServer(port = 8788): Promise<void> {
 	const server = createServer();
-	await server.listen({ port, host: "127.0.0.1" });
-	console.log(`agent-server listening on 127.0.0.1:${port}`);
+	const host = process.env.HOST ?? "127.0.0.1";
+	await server.listen({ port, host });
+	console.log(`agent-server listening on ${host}:${port}`);
 }

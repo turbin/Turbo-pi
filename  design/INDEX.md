@@ -103,6 +103,7 @@
 |---|---|
 | 2026-07-23-agent-server-post-c-tasks.md | **N1/N2/N3 任务书（当前最新）**：N1 FTS tokenizer 修正（拉丁整词 + CJK bigram + 重建 CLI，含 10 条 TDD 用例表）、N2 Docker 镜像首次构建验证（colima 红线）、N3 上线观察期启动（dry-run 审查 + 安装指令 + 观察 runbook） |
 | 2026-07-23-agent-server-n1-fts-tokenizer-changes-and-decisions.md | N1 决策记录：tokenizeForFts 重写（拉丁整词 + CJK char/bigram 对齐 retrieval.ts）、FTS 重建 DROP+CREATE 方案（外部内容表 DELETE 不可用）、rebuild-fts CLI（--dry-run）、不自动迁移；10 条 TDD 用例全绿 + live sanity（jitter 0→2 命中） |
+| 2026-07-23-agent-server-n2-docker-build-changes-and-decisions.md | N2 构建验证：首次成功构建 agent-server:local（145MB）；Dockerfile 3 处修改（移除 npm run build、npm ci 不跳 scripts、NPM_REGISTRY/NODE_DISTURL/HOST 参数）+ server.ts HOST 环境变量；单容器冒烟 + compose 双服务 checkpoint 确认 |
 | progress/README.md | progress 目录规范：里程碑单文件方案、状态值、更新纪律（认领即写/完成即写/中断必写/随工作提交） |
 | progress/2026-07-23-post-c-operations.md | Post-C 里程碑进度与交接：N1-N3 状态表、跨 agent 共享环境事实、断点恢复指引 |
 
