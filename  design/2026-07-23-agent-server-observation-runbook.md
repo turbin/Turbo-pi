@@ -152,11 +152,11 @@ FROM checkpoints WHERE kind='evolution' ORDER BY epoch DESC LIMIT 10;
 |---|---|---|---|
 | Method/Guard 库存合计 ≥6 | 截断是否发生、被截断条目质量是否可惜 | 决策 4（注入上限 5） | 评审是否提高上限或引入衰减 |
 | Guard 误伤案例出现（模型被错误约束导致输出质量下降） | Guard 阈值 0.5 是否太低 | 决策 2（质量门槛暂沿用 0.5） | 提高 Guard 阈值（如 0.7）或增加人工审核 |
-| 并存行 >0（§2.4 SQL 返回行） | 是否需要清理 EVIDENCE/ABILITY 并存行 | 已知限制（type 变更并存） | 立项清理迁移脚本 |
-| ABILITY 自然产量连续 4 周为 0 | 关键词门控是否过严、session 数据是否足够多样 | 决策 1（C-轻路径） | 评审是否需要 C-重（独立 LLM 提炼管线） |
+| 并存行 >0（§2.4 SQL 返回行） | 是否需要清理 EVIDENCE/ABILITY 并存行 | 已知限制（type 变更并存） | **先判读再决定（R3 修订）**：查命中行的 type/role 组合——"同 taskId 不同 role"（如 Mock 时代 Workflow + 真实时代 Method）为多 teacher 常态，非重复，不清理；仅"同 role 同内容跨 type"（C1 前后 hash 变化）才是重复晋升，立项清理迁移脚本 |
+| ABILITY 自然产量连续 4 周为 0（真实 teacher 口径，R3 修订） | 关键词门控是否过严、session 数据是否足够多样 | 决策 1（C-轻路径） | 评审是否需要 C-重（独立 LLM 提炼管线）。**R3 已评审一次：No-Go**（真实 teacher 单轮 4 Method，C-轻成立），重启条件见 ` design/2026-07-23-agent-server-r3-c-heavy-review.md` |
 | 近似重复 Method 堆积（trigger/procedure 语义相近但 content_hash 不同） | 是否需要合并/去重 | 决策 5（本期不做合并） | 立项 edges/合并功能 |
 | quality 分布始终集中单一值（无展宽） | 评分是否有效区分质量 | 决策 2（门槛）+ Mock 路径限制 | 评审是否切换真实 LLM teacher |
-| 连续 3 个 checkpoint metric=0 | 管线是否空转或全部失败 | B3（失败也写 checkpoint） | 检查进化日志、session 数据、omlx 可达性 |
+| 连续 3 个 checkpoint metric=0 | 管线是否空转或全部失败 | B3（失败也写 checkpoint） | **先判读（R3 修订）**：`etlInserted=0 且 metric>0` 为健康（重派生有新产出），metric 随无新 session 自然下降非退化；`etlInserted>0 且 metric=0` 才是异常 → 检查进化日志、session 数据、omlx 可达性 |
 
 ---
 
