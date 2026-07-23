@@ -88,7 +88,10 @@
 | 2026-07-22-agent-server-a2-b3-tasks.md | A2（verifier 回退单测）+ B3（离线调度定时化方案 A+）任务书 |
 | 2026-07-22-agent-server-a2-verifier-fallback-tests-changes-and-decisions.md | A2 决策记录：27 个 pytest case 覆盖回退路径；Python 测试不进 CI |
 | 2026-07-22-agent-server-b3-evolution-scheduling-changes-and-decisions.md | B3 决策记录：CLI 三模式、失败 checkpoint 三态语义、安装助手红线、P1 外部化决策维持 |
-| 2026-07-22-agent-server-c-ability-distillation-design-and-tasks.md | **C 方案（当前最新）**：ABILITY 提炼 5 项决策（全部暂定待迭代）+ 方案设计 + C1/C2/C3 TODO 任务清单 |
+| 2026-07-22-agent-server-c-ability-distillation-design-and-tasks.md | **C 方案（当前最新）**：ABILITY 提炼 5 项决策（全部暂定待迭代）+ 方案设计 + C1/C2/C3 TODO 任务清单（含强制 TDD 流程、C1/C2 具体测试用例表、C3 BDD 验收场景、已知限制：type 变更并存行） |
+| 2026-07-22-agent-server-c1-cards-role-routing-changes-and-decisions.md | C1 决策记录：cards 按 role 精确等值分流 ABILITY/EVIDENCE；10 条用例逐条对应；scheduler/verifier 3 处既有断言修正说明 |
+| 2026-07-22-agent-server-c2-injection-limits-changes-and-decisions.md | C2 决策记录：注入端 METHOD/GUARD_LIMIT=5；过滤→降序→截断固定顺序；9 条用例逐条对应 |
+| 2026-07-22-agent-server-infra-node-pinning-and-container-changes-and-decisions.md | 基础设施决策：Node 25.9.0 仓库内固定（.tools + with-node25.sh）、agent-server 容器化（Dockerfile/compose/loop 调度）、tm/temp 入 gitignore |
 
 ---
 

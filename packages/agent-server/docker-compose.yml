@@ -1,0 +1,55 @@
+# Convenience compose file for the agent-server container deployment.
+# Optional — the plain `docker build`/`docker run` commands in
+# docs/container-deployment.md do the same thing.
+#
+#   docker compose -f packages/agent-server/docker-compose.yml up -d --build
+#
+# Prerequisites on the host: the model gateway (agent-gateway → omlx) keeps
+# running OUTSIDE the container; the container reaches it through
+# host.docker.internal. omlx itself is untouched by this deployment.
+
+services:
+  agent-server:
+    build:
+      context: ../..
+      dockerfile: packages/agent-server/Dockerfile
+    image: agent-server:local
+    ports:
+      - "8788:8788"
+    environment:
+      # Gateway base URL and channel key; override for your environment.
+      GATEWAY_URL: ${GATEWAY_URL:-http://host.docker.internal:8787}
+      AGENT_GATEWAY_KEY: ${AGENT_GATEWAY_KEY:-}
+      # Offline evolution loop interval (hours). The container has no
+      # cron daemon — scheduling uses the built-in loop mode.
+      AGENT_SERVER_EVOLUTION_INTERVAL_HOURS: ${AGENT_SERVER_EVOLUTION_INTERVAL_HOURS:-24}
+    extra_hosts:
+      # Required on Linux; a no-op on Docker Desktop (macOS/Windows).
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - agent-server-data:/data
+    restart: unless-stopped
+
+  # Offline evolution loop (run → sleep N hours → repeat). Shares the /data
+  # volume with the server so both see the same experience DB and sessions.
+  # One-off manual run instead:
+  #   docker compose -f packages/agent-server/docker-compose.yml run --rm agent-server-evolution node packages/agent-server/src/offline/run-evolution.ts
+  agent-server-evolution:
+    image: agent-server:local
+    depends_on:
+      - agent-server
+    environment:
+      GATEWAY_URL: ${GATEWAY_URL:-http://host.docker.internal:8787}
+      AGENT_GATEWAY_KEY: ${AGENT_GATEWAY_KEY:-}
+      AGENT_SERVER_EVOLUTION_INTERVAL_HOURS: ${AGENT_SERVER_EVOLUTION_INTERVAL_HOURS:-24}
+      EXPERIENCE_STORE_PATH: /data/experience.db
+      AGENT_SERVER_SESSION_DIR: /data/sessions
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - agent-server-data:/data
+    command: ["node", "packages/agent-server/src/offline/run-evolution.ts", "--loop"]
+    restart: unless-stopped
+
+volumes:
+  agent-server-data:

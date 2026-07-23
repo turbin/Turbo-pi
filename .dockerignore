@@ -1,0 +1,17 @@
+# Docker build context = repository root (see packages/agent-server/Dockerfile).
+.git
+.github
+node_modules
+**/node_modules
+packages/*/dist
+packages/*/dist-chrome
+packages/*/dist-firefox
+packages/coding-agent/binaries
+.tools
+ design
+*.log
+**/*.tsbuildinfo
+packages/agent-server/var
+packages/agent-server/benchmark/results
+.opencode
+.pi

@@ -55,6 +55,7 @@ npm run check                  # biome check --write + pinned-deps + ts-imports 
 ```
 
 - After code changes (not docs): run `npm run check` with full output (no tail). Fix all errors, warnings, and infos before committing. `npm run check` does not run tests.
+- **Node version pinning**: `packages/agent-server` tests and runtime need Node **25.9.0** — better-sqlite3 11.10.0 has no prebuild for Node 26 and does not compile against its V8 API. The system (Homebrew) Node may be newer; use the repo-local pinned toolchain via `scripts/with-node25.sh <cmd>` (e.g. `scripts/with-node25.sh node ../../node_modules/vitest/dist/cli.js --run` from `packages/agent-server`). The toolchain lives in gitignored `.tools/`; the wrapper prints the one-line install command if missing. After a fresh `npm install`, run `scripts/with-node25.sh npm rebuild better-sqlite3`. The Dockerfile pins the same version.
 - Never run `npm run build` or `npm test` unless requested by the user.
 - Never run the full vitest suite directly: it includes e2e tests that activate when endpoint/auth env vars are present. For all non-e2e tests, run `./test.sh` from the repo root. To run a specific test, run from the package root: `node ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts`.
 - If you create or modify a test file, run it and iterate until it passes.
