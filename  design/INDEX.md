@@ -1,7 +1,7 @@
 # design 目录索引（INDEX）
 
 维护说明：本索引概述 ` design/`（目录名带前导空格）下每份文档的内容，并记录从 agent-server P0 起各阶段决策的变化时间线。**新增设计文档时请同步更新本索引。**
-最后更新：2026-07-23（覆盖 51 份文档）。
+最后更新：2026-07-23（覆盖 53 份文档 + progress/ 目录）。
 
 阅读指引：
 - **通用约束 canonical 版本**（工程内改动、omlx 不可动、提交格式、git 纪律）：`2026-07-22-agent-server-p3-candidate-tasks.md` 的"通用约束"一节，后续任务书均为引用。
@@ -96,6 +96,16 @@
 | 2026-07-23-agent-server-c3-observation-baseline.md | C3 观察基线：库存全景、quality 分布、并存行统计（当前 0）、截断状态、checkpoint 历史、会话特征——"上线运行后迭代"对照起点 |
 | 2026-07-23-agent-server-c3-acceptance-report.md | C3 验收报告：**通过**（213 测试全绿、DB 数字独立复核一致；修正 MockLLM 根因误述——关键词门控而非固定 Workflow；场景 2 走临时注入服务为已记录偏差；场景 1 条件性 PASS 已被同日 follow-up 升级为完整 PASS） |
 | 2026-07-23-agent-server-c3-followup-natural-method-changes-and-decisions.md | C3 follow-up：构造含 retry/backoff 关键词 session 重跑进化，自然 Method ABILITY 入库（场景 1 升级为完整 PASS）；基线全量刷新；新发现 FTS 拉丁正文不可检索（仅记录，建议单独立项） |
+
+### 阶段 6：Post-C 运维化（2026-07-23 立项，进行中）
+
+| 文件 | 内容 |
+|---|---|
+| 2026-07-23-agent-server-post-c-tasks.md | **N1/N2/N3 任务书（当前最新）**：N1 FTS tokenizer 修正（拉丁整词 + CJK bigram + 重建 CLI，含 10 条 TDD 用例表）、N2 Docker 镜像首次构建验证（colima 红线）、N3 上线观察期启动（dry-run 审查 + 安装指令 + 观察 runbook） |
+| progress/README.md | progress 目录规范：里程碑单文件方案、状态值、更新纪律（认领即写/完成即写/中断必写/随工作提交） |
+| progress/2026-07-23-post-c-operations.md | Post-C 里程碑进度与交接：N1-N3 状态表、跨 agent 共享环境事实、断点恢复指引 |
+
+进度跟踪目录 ` design/progress/`：每个里程碑一个进度文件，多 agent 交接 + 断点恢复用；规范见 `progress/README.md`。
 
 ---
 

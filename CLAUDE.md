@@ -12,6 +12,7 @@ How to read it:
 - **Per-phase reading order**: phase spec/plan → per-task `*-changes-and-decisions.md` records → live verification report → closeout / acceptance report.
 - **Cross-task constraints** (modifications limited to this repo, omlx config/models untouchable, commit message format `COMPLETED/TODO/Refer Spec` with a conventional prefix, git discipline) have a single canonical home: the "通用约束" section of ` design/2026-07-22-agent-server-p3-candidate-tasks.md`. Change them there, not per document.
 - **Maintenance rule**: when adding a new design document, update ` design/INDEX.md` in the same commit.
+- **` design/progress/` subdirectory**: per-milestone progress and inter-agent handoff files (subtask status table, shared environment facts, breakpoint resume guide); one file per milestone, convention in ` design/progress/README.md`. Executing agents must update it on claim/complete/interrupt per the discipline; it holds operational state while ` design/` root documents stay the long-term decision record.
 
 ## Testing requirements (mandatory, strictly enforced)
 
