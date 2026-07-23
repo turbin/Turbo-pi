@@ -1,7 +1,7 @@
 # design 目录索引（INDEX）
 
 维护说明：本索引概述 ` design/`（目录名带前导空格）下每份文档的内容，并记录从 agent-server P0 起各阶段决策的变化时间线。**新增设计文档时请同步更新本索引。**
-最后更新：2026-07-22（覆盖 48 份文档）。
+最后更新：2026-07-23（覆盖 50 份文档）。
 
 阅读指引：
 - **通用约束 canonical 版本**（工程内改动、omlx 不可动、提交格式、git 纪律）：`2026-07-22-agent-server-p3-candidate-tasks.md` 的"通用约束"一节，后续任务书均为引用。
@@ -92,6 +92,8 @@
 | 2026-07-22-agent-server-c1-cards-role-routing-changes-and-decisions.md | C1 决策记录：cards 按 role 精确等值分流 ABILITY/EVIDENCE；10 条用例逐条对应；scheduler/verifier 3 处既有断言修正说明 |
 | 2026-07-22-agent-server-c2-injection-limits-changes-and-decisions.md | C2 决策记录：注入端 METHOD/GUARD_LIMIT=5；过滤→降序→截断固定顺序；9 条用例逐条对应 |
 | 2026-07-22-agent-server-infra-node-pinning-and-container-changes-and-decisions.md | 基础设施决策：Node 25.9.0 仓库内固定（.tools + with-node25.sh）、agent-server 容器化（Dockerfile/compose/loop 调度）、tm/temp 入 gitignore |
+| 2026-07-23-agent-server-c3-live-verification.md | C3 live 验证：3 BDD 场景执行记录（进化管线、SQL 审计、注入路径验证、截断观察）；当前管线因 MockLLM 产 Workflow 无 Method/Guard 产出——代码路由正确但数据面触发了 MockLLM 局限 |
+| 2026-07-23-agent-server-c3-observation-baseline.md | C3 观察基线：库存全景、quality 分布、并存行统计（当前 0）、截断状态、checkpoint 历史、会话特征——"上线运行后迭代"对照起点 |
 
 ---
 
@@ -158,6 +160,12 @@
 - 【立】Method/Guard 阈值暂沿用 0.5；注入端各限 quality 前 5 条
 - 【立】维持无负面经验库；本期不做 edges/合并
 - 【立】**元原则：所有决策为暂定，上线运行一段时间后按观察基线迭代**
+
+### C3 live 验证（07-23）
+
+- 【立】观察基线固化：零自然 Method/Guard 产出，库存 Stats + 迭代建议
+- 【观】FTS5 content=experiences 同步：`ExperienceStore.insert()` 路径正常，直接 INSERT 不触发
+- 【观】MockLLM 默认 role=Workflow：当前 session 数据 + benchmark 样本不足以触发真实 teacher 路径的 Method/Guard 分支
 
 ---
 
