@@ -64,19 +64,30 @@ function rowToExperience(row: ExperienceRow): Experience {
 	};
 }
 
-// Split CJK text into single chars + bigrams so FTS5 can match words inside
-// contiguous CJK runs (unicode61 does not segment CJK natively).
-function tokenizeForFts(text: string): string {
+const CJK_RE = /[一-鿿]/;
+
+/**
+ * Tokenize text for FTS5 indexing (search_text column). Aligned with
+ * `tokenize()` in retrieval.ts: Latin/digit runs become whole-word tokens
+ * (lowercased), CJK chars get single char + adjacent bigram. Whitespace
+ * and punctuation are natural delimiters. Exported for unit testing and
+ * the rebuild-fts CLI.
+ */
+export function tokenizeForFts(text: string): string {
 	const tokens: string[] = [];
 	for (let i = 0; i < text.length; i++) {
 		const ch = text[i];
-		if (/[一-鿿]/.test(ch)) {
+		if (CJK_RE.test(ch)) {
 			tokens.push(ch);
-			if (i + 1 < text.length && /[一-鿿]/.test(text[i + 1])) {
+			if (i + 1 < text.length && CJK_RE.test(text[i + 1])) {
 				tokens.push(ch + text[i + 1]);
 			}
-		} else {
-			tokens.push(ch);
+		} else if (/[a-zA-Z0-9]/.test(ch)) {
+			const word = text.slice(i).match(/^[a-zA-Z0-9]+/);
+			if (word) {
+				tokens.push(word[0].toLowerCase());
+				i += word[0].length - 1;
+			}
 		}
 	}
 	return tokens.join(" ");

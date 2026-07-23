@@ -2,13 +2,13 @@
 
 状态：进行中
 任务书：` design/2026-07-23-agent-server-post-c-tasks.md`
-最近更新：2026-07-23T15:40+08:00 by kimi（立项初始化）
+最近更新：2026-07-23T16:50+08:00 by coder（N1 完成）
 
 ## 1. 子任务状态表
 
 | 子任务 | 状态 | 执行 agent | 更新时间 | 产出 |
 |---|---|---|---|---|
-| N1 FTS tokenizer 修正（拉丁整词 + CJK bigram + FTS 重建 CLI） | pending | | | |
+| N1 FTS tokenizer 修正（拉丁整词 + CJK bigram + FTS 重建 CLI） | done | coder | 2026-07-23T16:50+08:00 | 决策记录 ` design/2026-07-23-agent-server-n1-fts-tokenizer-changes-and-decisions.md`；21 文件 225 测试全绿 |
 | N2 Docker 镜像首次构建验证（需 colima） | pending | | | |
 | N3 上线观察期启动（dry-run 审查 + 安装指令 + 观察 runbook） | pending | | | |
 
@@ -23,11 +23,12 @@
 - 2026-07-23 kimi：调度 CLI 已存在（B3）：`npx tsx src/offline/schedule.ts <install|uninstall|doctor> [--dry-run]`；红线：测试沙箱外禁止无 --dry-run 跑 install/uninstall（`schedule.ts:14-18`）。实际安装是用户动作。
 - 2026-07-23 kimi：容器资产已存在未构建：`packages/agent-server/Dockerfile`（基础镜像 `node:25.9.0-bookworm-slim`）、`docker-compose.yml`（含 `agent-server-evolution` sidecar，`--loop` 模式，`AGENT_SERVER_EVOLUTION_INTERVAL_HOURS` 默认 24h，首次启动立即跑一轮）。
 - 2026-07-23 kimi：`var/sessions/` 现有 5 个 session（4 真实 + 1 构造的 retry/backoff 会话 `1784792682394-*.jsonl`）。进化 CLI：`EXPERIENCE_STORE_PATH=./var/experience.db AGENT_SERVER_BENCHMARK=./benchmark/benchmark.example.json PYTHONPATH=python ../../scripts/with-node25.sh npx tsx src/offline/run-evolution.ts`（从 `packages/agent-server` 执行）。
+- 2026-07-23 coder：N1 完成。`tokenizeForFts` 已重写为拉丁整词 + CJK char/bigram（对齐 retrieval.ts），并 export。新增 `src/offline/rebuild-fts.ts` CLI（DROP+CREATE 方案，因外部内容 FTS5 表 DELETE 报 `no such column: T.search_text`）。`var/experience.db` 已重建（29 行），备份在 `var/experience.db.n1-pre-rebuild-backup`。重建后 `MATCH '"jitter"'` 从 0→2 命中。测试基线更新：21 文件 / 225 测试。
 
 ## 3. 断点恢复指引
 
 如果从零接手：
 
 1. 读本目录 `README.md`（更新纪律）→ 任务书 ` design/2026-07-23-agent-server-post-c-tasks.md` → 本文件状态表。
-2. 当前无一子任务被认领。按 N1 → N2 → N3 顺序认领（认领即把状态改 `in_progress` 并署名）。
+2. N1 已完成（coder，2026-07-23）。下一步：认领 N2（需用户配合启动 colima）→ N3。
 3. 每完成一个子任务：填状态表 + 交接信息 + 刷新本节"下一步"。

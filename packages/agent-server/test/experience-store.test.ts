@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ExperienceStore } from "../src/experience-store.ts";
+import { ExperienceStore, tokenizeForFts } from "../src/experience-store.ts";
 import type { Experience } from "../src/types.ts";
 
 describe("ExperienceStore", () => {
@@ -217,5 +217,153 @@ describe("ExperienceStore", () => {
 		await store.removeDormantBefore(new Date(now - 30 * 86_400_000).toISOString());
 		const results = await store.search("flaky", 10);
 		expect(results.map((r) => r.id)).toEqual(["a-kept"]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// N1: FTS tokenizer fix — Latin whole words + CJK char/bigram
+// ---------------------------------------------------------------------------
+
+describe("N1: FTS search for Latin body text (tokenizeForFts fix)", () => {
+	function makeExp(overrides: Partial<Experience> & Pick<Experience, "id" | "title" | "payload">): Experience {
+		return {
+			type: "EVIDENCE",
+			quality: 0.8,
+			status: "active",
+			sourceSession: "session-1",
+			sourceEntryId: "entry-1",
+			contentHash: `hash-${overrides.id}`,
+			createdAt: new Date().toISOString(),
+			...overrides,
+		};
+	}
+
+	it("#1 EVIDENCE body word 'idempotent' (not in title) is searchable", async () => {
+		const store = new ExperienceStore(":memory:");
+		await store.initSchema();
+		await store.insert(
+			makeExp({
+				id: "n1-1",
+				title: "Note",
+				payload: { text: "The retry logic must be idempotent to avoid duplicates" },
+			}),
+		);
+		const results = await store.search('"idempotent"', 10);
+		expect(results.map((r) => r.id)).toContain("n1-1");
+	});
+
+	it("#2 ABILITY body words 'backoff' and 'jitter' (not in title) are each searchable", async () => {
+		const store = new ExperienceStore(":memory:");
+		await store.initSchema();
+		await store.insert(
+			makeExp({
+				id: "n1-2",
+				type: "ABILITY",
+				title: "Retry strategy",
+				payload: { text: "Use exponential backoff with jitter between retries" },
+			}),
+		);
+		const backoffHits = await store.search('"backoff"', 10);
+		expect(backoffHits.map((r) => r.id)).toContain("n1-2");
+		const jitterHits = await store.search('"jitter"', 10);
+		expect(jitterHits.map((r) => r.id)).toContain("n1-2");
+	});
+
+	it("#3 CJK body text '量子计算' (not in title) is searchable — no regression", async () => {
+		const store = new ExperienceStore(":memory:");
+		await store.initSchema();
+		await store.insert(
+			makeExp({
+				id: "n1-3",
+				title: "Tech note",
+				payload: { text: "量子计算是未来的重要方向" },
+			}),
+		);
+		const results = await store.search('"量子"', 10);
+		expect(results.map((r) => r.id)).toContain("n1-3");
+	});
+
+	it("#4 mixed CJK+Latin body: backoff, flaky, and CJK prefix query all hit", async () => {
+		const store = new ExperienceStore(":memory:");
+		await store.initSchema();
+		await store.insert(
+			makeExp({
+				id: "n1-4",
+				title: "Mixed note",
+				payload: { text: "使用 backoff 策略处理 flaky API" },
+			}),
+		);
+		const backoffHits = await store.search('"backoff"', 10);
+		expect(backoffHits.map((r) => r.id)).toContain("n1-4");
+		const flakyHits = await store.search('"flaky"', 10);
+		expect(flakyHits.map((r) => r.id)).toContain("n1-4");
+		// CJK prefix query: "策略" stored as char+bigram, prefix match with *
+		const cjkHits = await store.search('"策略"*', 10);
+		expect(cjkHits.map((r) => r.id)).toContain("n1-4");
+	});
+
+	it("#5a payload.text missing — insert does not throw, unrelated query does not hit", async () => {
+		const store = new ExperienceStore(":memory:");
+		await store.initSchema();
+		await store.insert(
+			makeExp({
+				id: "n1-5a",
+				title: "No text entry",
+				payload: { other: "data" },
+			}),
+		);
+		const results = await store.search('"nonexistent"', 10);
+		expect(results.map((r) => r.id)).not.toContain("n1-5a");
+	});
+
+	it("#5b payload.text empty string — insert does not throw", async () => {
+		const store = new ExperienceStore(":memory:");
+		await store.initSchema();
+		await store.insert(
+			makeExp({
+				id: "n1-5b",
+				title: "Empty text entry",
+				payload: { text: "" },
+			}),
+		);
+		const results = await store.search('"nonexistent"', 10);
+		expect(results.map((r) => r.id)).not.toContain("n1-5b");
+	});
+
+	it("#5c payload.text pure punctuation — insert does not throw", async () => {
+		const store = new ExperienceStore(":memory:");
+		await store.initSchema();
+		await store.insert(
+			makeExp({
+				id: "n1-5c",
+				title: "Punctuation entry",
+				payload: { text: "... !!! ???" },
+			}),
+		);
+		const results = await store.search('"nonexistent"', 10);
+		expect(results.map((r) => r.id)).not.toContain("n1-5c");
+	});
+});
+
+describe("N1: tokenizeForFts unit tests", () => {
+	it("#6 Latin with hyphen: whole words, no per-char split", () => {
+		const output = tokenizeForFts("Bounded Exponential-Backoff");
+		const tokens = output.split(" ");
+		expect(tokens).toContain("bounded");
+		expect(tokens).toContain("exponential");
+		expect(tokens).toContain("backoff");
+		// Must NOT contain single-char splits like "b", "o", "u", etc.
+		expect(tokens).not.toContain("b");
+		expect(tokens).not.toContain("e");
+	});
+
+	it("#7 CJK char + bigram preserved (same as before)", () => {
+		const output = tokenizeForFts("量子计算");
+		const tokens = output.split(" ");
+		expect(tokens).toContain("量");
+		expect(tokens).toContain("量子");
+		expect(tokens).toContain("子");
+		expect(tokens).toContain("计算");
+		expect(tokens).toContain("算");
 	});
 });
