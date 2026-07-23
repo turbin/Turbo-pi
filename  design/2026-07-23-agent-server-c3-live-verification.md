@@ -71,9 +71,9 @@ FROM experiences WHERE type='ABILITY' ORDER BY rowid DESC LIMIT 20;
 {"name":"Final Requirements Cross-Check Before Answering","role":"Workflow",...}
 ```
 
-这是因为 Python `verification_selection` 管线的 MockLLM（`make_scoring_mock`）和 `make_teacher_mock`（`testing.py:99-177`）只产出 `"Workflow"` role——MockLLM 的 `extract_handler` 中硬编码 `"role": "Guard"/"Method"/"Workflow"`，但评估走真实 LLM（omlx gemma-4-12B-it-4bit）时 teacher 回退到 `extract_reasoning_text`+满文本，小模型 verifier 带 logprobs 通路正常但两条通路均在生成评分而非提炼五元组——cards 是 teacher mock 路径产出的。
+这是因为 Python `verification_selection` 管线的 teacher Mock（`make_teacher_mock`，`testing.py:99-177`）的 `extract_handler` 按轨迹关键词分流 role：`kmp`/`cyclic`/`z-algorithm` → Guard，`backoff`/`retry` → Method，其余一律 → Workflow。本次 4 个 session 的轨迹均不含上述关键词，故 3 张 card 全部走了 Workflow 默认分支（cards 提取由 teacher mock 产出；真实 LLM（omlx gemma-4-12B-it-4bit）只参与评分通路）。
 
-换言之：`AGENT_SERVER_BENCHMARK` 接入的 `skill_evolution` 管线用 MockLLM 提取 experience cards，MockLLM 的五元组固定为 `role:"Workflow"` 模板。**真实 LLM 路径（omlx OpenAICompatClient）只在线打分阶段生效，cards 提取阶段 MockLLM 路径因 benchmark.example.json 样本太少+MockLLM 固守 `make_teacher_mock` 的 handler 分支没有真正被调用**。
+换言之：`AGENT_SERVER_BENCHMARK` 接入的 `skill_evolution` 管线用 MockLLM 提取 experience cards。~~MockLLM 的五元组固定为 `role:"Workflow"` 模板~~（**验收修正 2026-07-23**：此论断不准确。`extract_handler` 是**关键词门控**的——轨迹含 `kmp`/`cyclic`/`z-algorithm` → Guard card，含 `backoff`/`retry` → Method card，其余 → Workflow（`testing.py:129-172`）；验收方已实测三条分支均可触发）。本次只产 Workflow 的准确根因是：4 个真实 session 的轨迹文本（量子计算问答 + 代码 review）不含任何门控关键词，全部落入 else 分支。
 
 C1 的 `cardsToStaged` 分流代码正确（`verifier.ts:192`：`card.role === "Method" || card.role === "Guard" ? "ABILITY" : "EVIDENCE"`），单元测试 10 条全覆盖——但当前会话数据在真实 LLM + MockLLM 混合路径下确实只产出 Workflow cards。
 
@@ -204,7 +204,7 @@ Method procedure 文本正确注入。Guard 条目因 FTS 查询 `"test trigger 
 
 ## 决策记录
 
-1. **MockLLM 默认 role 为 Workflow**：这是已知限制——真实 LLM 路径下的 cards 提取依赖 teacher mock 的 `role` 字段。当前 benchmark.example.json 仅有 2 个样本，MockLLM 的 `extract_handler`（`testing.py:173`）默认分支产出 `role:"Workflow"`，因此 live 管线不可能产出 Method/Guard cards。C1 代码路由正确（单测 10 条全绿），只是数据面未触发分流。
+1. **MockLLM 的 role 由轨迹关键词门控**：`extract_handler`（`testing.py:129-172`）按轨迹内容分流——含 `kmp`/`cyclic`/`z-algorithm` → Guard，含 `backoff`/`retry` → Method，其余 → Workflow。当前 4 个 session 的轨迹均不含门控关键词，故 live 管线只产出 Workflow cards。C1 代码路由正确（单测 10 条全绿），只是数据面未触发 Method/Guard 分流；要触发自然 Method/Guard 产出，需轨迹文本含对应关键词（或真实 LLM teacher 路径）。
 
 2. **FTS5 content= 同步问题**：本次 live 验证中 fresh DB 的 `experiences_fts` 通过手动 INSERT（而非 `ExperienceStore.insert()`）填充 ABILITY 行时未曾触发 FTS rebuild。`ExperienceStore.insert()` 正常路径包含 `INSERT INTO experiences_fts(rowid, title, search_text) SELECT rowid, title, ? FROM experiences WHERE id = ?`——通过 API 插入时 FTS 自动同步。
 

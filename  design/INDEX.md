@@ -92,8 +92,9 @@
 | 2026-07-22-agent-server-c1-cards-role-routing-changes-and-decisions.md | C1 决策记录：cards 按 role 精确等值分流 ABILITY/EVIDENCE；10 条用例逐条对应；scheduler/verifier 3 处既有断言修正说明 |
 | 2026-07-22-agent-server-c2-injection-limits-changes-and-decisions.md | C2 决策记录：注入端 METHOD/GUARD_LIMIT=5；过滤→降序→截断固定顺序；9 条用例逐条对应 |
 | 2026-07-22-agent-server-infra-node-pinning-and-container-changes-and-decisions.md | 基础设施决策：Node 25.9.0 仓库内固定（.tools + with-node25.sh）、agent-server 容器化（Dockerfile/compose/loop 调度）、tm/temp 入 gitignore |
-| 2026-07-23-agent-server-c3-live-verification.md | C3 live 验证：3 BDD 场景执行记录（进化管线、SQL 审计、注入路径验证、截断观察）；当前管线因 MockLLM 产 Workflow 无 Method/Guard 产出——代码路由正确但数据面触发了 MockLLM 局限 |
+| 2026-07-23-agent-server-c3-live-verification.md | C3 live 验证：3 BDD 场景执行记录（进化管线、SQL 审计、注入路径验证、截断观察）；管线只产 Workflow cards（MockLLM 关键词门控，session 轨迹未命中 Method/Guard 关键词）——代码路由正确，数据面未触发分流（根因表述经 07-23 验收修正） |
 | 2026-07-23-agent-server-c3-observation-baseline.md | C3 观察基线：库存全景、quality 分布、并存行统计（当前 0）、截断状态、checkpoint 历史、会话特征——"上线运行后迭代"对照起点 |
+| 2026-07-23-agent-server-c3-acceptance-report.md | C3 验收报告：**有条件通过**（213 测试全绿、DB 数字独立复核一致；修正 MockLLM 根因误述——关键词门控而非固定 Workflow；场景 2 走临时注入服务为已记录偏差） |
 
 ---
 

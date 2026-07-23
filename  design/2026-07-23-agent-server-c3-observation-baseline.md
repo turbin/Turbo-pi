@@ -144,7 +144,7 @@ ls -la var/sessions/
 
 基于当前基线，后续迭代需关注：
 
-1. **Method/Guard 自然产出**：当前为 0 — 需要更多 session 数据或调整 benchmark.example.json 样本触发 MockLLM 的 Method/Guard handler 分支（或切换到真实 LLM teacher 路径使五元组提取的 role 多样化）。
+1. **Method/Guard 自然产出**：当前为 0 — MockLLM teacher 的 `extract_handler` 是关键词门控的（轨迹含 `kmp`/`cyclic`/`z-algorithm` → Guard，含 `backoff`/`retry` → Method，其余 → Workflow，`testing.py:129-172`）。要触发自然产出：让 session 轨迹包含对应领域关键词（最直接），或切换到真实 LLM teacher 路径使 role 多样化。
 2. **并存行增长**：Method/Guard 开始产出后，同 taskId 可能同时存在 EVIDENCE + ABILITY → 监控此 SQL 结果判断是否需清理。
 3. **截断频率**：当 Method/Guard 库存 ≥6 时，场景 2 曲线验证截断触发 → 记录被截断 entry 的 quality，判断是否可惜。
 4. **quality 分布展宽**：当前全部集中在 0.55 — 需不同难度/质量的 session 来拉开评分分布。
