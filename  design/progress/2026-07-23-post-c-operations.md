@@ -2,7 +2,7 @@
 
 状态：已收口（N2 于 2026-07-24 补完 metric>0 验证）
 任务书：` design/2026-07-23-agent-server-post-c-tasks.md`
-最近更新：2026-07-24T11:20+08:00 by kimi（N2 metric>0 验证通过 + N3 安装（TCC 阻塞待用户决策）+ DeepSeek teacher 切换）
+最近更新：2026-07-24T11:40+08:00 by kimi（N2 metric>0 验证通过；N3 用户拍板 compose sidecar；DeepSeek teacher 切换）
 
 ## 1. 子任务状态表
 
@@ -29,7 +29,13 @@
 - 2026-07-23 pm-agent（18:45，用户指示 + team-lead 协调）：**N2 回退为 in_progress**。metric=0 机制验证已完成（5b6d760d），但用户明确要求补做 gateway metric>0 完整验证（仍起 gateway 做真实进化）。等用户启动 gateway 后，coder 以 `AGENT_GATEWAY_KEY=lobster-local-key` 重跑 compose 双服务，确认 checkpoint metric>0，follow-up commit 更新 N2 决策记录。N3 暂挂（回退为 pending），待 N2 metric>0 完成后再认领。
 - 2026-07-23 coder：N3 完成。dry-run 审查三命令（doctor/install/uninstall --dry-run）已执行并完整摘录进决策记录。重点审查项结论：(1) EXPERIENCE_STORE_PATH 无需设置（代码默认 ./var/experience.db，plist cwd 正确）；(2) AGENT_SERVER_BENCHMARK 缺失→skill_evolution 管线跳过，需用户在 plist 添加 EnvironmentVariables（指令已给出）；(3) PYTHONPATH 无需设置（pipeline.ts 程序化设置）；(4) Node PATH 潜在问题——LaunchAgent 环境 PATH 受限，裸 `npx tsx` 可能不可达，推荐方案 A（plist 命令改用 with-node25.sh）。安装/卸载/自查指令已交付（agent 未执行 install）。观察 runbook 含：每周 SQL 对照集（基线 §1/§3/§4/§5/§6）、触发评审动作表（C 方案 5 项决策）、客户端接线（Kimi Code type=openai_legacy → 8788）、周报模板。
 - 2026-07-23 pm-agent（21:30，用户直接指示）：**N2 metric>0 验证转用户手工完成**。用户指示跳过 N2 剩余 agent 工作（gateway metric>0 完整验证），后续由用户手工执行。Agent 侧 N2 工作以 metric=0 机制验证（5b6d760d）为最终产出。**Post-C 里程碑 agent 侧全部完成：N1 done + N2 done（metric>0 用户手工）+ N3 done。**
-- 2026-07-23 pm-agent（22:00，里程碑收口）：**Post-C 运维化里程碑已收口。** 最终状态：N1 done（bdc10a5e）· N2 skipped（agent 侧 build/smoke/compose/checkpoint 机制验证完成于 5b6d760d；metric>0 完整进化验证经用户决定转手工，于上线时自然完成——类比 N3 的 install 是用户动作）· N3 done（7bd6273f）。上线三件用户动作：(a) 启 gateway 后跑 metric>0 验证（`AGENT_GATEWAY_KEY=lobster-local-key` + compose 双服务，补全 N2）——见 ` design/2026-07-23-agent-server-n2-docker-build-changes-and-decisions.md`；(b) 按 N3 决策记录执行 install（plist 需加 `AGENT_SERVER_BENCHMARK`、命令建议走 `with-node25.sh`）——见 ` design/2026-07-23-agent-server-n3-go-live-changes-and-decisions.md` §3；(c) 按观察 runbook 开始每周观察——见 ` design/2026-07-23-agent-server-observation-runbook.md`。本文件收口后不再更新；长期 canonical 文档为各任务决策记录 + runbook。
+- 2026-07-23 pm-agent（22:00，里程碑收口）：**Post-C 运维化里程碑已收口。** 最终状态：N1 done（bdc10a5e）· N2 skipped（agent 侧 build/smoke/compose/checkpoint 机制验证完成于 5b6d760d；metric>0 完整进化验证经用户决定转手工，于上线时自然完成——类比 N3 的 install 是用户动作）· N3 done（7bd6273f）。上线三件用户动作：(a) 启 gateway 后跑 metric>0 验证（`AGENT_GATEWAY_KEY=lobster-local-key` + compose 双服务，补全 N2）——见 ` design/2026-07-23-agent-server-n2-docker-build-changes-and-decisions.md`；(b) 按 N3 决策记录执行 install（plist 需加 `AGENT_SERVER_BENCHMARK`、命令建议走 `with-node25.sh`）——见 ` design/2026-07-23-agent-server-n3-go-live-changes-and-decisions.md` §3；(c) 按观察 runbook 开始每周观察——见 ` design/2026-07-23-agent-server-observation-runbook.md`。
+- 2026-07-24 kimi（N2 补完 + DeepSeek 切换，决策记录 ` design/2026-07-24-agent-server-n2-closeout-deepseek-teacher-changes-and-decisions.md`）：上线动作 (a)(b) 已由 kimi 执行完毕——
+  - **N2 metric>0 验证通过**：容器内 DeepSeek teacher 进化 checkpoint `ckpt-bd091b6a34c06a4f` **metric=11**；修复 4 问题（session 目录 env 不生效=原 metric=0 真实根因、镜像缺 ca-certificates、宿主 PAC 代理 MITM VM 流量、管线 300s 超时不够→新增 `AGENT_SERVER_PIPELINE_TIMEOUT_MS`）。
+  - **DeepSeek teacher 已切换**：`packages/agent-server/.env`（gitignored）：`LLM_BASE_URL=https://api.deepseek.com/v1`、`LLM_API_KEY`、`LLM_MODEL=deepseek-v4-flash`（评分）、`TEACHER_MODEL=deepseek-v4-pro`（抽取）。该账户只有 v4-pro/v4-flash（无 deepseek-chat）。宿主机验证 `ckpt-e73389d9244f184b` metric=4（3m31s）。verifier 新增 logprobs→文本回退链（DeepSeek 拆 tag 多 token）。
+  - **N3 用户拍板（2026-07-24）：compose sidecar 方案**。launchd 实测被 TCC 拒绝访问外置卷（读写均 EPERM，最小实验实证）→ plist 已 unload 删除；**日常调度 = docker compose evolution sidecar**（24h 循环，DeepSeek teacher，运行中；`docker compose up -d` 于 packages/agent-server，.env 自动供给配置）。`schedule.ts install` 的 launchd/cron 形态仅适用于仓库在内置盘的机器。
+  - 测试基线：vitest 21 文件 / **229** 全绿；pytest **29** 全绿。gateway 不再需要常驻（离线管线直连 DeepSeek；在线聊天代理如需再手动起）。
+  - 本文件收口后不再更新；长期 canonical 文档为各任务决策记录 + runbook。
 
 ## 3. 断点恢复指引
 

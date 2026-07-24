@@ -215,7 +215,7 @@
 - 【改】N2 metric=0 真实根因：离线调度不认 AGENT_SERVER_SESSION_DIR（此前归因“无 gateway”不准确）→ run-evolution.ts 透传修复
 - 【立】容器 HTTPS：宿主 PAC 代理 MITM colima VM 流量 → HTTPS_PROXY=host.docker.internal:7897；镜像补 ca-certificates；管线超时 env AGENT_SERVER_PIPELINE_TIMEOUT_MS
 - 【立】N2 metric>0 验证通过：容器内 DeepSeek 进化 metric=11；compose + .env 一条命令部署（B3 compose 分支落地）
-- 【观】TCC 外置卷阻塞：launchd 子进程对 /Volumes/extern-1T-hardisk 读写均被拒 → launchd 日调度在此机不可行（授权 FDA / compose sidecar / 迁内置盘 三选项，推荐 compose）
+- 【观】TCC 外置卷阻塞：launchd 子进程对 /Volumes/extern-1T-hardisk 读写均被拒 → launchd 日调度在此机不可行；**用户拍板（07-24）：日常调度用 compose sidecar**（launchd plist 已卸载删除）
 - 【废】gateway/omlx 作为离线进化 LLM 路径：gateway 拒 logprobs 参数；omlx 评分文本偶发为空 + 超时 → 离线管线直连 DeepSeek
 
 ---

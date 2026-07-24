@@ -53,7 +53,8 @@
   - 方案 1：用户在 系统设置 → 隐私与安全性 → 完全磁盘访问 为 `/bin/sh`（或最终 node 二进制）授权（一次性 GUI 动作，授权面较大）；
   - 方案 2（推荐）：**日常调度改用 docker compose 的 evolution sidecar**（`--loop`，容器不受 TCC 限制，本次 N2 已验证容器内真实进化全链路）——这正是 B3 方案 A+ 的 compose 分支；
   - 方案 3：把仓库迁回内置盘（动作大，不推荐）。
-- plist 日志路径已改到 `~/Library/Logs/agent-server-evolution.{log,err}`（外置卷路径正是 exit(78) 的直接原因）。plist 保持 loaded：若用户选方案 1 授权后即生效；若选方案 2，应 `launchctl unload` 之。
+- plist 日志路径已改到 `~/Library/Logs/agent-server-evolution.{log,err}`（外置卷路径正是 exit(78) 的直接原因）。
+- **2026-07-24 用户拍板：选方案 2**——日常调度用 docker compose evolution sidecar（24h 循环，DeepSeek teacher，已在运行）。launchd plist 已 `launchctl unload` 并删除；`schedule.ts install` 的 launchd/cron 形态仅适用于仓库在内置盘的机器（TCC 不拦内置盘用户目录），代码保留不动。
 - 测试 plist（tectest）已清理。
 
 ## 5. teacher 切换验证（宿主机）
