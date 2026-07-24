@@ -1,6 +1,6 @@
 # Agent-Server E1：A/B 对照 harness 脚手架——变更与决策记录
 
-日期：2026-07-25
+日期：2026-07-24（~~2026-07-25~~ 验收修正：执行与提交均在 07-24 下午，commit 542713f5 时间戳 2026-07-24T16:53+08:00）
 任务书：` design/2026-07-24-agent-server-eval-benchmark-tasks.md` E1 节
 进度：` design/progress/2026-07-24-eval-benchmark.md`
 
@@ -83,8 +83,11 @@ harness 启动时清除所有 proxy 环境变量（`HTTPS_PROXY`、`HTTP_PROXY` 
 | 输出 tokens | 1,405 | 1,899 | +494 |
 | 总 tokens | 14,016 | 19,310 | +5,294 |
 | 平均耗时/任务 | 4.5s | 5.6s | +1.1s |
+| 总轮次（turns） | 20 | 24 | +4 |
 
-实验臂 token 增加符合预期：agent-server 在请求中注入 experience（当前冷库，注入为空块），增加了少量上下文。通过率无变化（注入无害）。
+~~实验臂 token 增加符合预期：agent-server 在请求中注入 experience（当前冷库，注入为空块），增加了少量上下文。通过率无变化（注入无害）。~~
+
+**验收修正（2026-07-24 kimi）**：上述归因不成立。复核 smoke-02 归档 session 证实实验臂注入为空（`retrieved: []`），空注入的额外上下文开销可忽略；+4,800 input tokens 的真实原因是**轨迹方差**——实验臂 24 turns vs 对照臂 20 turns，每多 1 turn 全历史重发一次。5 任务样本下 token delta 属噪声，不可归因于注入开销。方法论结论：A/B 的 token 对比需更大样本或控制轨迹（固定 temperature/seed 不能消除 agent 路径分叉），E2/E3 报告应以通过率为主指标、token 仅作参考。通过率无变化（注入无害）的结论不受影响。
 
 ## 5. 产出清单
 

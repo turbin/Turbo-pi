@@ -2,14 +2,14 @@
 
 状态：进行中
 任务书：` design/2026-07-24-agent-server-eval-benchmark-tasks.md`
-最近更新：2026-07-25T16:51+08:00 by claude（E1 done）
+最近更新：2026-07-24T17:15+08:00 by kimi（E1 验收通过，附修正）
 
 ## 1. 子任务状态表
 
 | 子任务 | 状态 | 执行 agent | 更新时间 | 产出 |
 |---|---|---|---|---|
 | E0 评估实例 + 接线冒烟（含 harness 选型决策点） | done | kimi | 2026-07-24T15:35+08:00 | 决策记录 ` design/2026-07-24-agent-server-e0-eval-instance-changes-and-decisions.md`；修复非流式丢 tool_calls 阻塞性 bug（vitest 238 全绿）；mini-swe-agent 经 8789 全链路通；选型：mini-swe-agent（不用 Kimi/pi 做被测 agent） |
-| E1 A/B 对照 harness 脚手架 | done | claude | 2026-07-25T16:51+08:00 | 决策记录 ` design/2026-07-25-agent-server-e1-ab-harness-changes-and-decisions.md`；`eval/harness.py` + `eval/tasks/tasks-5.yaml`；smoke-02 两臂各 5/5 通过 |
+| E1 A/B 对照 harness 脚手架 | done | claude（kimi 验收） | 2026-07-24T16:53+08:00 | 决策记录 ` design/2026-07-25-agent-server-e1-ab-harness-changes-and-decisions.md`；`eval/harness.py` + `eval/tasks/tasks-5.yaml`；smoke-02 两臂各 5/5 通过。**验收（kimi 07-24）：通过**，修正 2 处（token delta 归因、日期）；遗留：commit 缺 conventional 前缀；归档混入 E0 session |
 | E2 Terminal-Bench A/B（89 任务） | pending | | | |
 | E3 SWE-bench A/B（Lite 10 → 300 待定） | pending | | | |
 | E4 飞轮实验 + 总评估报告 | pending | | | |
