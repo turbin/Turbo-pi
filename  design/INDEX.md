@@ -108,7 +108,8 @@
 | 2026-07-23-agent-server-observation-runbook.md | 观察 Runbook：每周对照基线 SQL 集（§1 库存/§3 quality/§4 并存行/§5 截断/§6 checkpoint）、触发评审动作表（C 方案 5 项决策观察项）、客户端接线说明（Kimi Code → 8788 → 8787 → 8000）、周报模板（附录 A） |
 | progress/README.md | progress 目录规范：里程碑单文件方案、状态值、更新纪律（认领即写/完成即写/中断必写/随工作提交） |
 | progress/2026-07-23-post-c-operations.md | Post-C 里程碑进度与交接：N1-N3 状态表、跨 agent 共享环境事实、断点恢复指引 |
-| 2026-07-24-agent-server-n2-closeout-deepseek-teacher-changes-and-decisions.md | N2 收尾（容器 DeepSeek 进化 metric=11 验证通过）+ N3 安装（TCC 外置卷阻塞实证 + 三选项）+ DeepSeek teacher 切换（verifier 回退链修复、session 目录 env 修复、CA 证书、管线超时 env、compose 代理透传）；测试基线 229 vitest + 29 pytest |
+| 2026-07-24-agent-server-n2-closeout-deepseek-teacher-changes-and-decisions.md | N2 收尾（容器 DeepSeek 进化 metric=11 验证通过）+ N3 安装（TCC 外置卷阻塞实证 + 用户拍板 compose sidecar）+ DeepSeek teacher 切换（verifier 回退链修复、session 目录 env 修复、CA 证书、管线超时 env、compose 代理透传）；测试基线 229 vitest + 29 pytest |
+| 2026-07-24-agent-server-weekly-report-changes-and-decisions.md | 观察周报自动化：weekly-report sidecar（168h 循环，机械汇总 + 触发判定，不含解读）；compose 新服务；runbook §1.1 同步；236 vitest 全绿 |
 
 ### 阶段 7：R 真实化（2026-07-23 立项，同日收口）
 

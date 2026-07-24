@@ -11,9 +11,17 @@
 
 | 频率 | 动作 |
 |---|---|
-| 每周一次 | 跑 §2 SQL 集，与基线对比，填写周报（附录 A 模板） |
+| 每周一次 | 跑 §2 SQL 集，与基线对比，填写周报（附录 A 模板）——**已自动化（2026-07-24）**：`agent-server-weekly-report` compose sidecar 每 168h 自动生成机械汇总 + 触发判定（见 §1.1），评审人只需解读 |
 | 4 周 | 出第一份迭代评估：汇总 4 周趋势，决定是否调整 C 方案暂定决策 |
 | 触发式 | §3 动作表中任一条件命中时，立即评审对应决策 |
+
+### 1.1 周报自动化（weekly-report sidecar）
+
+- 实现：`packages/agent-server/src/offline/weekly-report.ts`（`--loop`，`AGENT_SERVER_REPORT_INTERVAL_HOURS` 默认 168），随 `docker compose up -d` 一起运行。
+- 输出：`/data/reports/weekly-<date>.md`（docker 卷）+ `docker compose logs agent-server-weekly-report`。
+- 覆盖范围：§2 SQL 集全部（库存/quality 分布/并存行/截断观察/checkpoint 历史）+ §3 触发条件的机械判定。
+- 注意：周报 sidecar 读的是**容器库** `/data/experience.db`（当前生产路径）；宿主机 `var/experience.db`（手工/launchd 路径）是另一个库，手工评审时别混。
+- 决策记录：` design/2026-07-24-agent-server-weekly-report-changes-and-decisions.md`。
 
 **执行环境备忘**：
 

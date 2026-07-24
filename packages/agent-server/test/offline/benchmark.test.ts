@@ -10,7 +10,7 @@ function sessionDir(): string {
 }
 
 function writeSession(path: string, lines: object[]) {
-	writeFileSync(path, lines.map((l) => JSON.stringify(l)).join("\n") + "\n", "utf-8");
+	writeFileSync(path, `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`, "utf-8");
 }
 
 describe("deriveBenchmark", () => {

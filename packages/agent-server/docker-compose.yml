@@ -64,5 +64,19 @@ services:
     command: ["node", "packages/agent-server/src/offline/run-evolution.ts", "--loop"]
     restart: unless-stopped
 
+  # Weekly observation report (runbook SQL set + trigger evaluations), written
+  # to /data/reports/weekly-<date>.md and stdout. Loop interval default 168h.
+  agent-server-weekly-report:
+    image: agent-server:local
+    depends_on:
+      - agent-server
+    environment:
+      EXPERIENCE_STORE_PATH: /data/experience.db
+      AGENT_SERVER_REPORT_INTERVAL_HOURS: ${AGENT_SERVER_REPORT_INTERVAL_HOURS:-168}
+    volumes:
+      - agent-server-data:/data
+    command: ["node", "packages/agent-server/src/offline/weekly-report.ts", "--loop"]
+    restart: unless-stopped
+
 volumes:
   agent-server-data:
