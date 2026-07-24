@@ -111,6 +111,13 @@
 | 2026-07-24-agent-server-n2-closeout-deepseek-teacher-changes-and-decisions.md | N2 收尾（容器 DeepSeek 进化 metric=11 验证通过）+ N3 安装（TCC 外置卷阻塞实证 + 用户拍板 compose sidecar）+ DeepSeek teacher 切换（verifier 回退链修复、session 目录 env 修复、CA 证书、管线超时 env、compose 代理透传）；测试基线 229 vitest + 29 pytest |
 | 2026-07-24-agent-server-weekly-report-changes-and-decisions.md | 观察周报自动化：weekly-report sidecar（168h 循环，机械汇总 + 触发判定，不含解读）；compose 新服务；runbook §1.1 同步；236 vitest 全绿 |
 
+### 阶段 7：E 评估里程碑（2026-07-24 立项，进行中）
+
+| 文件 | 内容 |
+|---|---|
+| 2026-07-24-agent-server-eval-benchmark-tasks.md | **E0-E4 任务书（当前最新）**：benchmark 自动化评估环境——SWE-bench Lite + Terminal-Bench 2.0 双臂 A/B（对照直连 DeepSeek vs 实验经 agent-server），成功判据预定义（注入无害 + 飞轮有效 + 成本同报），含 arm64/代理/DB 隔离/成本四坑对策 |
+| progress/2026-07-24-eval-benchmark.md | E 里程碑进度与交接：E0-E4 状态表、环境事实（评估实例 8789、GATEWAY_URL 不带 /v1、代理/CA 对策） |
+
 ### 阶段 7：R 真实化（2026-07-23 立项，同日收口）
 
 | 文件 | 内容 |
