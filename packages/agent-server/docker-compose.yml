@@ -20,6 +20,10 @@ services:
       # Gateway base URL and channel key; override for your environment.
       GATEWAY_URL: ${GATEWAY_URL:-http://host.docker.internal:8787}
       AGENT_GATEWAY_KEY: ${AGENT_GATEWAY_KEY:-}
+      # Outbound proxy for cloud LLM endpoints (host proxy MITMs VM traffic).
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      https_proxy: ${https_proxy:-}
+      NO_PROXY: ${NO_PROXY:-}
       # Offline evolution loop interval (hours). The container has no
       # cron daemon — scheduling uses the built-in loop mode.
       AGENT_SERVER_EVOLUTION_INTERVAL_HOURS: ${AGENT_SERVER_EVOLUTION_INTERVAL_HOURS:-24}

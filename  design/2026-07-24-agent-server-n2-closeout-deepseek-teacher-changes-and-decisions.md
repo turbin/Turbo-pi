@@ -46,6 +46,12 @@
 - **常驻部署定型**：`docker-compose.yml` evolution sidecar 增补 `HTTPS_PROXY/https_proxy/NO_PROXY/AGENT_SERVER_PIPELINE_TIMEOUT_MS` 透传；`packages/agent-server/.env`（gitignored，compose 自动读取）写入 DeepSeek 四变量 + `HTTPS_PROXY=http://host.docker.internal:7897` + `AGENT_SERVER_PIPELINE_TIMEOUT_MS=900000`——**`docker compose up -d` 一条命令即完整部署**（B3 方案 A+ 的 compose 分支落地）。常驻 sidecar 首轮复验：checkpoint `ckpt-315dc5a9f010de68` metric=2（重派生新变体晋升，符合预期；同轨迹近似重复 Method 的堆积正是 C 决策 5 记录的 edges/合并立项观察项）。
 - gateway/omlx 路径弃用原因见 §3.2；本机 PAC 代理（`127.0.0.1:7897`）MITM colima VM 流量是容器 HTTPS 失败的根源。
 
+### 3.4 上线接线（2026-07-24 下午，用户拍板真实部署）
+
+- **server 服务在线转发改 DeepSeek 直连**：`.env` 增加 `GATEWAY_URL=https://api.deepseek.com`（不带 /v1）+ `AGENT_GATEWAY_KEY`；compose server 服务增补代理透传（HTTPS_PROXY 同源 MITM 问题对在线路径同样存在）。
+- 重建镜像纳入 tool_calls 修复（`c6a5b28e`）后实测：8788 非流式 tool_calls 响应正确（`finish_reason: tool_calls`、OpenAI 形状 usage）。
+- 至此生产三容器全部走 DeepSeek：在线聊天（8788）+ 离线进化（24h）+ 周报（168h）。gateway 彻底退出数据面（仅历史文档保留）。
+
 ## 4. N3：LaunchAgent 安装与 TCC 外置卷阻塞
 
 - 已按决策记录方案 A 安装 `~/Library/LaunchAgents/com.agent-server.evolution.plist`（`with-node25.sh` 包装 + `EnvironmentVariables`：`AGENT_SERVER_BENCHMARK` + DeepSeek 四变量），`launchctl load` 成功，doctor `installed: true`（两条 issue 为 doctor 只查当前 shell env 的误报，plist 内 env 已含）。
