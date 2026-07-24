@@ -118,6 +118,8 @@
 | 2026-07-24-agent-server-eval-benchmark-tasks.md | **E0-E4 任务书（当前最新）**：benchmark 自动化评估环境——SWE-bench Lite + Terminal-Bench 2.0 双臂 A/B（对照直连 DeepSeek vs 实验经 agent-server），成功判据预定义（注入无害 + 飞轮有效 + 成本同报），含 arm64/代理/DB 隔离/成本四坑对策 |
 | progress/2026-07-24-eval-benchmark.md | E 里程碑进度与交接：E0-E4 状态表、环境事实（评估实例 8789、GATEWAY_URL 不带 /v1、代理/CA 对策） |
 | 2026-07-24-agent-server-e0-eval-instance-changes-and-decisions.md | E0 决策记录：评估实例 8789 全链路验证；**修复非流式响应丢 tool_calls 阻塞性 bug**（finish_reason/usage 同步映射 OpenAI 形状）；harness 选型 mini-swe-agent（Kimi/pi 不做被测 agent 的三条理由）；venv 需 Python ≥3.12；mini 非交互三坑解法 |
+| 2026-07-25-agent-server-e1-ab-harness-changes-and-decisions.md | E1 决策记录：litellm host bug（绕过方案：openai 直连最小 agent）；harness.py 双臂脚手架；smoke-02 两臂 5/5（kimi 验收修正：token delta 归因轨迹方差而非注入、日期修正） |
+| 2026-07-24-agent-server-e2-terminal-bench-tasks.md | **E2 任务书**：TB 2.0 89 任务 A/B——E2.0 三项环境探针（Docker Hub 拉取/litellm 容器内/容器→8789 连通）→ E2.1 子类化 MiniSweAgent（OPENAI_BASE_URL 臂切换）→ 5 任务冒烟报价 → 89 全量；R1-R5 风险对策 |
 | 2026-07-25-agent-server-e1-ab-harness-changes-and-decisions.md | E1 决策记录：harness 改用 openai 直连（绕过 litellm 1.93.0 连接 bug）；最小 Bash agent 替代 mini-swe-agent；proxy 环境变量清理；session 归档防泄漏；smoke-02 两臂各 5/5 通过 |
 
 ### 阶段 7：R 真实化（2026-07-23 立项，同日收口）

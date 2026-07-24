@@ -10,7 +10,7 @@
 |---|---|---|---|---|
 | E0 评估实例 + 接线冒烟（含 harness 选型决策点） | done | kimi | 2026-07-24T15:35+08:00 | 决策记录 ` design/2026-07-24-agent-server-e0-eval-instance-changes-and-decisions.md`；修复非流式丢 tool_calls 阻塞性 bug（vitest 238 全绿）；mini-swe-agent 经 8789 全链路通；选型：mini-swe-agent（不用 Kimi/pi 做被测 agent） |
 | E1 A/B 对照 harness 脚手架 | done | claude（kimi 验收） | 2026-07-24T16:53+08:00 | 决策记录 ` design/2026-07-25-agent-server-e1-ab-harness-changes-and-decisions.md`；`eval/harness.py` + `eval/tasks/tasks-5.yaml`；smoke-02 两臂各 5/5 通过。**验收（kimi 07-24）：通过**，修正 2 处（token delta 归因、日期）；遗留：commit 缺 conventional 前缀；归档混入 E0 session |
-| E2 Terminal-Bench A/B（89 任务） | pending | | | |
+| E2 Terminal-Bench A/B（89 任务） | pending | | | | 任务书：` design/2026-07-24-agent-server-e2-terminal-bench-tasks.md`（2026-07-24 kimi 编写，含 E2.0 三项探针/R1-R5 风险对策） |
 | E3 SWE-bench A/B（Lite 10 → 300 待定） | pending | | | |
 | E4 飞轮实验 + 总评估报告 | pending | | | |
 
