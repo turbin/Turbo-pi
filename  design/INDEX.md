@@ -1,7 +1,7 @@
 # design 目录索引（INDEX）
 
 维护说明：本索引概述 ` design/`（目录名带前导空格）下每份文档的内容，并记录从 agent-server P0 起各阶段决策的变化时间线。**新增设计文档时请同步更新本索引。**
-最后更新：2026-07-23（覆盖 58 份文档 + progress/ 目录）。
+最后更新：2026-07-25（覆盖 E1 决策记录）。
 
 阅读指引：
 - **通用约束 canonical 版本**（工程内改动、omlx 不可动、提交格式、git 纪律）：`2026-07-22-agent-server-p3-candidate-tasks.md` 的"通用约束"一节，后续任务书均为引用。
@@ -118,6 +118,7 @@
 | 2026-07-24-agent-server-eval-benchmark-tasks.md | **E0-E4 任务书（当前最新）**：benchmark 自动化评估环境——SWE-bench Lite + Terminal-Bench 2.0 双臂 A/B（对照直连 DeepSeek vs 实验经 agent-server），成功判据预定义（注入无害 + 飞轮有效 + 成本同报），含 arm64/代理/DB 隔离/成本四坑对策 |
 | progress/2026-07-24-eval-benchmark.md | E 里程碑进度与交接：E0-E4 状态表、环境事实（评估实例 8789、GATEWAY_URL 不带 /v1、代理/CA 对策） |
 | 2026-07-24-agent-server-e0-eval-instance-changes-and-decisions.md | E0 决策记录：评估实例 8789 全链路验证；**修复非流式响应丢 tool_calls 阻塞性 bug**（finish_reason/usage 同步映射 OpenAI 形状）；harness 选型 mini-swe-agent（Kimi/pi 不做被测 agent 的三条理由）；venv 需 Python ≥3.12；mini 非交互三坑解法 |
+| 2026-07-25-agent-server-e1-ab-harness-changes-and-decisions.md | E1 决策记录：harness 改用 openai 直连（绕过 litellm 1.93.0 连接 bug）；最小 Bash agent 替代 mini-swe-agent；proxy 环境变量清理；session 归档防泄漏；smoke-02 两臂各 5/5 通过 |
 
 ### 阶段 7：R 真实化（2026-07-23 立项，同日收口）
 
@@ -221,11 +222,18 @@
 
 - 【立】teacher 切 DeepSeek：LLM_MODEL=deepseek-v4-flash（评分）/ TEACHER_MODEL=deepseek-v4-pro（抽取）；该账户无 deepseek-chat（实测 /v1/models 只有 v4-pro/v4-flash）
 - 【立】verifier 回退链：logprobs 期望化失败 → 文本解析（DeepSeek 拆 tag 多 token、评分位可无字母）；仍失败才抛错，不静默给分
-- 【改】N2 metric=0 真实根因：离线调度不认 AGENT_SERVER_SESSION_DIR（此前归因“无 gateway”不准确）→ run-evolution.ts 透传修复
+- 【改】N2 metric=0 真实根因：离线调度不认 AGENT_SERVER_SESSION_DIR（此前归因"无 gateway"不准确）→ run-evolution.ts 透传修复
 - 【立】容器 HTTPS：宿主 PAC 代理 MITM colima VM 流量 → HTTPS_PROXY=host.docker.internal:7897；镜像补 ca-certificates；管线超时 env AGENT_SERVER_PIPELINE_TIMEOUT_MS
 - 【立】N2 metric>0 验证通过：容器内 DeepSeek 进化 metric=11；compose + .env 一条命令部署（B3 compose 分支落地）
 - 【观】TCC 外置卷阻塞：launchd 子进程对 /Volumes/extern-1T-hardisk 读写均被拒 → launchd 日调度在此机不可行；**用户拍板（07-24）：日常调度用 compose sidecar**（launchd plist 已卸载删除）
 - 【废】gateway/omlx 作为离线进化 LLM 路径：gateway 拒 logprobs 参数；omlx 评分文本偶发为空 + 超时 → 离线管线直连 DeepSeek
+
+### E 评估里程碑（07-24 ~ 07-25）
+
+- 【立】E1 harness 绕过 litellm：eval/.venv 中 litellm 1.93.0 有连接 bug（`[Errno 8] nodename nor servname`），openai 直连正常；E1 改用 openai 客户端直连 + 最小 Bash agent，不依赖 mini-swe-agent
+- 【立】E1 proxy 隔离：harness 启动时强制清除 HTTPS_PROXY/HTTP_PROXY 等（.env 中为 docker 设置的 host.docker.internal 代理在宿主机不解析）
+- 【立】E1 防泄漏：实验臂每轮结束后将 var/eval/sessions/ 归档并清空，确保下一轮从空库起跑
+- 【验】E1 smoke-02：两臂各 5/5 通过，实验臂 token +38%（注入开销，冷库注入为空块），session 归档机制验证通过
 
 ---
 

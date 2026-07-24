@@ -1,0 +1,110 @@
+# E1 A/B harness smoke-test tasks (5 shell-operation tasks).
+# Each task is a self-contained file-operation problem that mini-swe-agent
+# can solve with default tools. Tasks do NOT depend on project source code;
+# they run in isolated temp directories.
+
+tasks:
+  - id: create-readme
+    description: "Create a README.md file with project title and description"
+    prompt: |
+      Create a file called README.md in the current directory with this exact content:
+
+      # Test Project
+      A simple test project for agent evaluation.
+
+      Write the file and stop.
+    verify:
+      - type: file_exists
+        path: README.md
+      - type: file_contains
+        path: README.md
+        text: "# Test Project"
+
+  - id: write-config-json
+    description: "Create a config.json with nested fields"
+    prompt: |
+      Create a file called config.json with the following JSON content (compact, no newlines):
+
+      {"server":{"port":8080,"host":"0.0.0.0"},"database":{"url":"postgres://localhost/test","pool_size":10}}
+
+      Write the file and stop.
+    verify:
+      - type: file_exists
+        path: config.json
+      - type: file_contains
+        path: config.json
+        text: '"pool_size":10'
+
+  - id: find-and-replace
+    description: "Find and replace text across multiple files"
+    prompt: |
+      First, create a file called fruits.txt with these lines (one per line):
+      apple
+      banana
+      orange
+      grape
+      banana
+
+      Then, create a second file called vegetables.txt with these lines:
+      carrot
+      potato
+      onion
+
+      Finally, replace all occurrences of 'banana' with 'blueberry' in fruits.txt.
+      Write all files and stop.
+    verify:
+      - type: file_exists
+        path: fruits.txt
+      - type: file_contains
+        path: fruits.txt
+        text: blueberry
+      - type: file_not_contains
+        path: fruits.txt
+        text: banana
+      - type: file_exists
+        path: vegetables.txt
+
+  - id: count-and-append
+    description: "Count lines in a file and append result"
+    prompt: |
+      First, create a file called numbers.txt with exactly the numbers 1 through 10, one per line.
+
+      Then, count how many lines are in numbers.txt, and append the line "Total lines: 10" to the end of the file.
+
+      Write the file and stop.
+    verify:
+      - type: file_exists
+        path: numbers.txt
+      - type: file_contains
+        path: numbers.txt
+        text: "Total lines: 10"
+      - type: file_contains
+        path: numbers.txt
+        text: "1"
+
+  - id: sort-and-dedupe
+    description: "Sort a file and remove duplicates"
+    prompt: |
+      Create a file called names.txt with these names (one per line, exactly in this order):
+      Charlie
+      Alice
+      Bob
+      Alice
+      David
+      Bob
+      Alice
+
+      Then, sort the file alphabetically, remove duplicate lines, and save the result back to names.txt.
+      Write the file and stop.
+    verify:
+      - type: file_exists
+        path: names.txt
+      - type: file_contains
+        path: names.txt
+        text: Alice
+      - type: file_contains
+        path: names.txt
+        text: David
+      - type: file_not_contains
+        path: names.txt
+        text: "Alice\nAlice"
