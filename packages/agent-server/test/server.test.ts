@@ -246,6 +246,89 @@ describe("POST /v1/chat/completions streaming session recording", () => {
 	});
 });
 
+describe("POST /v1/chat/completions non-streaming response", () => {
+	let dir: string;
+	let sessionDir: string;
+	let store: ExperienceStore;
+
+	beforeEach(async () => {
+		dir = mkdtempSync(join(tmpdir(), "agent-server-nonstream-"));
+		sessionDir = join(dir, "sessions");
+		store = new ExperienceStore(join(dir, "experience.db"));
+		await store.initSchema();
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		store.close();
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("assembles tool_calls and maps finish_reason/usage to OpenAI shape", async () => {
+		const sseChunks = [
+			'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"get_weather","arguments":"{\\"city\\": \\"Par"}}]}}]}\n\n',
+			'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"is\\"}"}}]}}]}\n\n',
+			'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}\n\n',
+			"data: [DONE]\n\n",
+		];
+		mockGatewayFetch(sseStream(sseChunks));
+		const app = createServer({ store, gatewayUrl: GATEWAY_URL, sessionDir });
+
+		const res = await app.inject({
+			method: "POST",
+			url: "/v1/chat/completions",
+			payload: {
+				model: "agent-auto",
+				messages: [{ role: "user", content: "weather?" }],
+				tools: [
+					{
+						type: "function",
+						function: {
+							name: "get_weather",
+							description: "Get weather",
+							parameters: { type: "object", properties: {} },
+						},
+					},
+				],
+			},
+		});
+
+		expect(res.statusCode).toBe(200);
+		const body = res.json();
+		const choice = body.choices[0];
+		expect(choice.finish_reason).toBe("tool_calls");
+		expect(choice.message.tool_calls).toEqual([
+			{ id: "call_1", type: "function", function: { name: "get_weather", arguments: '{"city": "Paris"}' } },
+		]);
+		expect(body.usage).toEqual({ prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 });
+		await app.close();
+	});
+
+	it("keeps stop finish_reason and empty usage for plain text replies", async () => {
+		const sseChunks = [
+			'data: {"choices":[{"delta":{"content":"hello"}}]}\n\n',
+			'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}\n\n',
+			"data: [DONE]\n\n",
+		];
+		mockGatewayFetch(sseStream(sseChunks));
+		const app = createServer({ store, gatewayUrl: GATEWAY_URL, sessionDir });
+
+		const res = await app.inject({
+			method: "POST",
+			url: "/v1/chat/completions",
+			payload: { model: "agent-auto", messages: [{ role: "user", content: "hi" }] },
+		});
+
+		expect(res.statusCode).toBe(200);
+		const body = res.json();
+		expect(body.choices[0].finish_reason).toBe("stop");
+		expect(body.choices[0].message.content).toBe("hello");
+		expect(body.choices[0].message.tool_calls).toBeUndefined();
+		expect(body.usage).toEqual({ prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 });
+		await app.close();
+	});
+});
+
 describe("GET /api/evolution/status", () => {
 	it("returns 404 and never_run when no checkpoint exists", async () => {
 		const store = makeStore();

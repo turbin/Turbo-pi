@@ -194,6 +194,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 			const stream = await handleStream({ model, context, options }, { store, gatewayUrl, sessionPath });
 			const reader = stream.getReader();
 			const chunks: string[] = [];
+			const toolCalls = new Map<number, { id: string; name: string; args: string }>();
 			let done: Record<string, unknown> | null = null;
 			while (true) {
 				const { value, done: isDone } = await reader.read();
@@ -206,6 +207,15 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 					const event = JSON.parse(payload) as Record<string, unknown>;
 					if (event.type === "text_delta") {
 						chunks.push(String(event.delta ?? ""));
+					} else if (event.type === "toolcall_start") {
+						toolCalls.set(Number(event.contentIndex), {
+							id: String(event.id),
+							name: String(event.toolName),
+							args: "",
+						});
+					} else if (event.type === "toolcall_delta") {
+						const call = toolCalls.get(Number(event.contentIndex));
+						if (call) call.args += String(event.delta ?? "");
 					} else if (event.type === "done") {
 						done = event;
 					} else if (event.type === "error") {
@@ -215,6 +225,28 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 			}
 			const content = chunks.join("");
 			const message: Record<string, unknown> = { role: "assistant", content };
+			if (toolCalls.size > 0) {
+				// OpenAI clients (litellm/mini-swe-agent) require tool_calls on the
+				// response message; dropping them breaks every tool-calling agent.
+				message.tool_calls = [...toolCalls.entries()]
+					.sort((a, b) => a[0] - b[0])
+					.map(([, call]) => ({
+						id: call.id,
+						type: "function",
+						function: { name: call.name, arguments: call.args },
+					}));
+			}
+			const doneReason = done?.reason;
+			const finishReason = doneReason === "toolUse" ? "tool_calls" : (doneReason ?? "stop");
+			const u = (done?.usage ?? {}) as {
+				input?: number;
+				output?: number;
+				cacheRead?: number;
+				cacheWrite?: number;
+				totalTokens?: number;
+			};
+			const promptTokens = (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0);
+			const completionTokens = u.output ?? 0;
 			return reply.send({
 				id: `chatcmpl-${randomUUID()}`,
 				object: "chat.completion",
@@ -224,10 +256,14 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 					{
 						index: 0,
 						message,
-						finish_reason: done?.reason ?? "stop",
+						finish_reason: finishReason,
 					},
 				],
-				usage: done?.usage ?? {},
+				usage: {
+					prompt_tokens: promptTokens,
+					completion_tokens: completionTokens,
+					total_tokens: u.totalTokens ?? promptTokens + completionTokens,
+				},
 			});
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);

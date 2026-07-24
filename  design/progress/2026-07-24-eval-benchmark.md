@@ -8,7 +8,7 @@
 
 | 子任务 | 状态 | 执行 agent | 更新时间 | 产出 |
 |---|---|---|---|---|
-| E0 评估实例 + 接线冒烟（含 harness 选型决策点） | pending | | | |
+| E0 评估实例 + 接线冒烟（含 harness 选型决策点） | done | kimi | 2026-07-24T15:35+08:00 | 决策记录 ` design/2026-07-24-agent-server-e0-eval-instance-changes-and-decisions.md`；修复非流式丢 tool_calls 阻塞性 bug（vitest 238 全绿）；mini-swe-agent 经 8789 全链路通；选型：mini-swe-agent（不用 Kimi/pi 做被测 agent） |
 | E1 A/B 对照 harness 脚手架 | pending | | | |
 | E2 Terminal-Bench A/B（89 任务） | pending | | | |
 | E3 SWE-bench A/B（Lite 10 → 300 待定） | pending | | | |
