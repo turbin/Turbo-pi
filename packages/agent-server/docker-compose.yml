@@ -44,6 +44,19 @@ services:
       AGENT_SERVER_EVOLUTION_INTERVAL_HOURS: ${AGENT_SERVER_EVOLUTION_INTERVAL_HOURS:-24}
       EXPERIENCE_STORE_PATH: /data/experience.db
       AGENT_SERVER_SESSION_DIR: /data/sessions
+      # Real-LLM teacher for the offline pipeline; unset/empty falls back to MockLLM.
+      # Point these at the host gateway (OpenAI-compatible) or any other endpoint.
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      TEACHER_MODEL: ${TEACHER_MODEL:-}
+      # Outbound proxy for cloud LLM endpoints when the host runs a proxy that
+      # MITMs VM traffic (otherwise Python TLS fails); empty = direct.
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      https_proxy: ${https_proxy:-}
+      NO_PROXY: ${NO_PROXY:-}
+      # Per-subprocess timeout for slow (reasoning) teachers; default 300s.
+      AGENT_SERVER_PIPELINE_TIMEOUT_MS: ${AGENT_SERVER_PIPELINE_TIMEOUT_MS:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

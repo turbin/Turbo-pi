@@ -274,6 +274,44 @@ describe("runOfflinePipeline", () => {
 		);
 	});
 
+	it("reads the stage timeout from AGENT_SERVER_PIPELINE_TIMEOUT_MS when no option is set", async () => {
+		const inputDir = makeTempDir("pipeline-envtimeout-in-");
+		const outputDir = join(makeTempDir("pipeline-envtimeout-out-"), "out");
+		writeJsonl(inputDir, "session-a.jsonl", piNativeSession());
+
+		const spawnFn = makeFakeSpawn(
+			{ "skill_evolution.pipeline": [] },
+			{ module: "sop_lifecycle", code: null, signal: "SIGTERM", stderr: "" },
+		);
+		process.env.AGENT_SERVER_PIPELINE_TIMEOUT_MS = "4321";
+		try {
+			await expect(runOfflinePipeline(inputDir, outputDir, { spawnFn })).rejects.toThrow(
+				/python -m sop_lifecycle killed by SIGTERM \(timeout 4321ms\)/,
+			);
+		} finally {
+			delete process.env.AGENT_SERVER_PIPELINE_TIMEOUT_MS;
+		}
+	});
+
+	it("option timeoutMs wins over AGENT_SERVER_PIPELINE_TIMEOUT_MS", async () => {
+		const inputDir = makeTempDir("pipeline-timeoutprio-in-");
+		const outputDir = join(makeTempDir("pipeline-timeoutprio-out-"), "out");
+		writeJsonl(inputDir, "session-a.jsonl", piNativeSession());
+
+		const spawnFn = makeFakeSpawn(
+			{ "skill_evolution.pipeline": [] },
+			{ module: "sop_lifecycle", code: null, signal: "SIGTERM", stderr: "" },
+		);
+		process.env.AGENT_SERVER_PIPELINE_TIMEOUT_MS = "4321";
+		try {
+			await expect(runOfflinePipeline(inputDir, outputDir, { spawnFn, timeoutMs: 1234 })).rejects.toThrow(
+				/python -m sop_lifecycle killed by SIGTERM \(timeout 1234ms\)/,
+			);
+		} finally {
+			delete process.env.AGENT_SERVER_PIPELINE_TIMEOUT_MS;
+		}
+	});
+
 	it("rejects when a stage writes a non-array output", async () => {
 		const inputDir = makeTempDir("pipeline-badjson-in-");
 		const outputDir = join(makeTempDir("pipeline-badjson-out-"), "out");

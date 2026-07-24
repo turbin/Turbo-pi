@@ -134,4 +134,24 @@ describe("run-evolution cmdRun", () => {
 		expect(latest).not.toBeNull();
 		expect(latest!.metric).toBe(8);
 	});
+
+	it("passes AGENT_SERVER_SESSION_DIR as inputDir when set", async () => {
+		const runDailyEvolutionFn = vi.fn().mockResolvedValue("ckpt-x");
+		const deps = makeDeps({ store, runDailyEvolutionFn });
+		process.env.AGENT_SERVER_SESSION_DIR = "/tmp/custom-sessions";
+		try {
+			await cmdRun(deps);
+		} finally {
+			delete process.env.AGENT_SERVER_SESSION_DIR;
+		}
+		expect(runDailyEvolutionFn).toHaveBeenCalledWith(store, { inputDir: "/tmp/custom-sessions" });
+	});
+
+	it("passes empty options when AGENT_SERVER_SESSION_DIR is unset", async () => {
+		const runDailyEvolutionFn = vi.fn().mockResolvedValue("ckpt-x");
+		const deps = makeDeps({ store, runDailyEvolutionFn });
+		delete process.env.AGENT_SERVER_SESSION_DIR;
+		await cmdRun(deps);
+		expect(runDailyEvolutionFn).toHaveBeenCalledWith(store, {});
+	});
 });

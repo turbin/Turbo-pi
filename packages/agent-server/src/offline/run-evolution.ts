@@ -98,7 +98,11 @@ export async function cmdStatus(deps: RunEvolutionDeps): Promise<StatusOutput> {
 /** Run one evolution cycle; on failure write a failure checkpoint then rethrow. */
 export async function cmdRun(deps: RunEvolutionDeps): Promise<string> {
 	try {
-		const ckptId = await deps.runDailyEvolutionFn(deps.store);
+		// Honor AGENT_SERVER_SESSION_DIR (same convention as server.ts) so the
+		// container deployment, which mounts sessions at /data/sessions, ETLs the
+		// mounted files instead of an empty ./var/sessions.
+		const inputDir = process.env.AGENT_SERVER_SESSION_DIR;
+		const ckptId = await deps.runDailyEvolutionFn(deps.store, inputDir ? { inputDir } : {});
 		deps.log(`evolution checkpoint: ${ckptId}`);
 		return ckptId;
 	} catch (err) {

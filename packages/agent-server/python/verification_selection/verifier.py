@@ -242,15 +242,25 @@ class Verifier:
             # skill_evolution 客户端返回 {"content": ..., "prompt_logprobs": ...} dict
             content_tokens = logprobs.get("content")
             if content_tokens:
-                raw_a = expected_from_top_logprobs(extract_tag_distribution(logprobs, "score_A"), self.scale)
-                raw_b = expected_from_top_logprobs(extract_tag_distribution(logprobs, "score_B"), self.scale)
+                try:
+                    raw_a = expected_from_top_logprobs(extract_tag_distribution(logprobs, "score_A"), self.scale)
+                    raw_b = expected_from_top_logprobs(extract_tag_distribution(logprobs, "score_B"), self.scale)
+                except ScoreExtractionError:
+                    use_text_fallback = True
             else:
                 use_text_fallback = True
         elif isinstance(logprobs, list):
             # verification_selection 客户端返回原生 per-token list（可能空）
             if logprobs:
-                raw_a = expected_from_top_logprobs(extract_tag_distribution(logprobs, "score_A"), self.scale)
-                raw_b = expected_from_top_logprobs(extract_tag_distribution(logprobs, "score_B"), self.scale)
+                try:
+                    raw_a = expected_from_top_logprobs(extract_tag_distribution(logprobs, "score_A"), self.scale)
+                    raw_b = expected_from_top_logprobs(extract_tag_distribution(logprobs, "score_B"), self.scale)
+                except ScoreExtractionError:
+                    # logprobs 存在但不可用的后端（如 DeepSeek：<score_A> 被拆成
+                    # < / score / _A 多 token，答案位置 top_logprobs 可能不含字母
+                    # token）回退文本解析；文本也无标签时由下层抛 ScoreExtractionError，
+                    # 不静默给默认分。
+                    use_text_fallback = True
             else:
                 use_text_fallback = True
         else:

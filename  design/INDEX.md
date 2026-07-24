@@ -108,6 +108,7 @@
 | 2026-07-23-agent-server-observation-runbook.md | 观察 Runbook：每周对照基线 SQL 集（§1 库存/§3 quality/§4 并存行/§5 截断/§6 checkpoint）、触发评审动作表（C 方案 5 项决策观察项）、客户端接线说明（Kimi Code → 8788 → 8787 → 8000）、周报模板（附录 A） |
 | progress/README.md | progress 目录规范：里程碑单文件方案、状态值、更新纪律（认领即写/完成即写/中断必写/随工作提交） |
 | progress/2026-07-23-post-c-operations.md | Post-C 里程碑进度与交接：N1-N3 状态表、跨 agent 共享环境事实、断点恢复指引 |
+| 2026-07-24-agent-server-n2-closeout-deepseek-teacher-changes-and-decisions.md | N2 收尾（容器 DeepSeek 进化 metric=11 验证通过）+ N3 安装（TCC 外置卷阻塞实证 + 三选项）+ DeepSeek teacher 切换（verifier 回退链修复、session 目录 env 修复、CA 证书、管线超时 env、compose 代理透传）；测试基线 229 vitest + 29 pytest |
 
 ### 阶段 7：R 真实化（2026-07-23 立项，同日收口）
 
@@ -206,6 +207,16 @@
 - 【立】场景 1 完整化：构造含 retry/backoff 关键词的最小 session（user+assistant 两条消息）重跑 runDailyEvolution，自然 Method ABILITY 入库（quality 0.652847），场景 1 由条件性 PASS 升级为完整 PASS
 - 【立】增量重跑验证幂等：不清 DB 直接重跑，旧 cards contentHash 去重跳过、ETL 幂等，与 cron 日常运行形态一致
 - 【观】FTS 拉丁正文不可检索：tokenizeForFts 对非 CJK 也逐字拆，词查询只命中未拆字的 title 列；中文靠 bigram 不受影响 → 写入基线迭代建议第 5 条，建议单独立项修正
+
+### N2 收尾 + DeepSeek teacher 切换（07-24）
+
+- 【立】teacher 切 DeepSeek：LLM_MODEL=deepseek-v4-flash（评分）/ TEACHER_MODEL=deepseek-v4-pro（抽取）；该账户无 deepseek-chat（实测 /v1/models 只有 v4-pro/v4-flash）
+- 【立】verifier 回退链：logprobs 期望化失败 → 文本解析（DeepSeek 拆 tag 多 token、评分位可无字母）；仍失败才抛错，不静默给分
+- 【改】N2 metric=0 真实根因：离线调度不认 AGENT_SERVER_SESSION_DIR（此前归因“无 gateway”不准确）→ run-evolution.ts 透传修复
+- 【立】容器 HTTPS：宿主 PAC 代理 MITM colima VM 流量 → HTTPS_PROXY=host.docker.internal:7897；镜像补 ca-certificates；管线超时 env AGENT_SERVER_PIPELINE_TIMEOUT_MS
+- 【立】N2 metric>0 验证通过：容器内 DeepSeek 进化 metric=11；compose + .env 一条命令部署（B3 compose 分支落地）
+- 【观】TCC 外置卷阻塞：launchd 子进程对 /Volumes/extern-1T-hardisk 读写均被拒 → launchd 日调度在此机不可行（授权 FDA / compose sidecar / 迁内置盘 三选项，推荐 compose）
+- 【废】gateway/omlx 作为离线进化 LLM 路径：gateway 拒 logprobs 参数；omlx 评分文本偶发为空 + 超时 → 离线管线直连 DeepSeek
 
 ---
 

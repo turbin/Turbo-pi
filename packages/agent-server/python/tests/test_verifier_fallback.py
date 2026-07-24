@@ -190,6 +190,36 @@ class TestScorePairFallback:
 		with pytest.raises(ScoreExtractionError):
 			v.score_pair("task", "traj_a", "traj_b")
 
+	def test_unusable_logprobs_distribution_falls_back_to_text(self) -> None:
+		"""Logprobs present but answer position has no letter tokens (e.g. DeepSeek
+		splits <score_A> into < / score / _A and the top_logprobs at the answer
+		position contain digits only) → fall back to text parsing instead of
+		raising ScoreExtractionError."""
+		entries = [
+			{"token": "<score_A>", "logprob": -0.01, "top_logprobs": [{"token": "<score_A>", "logprob": -0.01}]},
+			{"token": " 18", "logprob": -0.01,
+			 "top_logprobs": [{"token": " 18", "logprob": -0.01}, {"token": " 19", "logprob": -2.0}]},
+			{"token": "</score_A>", "logprob": -0.01, "top_logprobs": [{"token": "</score_A>", "logprob": -0.01}]},
+		]
+		mock = _fallback_mock(_mk_text("C", "A"), entries)
+		v = _verifier(mock)
+		result = v.score_pair("task", "traj_a", "traj_b")
+		# Text fallback: C→phi=3→norm=0.5; A→phi=1→norm=0
+		assert result.ra == pytest.approx(0.5, abs=0.02)
+		assert result.rb == pytest.approx(0.0, abs=0.02)
+
+	def test_unusable_logprobs_and_no_text_tags_raises(self) -> None:
+		"""Logprobs unusable AND text has no score tags → ScoreExtractionError (no silent default)."""
+		entries = [
+			{"token": "<score_A>", "logprob": -0.01, "top_logprobs": [{"token": "<score_A>", "logprob": -0.01}]},
+			{"token": " 18", "logprob": -0.01,
+			 "top_logprobs": [{"token": " 18", "logprob": -0.01}]},
+		]
+		mock = _fallback_mock("No score tags here.", entries)
+		v = _verifier(mock)
+		with pytest.raises(ScoreExtractionError):
+			v.score_pair("task", "traj_a", "traj_b")
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # extract_tag_distribution  dict/list dual-input compatibility

@@ -1,15 +1,15 @@
 # Post-C 运维化里程碑 — 进度与交接
 
-状态：已收口
+状态：已收口（N2 于 2026-07-24 补完 metric>0 验证）
 任务书：` design/2026-07-23-agent-server-post-c-tasks.md`
-最近更新：2026-07-23T22:00+08:00 by pm-agent（里程碑收口）
+最近更新：2026-07-24T11:20+08:00 by kimi（N2 metric>0 验证通过 + N3 安装（TCC 阻塞待用户决策）+ DeepSeek teacher 切换）
 
 ## 1. 子任务状态表
 
 | 子任务 | 状态 | 执行 agent | 更新时间 | 产出 |
 |---|---|---|---|---|
 | N1 FTS tokenizer 修正（拉丁整词 + CJK bigram + FTS 重建 CLI） | done | coder | 2026-07-23T16:50+08:00 | commit bdc10a5e；决策记录 ` design/2026-07-23-agent-server-n1-fts-tokenizer-changes-and-decisions.md`；21 文件 225 测试全绿 |
-| N2 Docker 镜像首次构建验证（需 colima） | skipped | coder | 2026-07-23T22:00+08:00 | agent 侧 build/smoke/compose 双服务/checkpoint 机制（metric=0）验证已完成于 5b6d760d；metric>0 完整进化验证经用户决定转手工，于上线时补；决策记录 ` design/2026-07-23-agent-server-n2-docker-build-changes-and-decisions.md` |
+| N2 Docker 镜像首次构建验证（需 colima） | done | kimi | 2026-07-24T11:20+08:00 | **metric>0 验证通过**：容器内 DeepSeek teacher 进化 checkpoint ckpt-bd091b6a34c06a4f metric=11；修复 session 目录 env 不生效/缺 CA 证书/代理 MITM/超时 4 个问题；决策记录 ` design/2026-07-24-agent-server-n2-closeout-deepseek-teacher-changes-and-decisions.md` |
 | N3 上线观察期启动（dry-run 审查 + 安装指令 + 观察 runbook） | done | coder | 2026-07-23T21:00+08:00 | commit 7bd6273f；决策记录 ` design/2026-07-23-agent-server-n3-go-live-changes-and-decisions.md`；观察 runbook ` design/2026-07-23-agent-server-observation-runbook.md`；agent 未执行 install（用户动作） |
 
 依赖关系：N1 独立；N2 独立（前置：colima 运行，属工程外，需用户配合）；N3 的"实际安装"步骤是用户动作，agent 只交付 dry-run 审查与指令。三者可并行，建议顺序 N1 → N2 → N3。

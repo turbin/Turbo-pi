@@ -54,7 +54,7 @@ export interface OfflinePipelineOptions {
 	pythonDir?: string;
 	/** Optional benchmark JSON for skill evolution (SPEC §4.2 step 2); omitted => skill stage outputs []. */
 	benchmarkPath?: string;
-	/** Per-subprocess timeout in ms. Default: 300_000. */
+	/** Per-subprocess timeout in ms. Default: env AGENT_SERVER_PIPELINE_TIMEOUT_MS, else 300_000. */
 	timeoutMs?: number;
 	/** Injectable for tests. Default: node:child_process spawn. */
 	spawnFn?: typeof spawn;
@@ -62,6 +62,13 @@ export interface OfflinePipelineOptions {
 
 const DEFAULT_TIMEOUT_MS = 300_000;
 const STDERR_TAIL = 2000;
+
+/** options.timeoutMs wins; then AGENT_SERVER_PIPELINE_TIMEOUT_MS; then the default. */
+function resolveTimeoutMs(optionTimeoutMs?: number): number {
+	if (optionTimeoutMs !== undefined) return optionTimeoutMs;
+	const fromEnv = Number(process.env.AGENT_SERVER_PIPELINE_TIMEOUT_MS);
+	return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : DEFAULT_TIMEOUT_MS;
+}
 
 function defaultPythonDir(): string {
 	// src/offline/pipeline.ts -> packages/agent-server/python
@@ -75,7 +82,7 @@ export async function runOfflinePipeline(
 ): Promise<PipelineResult> {
 	const pythonBin = options.pythonBin ?? process.env.AGENT_SERVER_PYTHON ?? "python3";
 	const pythonDir = options.pythonDir ?? process.env.AGENT_SERVER_PYTHON_DIR ?? defaultPythonDir();
-	const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+	const timeoutMs = resolveTimeoutMs(options.timeoutMs);
 	const spawnFn = options.spawnFn ?? spawn;
 
 	const trajectories = collectTrajectories(inputDir);
@@ -142,7 +149,7 @@ export async function runDormantRescore(
 
 	const pythonBin = options.pythonBin ?? process.env.AGENT_SERVER_PYTHON ?? "python3";
 	const pythonDir = options.pythonDir ?? process.env.AGENT_SERVER_PYTHON_DIR ?? defaultPythonDir();
-	const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+	const timeoutMs = resolveTimeoutMs(options.timeoutMs);
 	const spawnFn = options.spawnFn ?? spawn;
 
 	const tempDir = mkdtempSync(join(tmpdir(), "agent-server-rescore-"));

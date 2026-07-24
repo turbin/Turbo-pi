@@ -23,9 +23,9 @@ RUN if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi
 
 # make/g++ are the node-gyp fallback for better-sqlite3 (linux prebuilds
 # normally apply); python3 is the offline-pipeline runtime (vendored packages
-# are stdlib-only).
+# are stdlib-only); ca-certificates lets Python TLS-verify HTTPS LLM endpoints.
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends python3 make g++ \
+	&& apt-get install -y --no-install-recommends python3 make g++ ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
 
 # Workspace manifests first for dependency-layer caching.
@@ -49,7 +49,7 @@ RUN npm prune --omit=dev
 
 FROM node:25.9.0-bookworm-slim
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends python3 \
+	&& apt-get install -y --no-install-recommends python3 ca-certificates \
 	&& rm -rf /var/lib/apt/lists/* \
 	&& mkdir -p /data/sessions
 
