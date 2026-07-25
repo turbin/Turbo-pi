@@ -1,0 +1,18 @@
+#!/bin/bash
+# Terminal-Bench mini-swe-agent installation script (Tsinghua mirror variant).
+# Used by MiniSweAgentProxy. Overrides the built-in template to use
+# https://pypi.tuna.tsinghua.edu.cn/simple for faster pip installs inside
+# the colima VM (where direct PyPI access may be slow via proxy).
+
+apt-get update
+apt-get install -y python3 python3-pip
+
+pip3 install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+{% if version %}
+pip3 install "mini-swe-agent=={{ version }}" -i https://pypi.tuna.tsinghua.edu.cn/simple
+{% else %}
+pip3 install mini-swe-agent -i https://pypi.tuna.tsinghua.edu.cn/simple
+{% endif %}
+
+echo "INSTALL_SUCCESS"

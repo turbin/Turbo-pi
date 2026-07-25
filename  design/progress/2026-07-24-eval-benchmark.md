@@ -2,7 +2,7 @@
 
 状态：进行中
 任务书：` design/2026-07-24-agent-server-eval-benchmark-tasks.md`
-最近更新：2026-07-24T17:15+08:00 by kimi（E1 验收通过，附修正）
+最近更新：2026-07-25T22:30+08:00 by claude（E2 可达性验证通过，E2.3 全量暂不展开）
 
 ## 1. 子任务状态表
 
@@ -10,7 +10,7 @@
 |---|---|---|---|---|
 | E0 评估实例 + 接线冒烟（含 harness 选型决策点） | done | kimi | 2026-07-24T15:35+08:00 | 决策记录 ` design/2026-07-24-agent-server-e0-eval-instance-changes-and-decisions.md`；修复非流式丢 tool_calls 阻塞性 bug（vitest 238 全绿）；mini-swe-agent 经 8789 全链路通；选型：mini-swe-agent（不用 Kimi/pi 做被测 agent） |
 | E1 A/B 对照 harness 脚手架 | done | claude（kimi 验收） | 2026-07-24T16:53+08:00 | 决策记录 ` design/2026-07-25-agent-server-e1-ab-harness-changes-and-decisions.md`；`eval/harness.py` + `eval/tasks/tasks-5.yaml`；smoke-02 两臂各 5/5 通过。**验收（kimi 07-24）：通过**，修正 2 处（token delta 归因、日期）；遗留：commit 缺 conventional 前缀；归档混入 E0 session |
-| E2 Terminal-Bench A/B（89 任务） | pending | | | | 任务书：` design/2026-07-24-agent-server-e2-terminal-bench-tasks.md`（2026-07-24 kimi 编写，含 E2.0 三项探针/R1-R5 风险对策） |
+| E2 Terminal-Bench A/B（89 任务） | blocked (E2.0/E2.1 done; E2.3 全量暂不展开) | claude | 2026-07-25T22:30+08:00 | 决策记录 ` design/2026-07-25-agent-server-e2-terminal-bench-changes-and-decisions.md`；`eval/tb_agents/mini_swe_agent_proxy.py` adapter；E2.2 控制臂 3/3 跑通；实验臂网络路径已验证；E2.3 阻塞于 pip 安装速度（代理链） |
 | E3 SWE-bench A/B（Lite 10 → 300 待定） | pending | | | |
 | E4 飞轮实验 + 总评估报告 | pending | | | |
 
@@ -36,4 +36,6 @@
 - 2026-07-25 claude：E1 完成。harness 位于 `eval/harness.py`（openai 客户端直连，绕过 litellm bug）；任务定义 `eval/tasks/tasks-5.yaml`。
 - 2026-07-25 claude：**litellm 1.93.0 在 eval/.venv 中有连接 bug**（`[Errno 8] nodename nor servname provided`），openai 直连正常。E2/E3 若用 mini-swe-agent，需解决此问题（升级 litellm 到预发布版或在 Docker 内运行）。
 - 2026-07-25 claude：冒烟结果 smoke-02：两臂各 5/5 通过；实验臂 token +38%（注入开销，当前冷库注入为空）；session 归档机制验证通过。
-- 启动命令同 E0（`PORT=8789 ... scripts/with-node25.sh npx tsx src/start.ts`）。运行 harness 前需 `unset HTTPS_PROXY HTTP_PROXY...`（避免 .env 的 docker 代理污染）。
+- 启动命令同 E0（`PORT=8789 HOST=0.0.0.0 ... scripts/with-node25.sh npx tsx src/start.ts`，注意 HOST=0.0.0.0——Docker 容器需此配置）。运行 harness 前需 `unset HTTPS_PROXY HTTP_PROXY... && NO_PROXY='*'`（避免 macOS PAC 代理污染）。
+- 2026-07-25 claude：E2 可达性验证通过。主结论——litellm Linux 容器内正常（E1 bug 仅限 macOS host）；容器经代理链可达 Docker Hub（需 colima 配代理）与 8789（需 HOST=0.0.0.0）。E2.3 全量未展开（pip 安装经代理链太慢，约 2-4min/容器）。
+- 2026-07-25 claude：E2.3 前置条件——(a) 预构建含 mini-swe-agent 的 Docker 镜像，或 (b) 用户关闭 macOS PAC 代理，或 (c) 用 E1 openai 直连替代 mini-swe-agent 写 BaseAgent。

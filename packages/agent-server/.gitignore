@@ -1,2 +1,5 @@
 var/
 eval/results/
+eval/tb_tasks/
+eval/tb_registry/
+__pycache__/
