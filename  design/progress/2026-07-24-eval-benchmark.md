@@ -10,7 +10,7 @@
 |---|---|---|---|---|
 | E0 评估实例 + 接线冒烟（含 harness 选型决策点） | done | kimi | 2026-07-24T15:35+08:00 | 决策记录 ` design/2026-07-24-agent-server-e0-eval-instance-changes-and-decisions.md`；修复非流式丢 tool_calls 阻塞性 bug（vitest 238 全绿）；mini-swe-agent 经 8789 全链路通；选型：mini-swe-agent（不用 Kimi/pi 做被测 agent） |
 | E1 A/B 对照 harness 脚手架 | done | claude（kimi 验收） | 2026-07-24T16:53+08:00 | 决策记录 ` design/2026-07-25-agent-server-e1-ab-harness-changes-and-decisions.md`；`eval/harness.py` + `eval/tasks/tasks-5.yaml`；smoke-02 两臂各 5/5 通过。**验收（kimi 07-24）：通过**，修正 2 处（token delta 归因、日期）；遗留：commit 缺 conventional 前缀；归档混入 E0 session |
-| E2 Terminal-Bench A/B（89 任务） | blocked (E2.0/E2.1 done; E2.3 全量暂不展开) | claude | 2026-07-25T22:30+08:00 | 决策记录 ` design/2026-07-25-agent-server-e2-terminal-bench-changes-and-decisions.md`；`eval/tb_agents/mini_swe_agent_proxy.py` adapter；E2.2 控制臂 3/3 跑通；实验臂网络路径已验证；E2.3 阻塞于 pip 安装速度（代理链） |
+| E2 Terminal-Bench A/B（89 任务） | blocked (E2.0/E2.1 done；E2.2 验收不通过待返工) | claude（kimi 验收） | 2026-07-25T11:40+08:00 | **验收（kimi 07-25）：有条件不通过**——双臂 6 次 trial agent 均未启动（任务选错：broken-python 镜像 pip 被故意破坏 + 安装脚本不 fail-fast），决策记录 3 处误报；验收报告 ` design/2026-07-25-agent-server-e2-acceptance-report.md`（含 5 条返工清单）；E2.0 探针与 adapter 结构保留有效 |
 | E3 SWE-bench A/B（Lite 10 → 300 待定） | pending | | | |
 | E4 飞轮实验 + 总评估报告 | pending | | | |
 

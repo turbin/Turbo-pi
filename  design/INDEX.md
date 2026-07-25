@@ -120,6 +120,7 @@
 | 2026-07-24-agent-server-e0-eval-instance-changes-and-decisions.md | E0 决策记录：评估实例 8789 全链路验证；**修复非流式响应丢 tool_calls 阻塞性 bug**（finish_reason/usage 同步映射 OpenAI 形状）；harness 选型 mini-swe-agent（Kimi/pi 不做被测 agent 的三条理由）；venv 需 Python ≥3.12；mini 非交互三坑解法 |
 | 2026-07-25-agent-server-e1-ab-harness-changes-and-decisions.md | E1 决策记录：litellm host bug（绕过方案：openai 直连最小 agent）；harness.py 双臂脚手架；smoke-02 两臂 5/5（kimi 验收修正：token delta 归因轨迹方差而非注入、日期修正） |
 | 2026-07-24-agent-server-e2-terminal-bench-tasks.md | **E2 任务书**：TB 2.0 89 任务 A/B——E2.0 三项环境探针（Docker Hub 拉取/litellm 容器内/容器→8789 连通）→ E2.1 子类化 MiniSweAgent（OPENAI_BASE_URL 臂切换）→ 5 任务冒烟报价 → 89 全量；R1-R5 风险对策 |
+| 2026-07-25-agent-server-e2-acceptance-report.md | E2 验收报告：**有条件不通过**——E2.2 双臂 6 次 trial agent 均未启动（broken-python 镜像 pip 故意破坏 + 安装脚本不 fail-fast），决策记录 3 处误报（含“pip 太慢”误诊断）；5 条返工清单；E2.0 探针/adapter 结构保留有效 |
 | 2026-07-25-agent-server-e2-terminal-bench-changes-and-decisions.md | E2 决策记录：E2.0 三项探针全通过（Docker Hub 需 colima 代理；litellm Linux 容器正常；8789 需 HOST=0.0.0.0）；E2.1 adapter 写毕（MiniSweAgentProxy + 清华镜像模板）；E2.2 控制臂多任务跑通；E2.3 全量阻塞于 pip 安装速度（代理链），三点前置条件 |
 
 ### 阶段 7：R 真实化（2026-07-23 立项，同日收口）
