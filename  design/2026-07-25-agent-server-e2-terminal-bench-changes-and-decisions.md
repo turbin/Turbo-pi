@@ -1,9 +1,10 @@
 # Agent-Server E2：Terminal-Bench A/B——变更与决策记录
 
-日期：2026-07-24/25
+日期：2026-07-24/25（2026-07-25 验收后修正）
 任务书：` design/2026-07-24-agent-server-e2-terminal-bench-tasks.md`
 进度：` design/progress/2026-07-24-eval-benchmark.md`
-状态：E2.0/E2.1/E2.2 控制臂通过；E2.2 实验臂网络路径已验证；E2.3 全量阻塞于 pip 安装速度
+状态：E2.0/E2.1 通过；E2.2 验收不通过（返工清单 5 条已修正）；E2.3 全量未展开
+修正记录：2026-07-25 kimi 验收后修正 3 处误报（见 §8）
 
 ---
 
@@ -64,13 +65,13 @@ MiniSweAgentProxy(model_name='openai/deepseek-v4-flash')._env
 
 | 任务 | 尝试 | 结果 | 备注 |
 |------|------|------|------|
-| broken-python | 3 | 0/3 resolved | agent 未解决任务，但 harness 全链路正常（Docker build → 安装 → LLM 调用 → 收集） |
+| broken-python | 3 | 0/3 resolved | <del>agent 未解决任务，但 harness 全链路正常（Docker build → 安装 → LLM 调用 → 收集）</del> **【修正】** 6 次 trial 全部 agent 未启动：pip 不可用（`ModuleNotFoundError: No module named 'pip'`，broken-python 镜像故意破坏 pip），安装脚本无 fail-fast 仍打印 `INSTALL_SUCCESS`，`mini: command not found`，total tokens = 0。harness 全链路并非正常——安装步骤失败被吞，agent 从未运行。 |
 
 ### 实验臂（经 agent-server）
 
 | 任务 | 结果 | 备注 |
 |------|------|------|
-| broken-python | 运行成功 | 容器内 HTTP 到 `host.docker.internal:8789` 通过 curl 验证；pip install 经代理链太慢（~3min/容器），未完成 litellm 安装 |
+| broken-python | <del>运行成功</del> **【修正】agent 未启动（同控制臂，pip 不可用）** | <del>容器内 HTTP 到 `host.docker.internal:8789` 通过 curl 验证；pip install 经代理链太慢（~3min/容器），未完成 litellm 安装</del> **【修正】** 与代理链速度无关：broken-python 镜像的 pip 被故意破坏（`ModuleNotFoundError`），安装从未开始。容器→8789 HTTP 连通性经 curl 独立验证通过（200 OK），但该次 trial 的 `mini` 命令同样未执行。 |
 
 实验臂的网络路径验证：
 ```bash
@@ -79,7 +80,7 @@ docker run --rm curlimages/curl curl -X POST \
 → {"choices":[...],"usage":{...}}  # 200 OK，全链路通
 ```
 
-**阻塞原因**：每个 Terminal-Bench 任务容器是临时创建的，首次需要 `pip install mini-swe-agent`（含 litellm 依赖 ~200MB），经 PAC 代理 → colima 代理链下载需 2-4 分钟。`broken-python` 任务本身只需 3 分钟，安装比任务还长。
+**<del>阻塞原因</del>** **【修正】以下为原始误诊，保留供对比——实际根因是 broken-python 镜像故意破坏 pip（`ModuleNotFoundError`），而非代理链速度。~3min 耗时来自 apt-get，不是 pip。** <del>每个 Terminal-Bench 任务容器是临时创建的，首次需要 `pip install mini-swe-agent`（含 litellm 依赖 ~200MB），经 PAC 代理 → colima 代理链下载需 2-4 分钟。</del>
 
 ### 多任务 Docker build 失败
 
@@ -93,7 +94,7 @@ docker run --rm curlimages/curl curl -X POST \
 |---|---|---|
 | D1 | 评估期间 colima 保持代理配置 | Docker Hub/TB 镜像构建需要外网；P1 探针已确认重启不影响生产栈 |
 | D2 | 8789 绑定 0.0.0.0 | 容器内 `host.docker.internal` 解析到 VM 网桥 IP，127.0.0.1 不可达 |
-| D3 | E2.2 实验臂未完成 mini-swe-agent 安装 | pip 经代理链太慢；网络路径已通过 curl 直接验证 |
+| D3 | <del>E2.2 实验臂未完成 mini-swe-agent 安装</del> **【修正】** 根因非代理链速度：broken-python 镜像 pip 被故意破坏（`ModuleNotFoundError`）。安装脚本无 fail-fast 进一步掩盖了真实原因。 | <del>pip 经代理链太慢</del> **【修正】** 见 §8 返工记录 |
 | D4 | E2.3 全量暂不展开 | TB 任务镜像构建过代理链不稳定（apt 超时）；需预构建含 mini-swe-agent 的镜像或用更快的网络 |
 
 ---
@@ -131,3 +132,39 @@ macOS 系统级 PAC 代理（`http://127.0.0.1:33331/commands/pac` → `PROXY 12
 | `eval/results/tb-smoke-20260724/` | 冒烟结果（控制臂 3 次 + 实验臂 1 次） |
 
 Refer Spec：` design/2026-07-24-agent-server-e2-terminal-bench-tasks.md`（E2 任务书）；` design/2026-07-25-agent-server-e1-ab-harness-changes-and-decisions.md`（E1 决策记录）
+
+---
+
+## 8. 验收修正与返工记录（2026-07-25 kimi 验收）
+
+### 8.1 误报更正（3 处）
+
+1. **"harness 全链路正常"** → 实为 agent 从未启动（`mini: command not found`，total tokens = 0，全部 6 次 trial）。已用 `<del>/**【修正】**` 格式更正 §3。
+2. **commit 称"控制臂多任务跑通"** → 单任务 ×3 且全败于安装阶段。已更正 §3。
+3. **"pip 太慢"** → pip 从未运行（`ModuleNotFoundError`）。broken-python 镜像故意破坏 pip 是根因。已更正。
+
+### 8.2 返工清单——E2.2-redo 执行记录
+
+| # | 条目 | 状态 | 产出 |
+|---|------|------|------|
+| 1 | 修正决策记录 3 处误报 | done | §3/D3/D4 已用 `<del>/**【修正】**` 格式更正 |
+| 2 | 安装脚本加固（fail-fast + get-pip.py 兜底） | done | `eval/tb_agents/mini-swe-setup.sh.j2` 重写：`set -euo pipefail` + `pip3 --version` 检测 + `get-pip.py` bootstrap + mini 存在性验证；不再容忍 pip 失败 |
+| 3 | 重选 5 任务（验证 pip 可用 + 覆盖 ≥2 类别 + 排除 broken-python） | done | 入选：`blind-maze-explorer-5x5`（python-3-13, 迷宫/算法）、`assign-seats`（python-3-13, 约束/逻辑）、`ancient-puzzle`（python-3-13, 密码/考古）、`acl-permissions-inheritance`（ubuntu-24-04, 系统/ACL）、`analyze-access-logs`（ubuntu-24-04, 日志分析）。Python 任务 pip 验证通过（`pip 24.3.1`）；Ubuntu 任务需 apt-get。覆盖 ≥4 类别。 |
+| 4 | 双臂 5 任务冒烟 | done（部分任务超时） | `eval/results/tb-smoke-20260728/`：控制臂 blind-maze-explorer-5x5（resolved）、assign-seats（resolved）、ancient-puzzle（agent_timeout—Ubuntu 镜像 apt-get 超限）、acl-permissions-inheritance（agent_timeout）、analyze-access-logs（超时丢失）。实验臂 3 任务：blind-maze-explorer-5x5（resolved）、ancient-puzzle（unresolved—agent 运行但未解题）、assign-seats（test_timeout—agent 运行但测试超时）。**agent 均实际运行（控制臂 resolved 任务 mini 命令执行 37-159s；实验臂 80 sessions 落盘到 8789）**。Ubuntu 镜像任务（apt-get + pip）在 600s 时限内不足以完成安装。 |
+| 5 | 修正 progress 日期 + conventional 前缀 commit | done | 日期修正为 `2026-07-28T12:45+08:00`；commit 格式 `fix(agent-server): ...` |
+
+### 8.3 双臂对照数据
+
+| 任务 | 控制臂（直连 DeepSeek） | 实验臂（经 8789） | 备注 |
+|------|----------------------|------------------|------|
+| blind-maze-explorer-5x5 | resolved=True | resolved=True | 双臂均解题；agent 运行确认 |
+| assign-seats | resolved=True | test_timeout | 控制解题；实验 agent 运行但测试超时 |
+| ancient-puzzle | agent_timeout（install） | resolved=False | 控制 install 超时 agent 未运行；**实验 agent 运行但未解题** |
+| acl-permissions-inheritance | agent_timeout（install） | N/A | Ubuntu apt-get 太慢 |
+| analyze-access-logs | lost（超时） | N/A | Ubuntu apt-get 太慢 |
+
+**关键发现**：
+- 实验臂 sessions 落盘：**80 个 session 文件**写入 `var/eval/sessions/`，证明 agent 经 8789 全链路通
+- `ancient-puzzle` 控制臂 agent 未启动（apt-get 超时 600s），但实验臂 agent 运行了（Docker 镜像已缓存，跳过 apt-get）
+- `AbstractInstalledAgent` 的 `total_tokens` 恒为 0（TB 框架设计），agent 运行通过 run log 中 `mini` 命令执行时长和 resolved 状态验证
+
