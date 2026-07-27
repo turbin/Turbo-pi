@@ -122,6 +122,7 @@
 | 2026-07-24-agent-server-e2-terminal-bench-tasks.md | **E2 任务书**：TB 2.0 89 任务 A/B——E2.0 三项环境探针（Docker Hub 拉取/litellm 容器内/容器→8789 连通）→ E2.1 子类化 MiniSweAgent（OPENAI_BASE_URL 臂切换）→ 5 任务冒烟报价 → 89 全量；R1-R5 风险对策 |
 | 2026-07-25-agent-server-e2-acceptance-report.md | E2 验收报告：**有条件不通过**——E2.2 双臂 6 次 trial agent 均未启动（broken-python 镜像 pip 故意破坏 + 安装脚本不 fail-fast），决策记录 3 处误报（含“pip 太慢”误诊断）；5 条返工清单；E2.0 探针/adapter 结构保留有效 |
 | 2026-07-25-agent-server-tb-smoke-case-design.md | TB 冒烟用例设计：5 用例（盲迷宫/座位 CSP/文物破译/ACL 权限/日志分析）的内容、测试目的、测试方法与判读规则；选择原则（pip 可用验证、4 类覆盖、轻量、确定性判分） |
+| 2026-07-25-agent-server-eval-report-design.md | **E4 总评估报告设计**：三层证据（L1 A/B / L2 飞轮 / L3 生产观察）、6 项指标固定口径（含注入命中明细）、判定规则预注册（成功/部分成功/失败 + 噪声级）、8 节报告模板——先于数据产生，防按结果改判据 |
 | 2026-07-25-agent-server-e2-terminal-bench-changes-and-decisions.md | E2 决策记录：E2.0 三项探针全通过（Docker Hub 需 colima 代理；litellm Linux 容器正常；8789 需 HOST=0.0.0.0）；E2.1 adapter 写毕（MiniSweAgentProxy + 清华镜像模板）；E2.2 控制臂多任务跑通；E2.3 全量阻塞于 pip 安装速度（代理链），三点前置条件 |
 
 ### 阶段 7：R 真实化（2026-07-23 立项，同日收口）
