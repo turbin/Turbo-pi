@@ -66,6 +66,37 @@ function rowToExperience(row: ExperienceRow): Experience {
 
 const CJK_RE = /[一-鿿]/;
 
+// ---------------------------------------------------------------------------
+// Request traces (O spec R1/R2)
+// ---------------------------------------------------------------------------
+
+/** Phase-1 (retrieval) + phase-2 (completion) fields for one proxied request. */
+export interface RequestTraceInput {
+	requestId: string;
+	ts?: string;
+	model?: string;
+	stream?: boolean;
+	retrievedCount?: number;
+	retrievedIds?: string[];
+	retrievedKinds?: string[];
+	hit?: boolean;
+	finishReason?: string;
+	promptTokens?: number;
+	completionTokens?: number;
+	latencyMs?: number;
+	error?: string;
+}
+
+export interface HitRateStats {
+	windowHours: number;
+	total: number;
+	hits: number;
+	hitRate: number;
+	byKind: { kind: string; cnt: number }[];
+	daily: { day: string; total: number; hits: number }[];
+	recent: Record<string, unknown>[];
+}
+
 /**
  * Tokenize text for FTS5 indexing (search_text column). Aligned with
  * `tokenize()` in retrieval.ts: Latin/digit runs become whole-word tokens
@@ -132,6 +163,24 @@ export class ExperienceStore {
 				created_at TEXT NOT NULL DEFAULT (datetime('now'))
 			);
 			CREATE INDEX IF NOT EXISTS idx_checkpoints_kind_epoch ON checkpoints(kind, epoch DESC);
+			-- Per-request observability trace (O spec R1): one row per proxied chat
+			-- request, written in two phases (after retrieval, then at completion).
+			CREATE TABLE IF NOT EXISTS request_traces (
+				request_id TEXT PRIMARY KEY,
+				ts TEXT NOT NULL,
+				model TEXT NOT NULL,
+				stream INTEGER NOT NULL DEFAULT 0,
+				retrieved_count INTEGER NOT NULL DEFAULT 0,
+				retrieved_ids TEXT NOT NULL DEFAULT '[]',
+				retrieved_kinds TEXT NOT NULL DEFAULT '[]',
+				hit INTEGER NOT NULL DEFAULT 0,
+				finish_reason TEXT,
+				prompt_tokens INTEGER,
+				completion_tokens INTEGER,
+				latency_ms INTEGER,
+				error TEXT
+			);
+			CREATE INDEX IF NOT EXISTS idx_request_traces_ts ON request_traces(ts);
 		`);
 	}
 
@@ -303,6 +352,82 @@ export class ExperienceStore {
 			.get(kind) as CheckpointRow | undefined;
 		if (!row) return null;
 		return rowToCheckpoint(row);
+	}
+
+	/**
+	 * Record a request trace (O spec R1). Two-phase upsert: phase 1 (retrieval)
+	 * inserts the row, phase 2 (completion) updates the same row by request_id
+	 * without touching phase-1 fields. Later phases may omit any field.
+	 */
+	async recordRequestTrace(input: RequestTraceInput): Promise<void> {
+		this.db
+			.prepare(`
+				INSERT INTO request_traces
+					(request_id, ts, model, stream, retrieved_count, retrieved_ids, retrieved_kinds, hit,
+					 finish_reason, prompt_tokens, completion_tokens, latency_ms, error)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT(request_id) DO UPDATE SET
+					finish_reason = COALESCE(excluded.finish_reason, request_traces.finish_reason),
+					prompt_tokens = COALESCE(excluded.prompt_tokens, request_traces.prompt_tokens),
+					completion_tokens = COALESCE(excluded.completion_tokens, request_traces.completion_tokens),
+					latency_ms = COALESCE(excluded.latency_ms, request_traces.latency_ms),
+					error = COALESCE(excluded.error, request_traces.error)
+			`)
+			.run(
+				input.requestId,
+				input.ts ?? new Date().toISOString(),
+				input.model ?? "",
+				input.stream ? 1 : 0,
+				input.retrievedCount ?? 0,
+				JSON.stringify(input.retrievedIds ?? []),
+				JSON.stringify(input.retrievedKinds ?? []),
+				input.hit ? 1 : 0,
+				input.finishReason ?? null,
+				input.promptTokens ?? null,
+				input.completionTokens ?? null,
+				input.latencyMs ?? null,
+				input.error ?? null,
+			);
+	}
+
+	/** Aggregate hit-rate stats over the trailing window (O spec R2). */
+	async getHitRateStats(windowHours: number, now: Date = new Date()): Promise<HitRateStats> {
+		const cutoff = new Date(now.getTime() - windowHours * 3_600_000).toISOString();
+		const totals = this.db
+			.prepare("SELECT COUNT(*) AS total, COALESCE(SUM(hit),0) AS hits FROM request_traces WHERE ts >= ?")
+			.get(cutoff) as { total: number; hits: number };
+		const daily = this.db
+			.prepare(
+				"SELECT substr(ts,1,10) AS day, COUNT(*) AS total, COALESCE(SUM(hit),0) AS hits FROM request_traces WHERE ts >= ? GROUP BY day ORDER BY day",
+			)
+			.all(cutoff) as { day: string; total: number; hits: number }[];
+		const recent = this.db
+			.prepare(
+				"SELECT request_id AS requestId, ts, model, stream, retrieved_count AS retrievedCount, hit, finish_reason AS finishReason, prompt_tokens AS promptTokens, completion_tokens AS completionTokens, latency_ms AS latencyMs, error FROM request_traces WHERE ts >= ? ORDER BY ts DESC LIMIT 20",
+			)
+			.all(cutoff) as Record<string, unknown>[];
+		// byKind: expand the JSON retrieved_kinds arrays in JS (window is small).
+		const kindRows = this.db
+			.prepare("SELECT retrieved_kinds AS kinds FROM request_traces WHERE ts >= ? AND hit = 1")
+			.all(cutoff) as { kinds: string }[];
+		const kindCounts = new Map<string, number>();
+		for (const row of kindRows) {
+			for (const kind of JSON.parse(row.kinds) as string[]) {
+				kindCounts.set(kind, (kindCounts.get(kind) ?? 0) + 1);
+			}
+		}
+		const byKind = [...kindCounts.entries()]
+			.map(([kind, cnt]) => ({ kind, cnt }))
+			.sort((a, b) => a.kind.localeCompare(b.kind));
+		return {
+			windowHours,
+			total: totals.total,
+			hits: totals.hits,
+			hitRate: totals.total > 0 ? totals.hits / totals.total : 0,
+			byKind,
+			daily,
+			recent,
+		};
 	}
 
 	close(): void {

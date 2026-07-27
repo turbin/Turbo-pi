@@ -165,7 +165,7 @@ describe("POST /v1/chat/completions streaming session recording", () => {
 		const entries = readSessionEntries();
 		expect(entries[0].type).toBe("session");
 		expect(entries[0].version).toBe(3);
-		expect(entries[0].metadata).toEqual({ model: "agent-auto", provider: "local" });
+		expect(entries[0].metadata).toEqual({ model: "agent-auto", provider: "local", requestId: expect.any(String) });
 		const messages = entries.filter((e) => e.type === "message");
 		expect(messages).toHaveLength(2);
 		expect(messages[0].message).toEqual({ role: "user", content: "你好" });
@@ -325,6 +325,110 @@ describe("POST /v1/chat/completions non-streaming response", () => {
 		expect(body.choices[0].message.content).toBe("hello");
 		expect(body.choices[0].message.tool_calls).toBeUndefined();
 		expect(body.usage).toEqual({ prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 });
+		await app.close();
+	});
+});
+
+describe("O spec: observability endpoints and request traces", () => {
+	let dir: string;
+	let sessionDir: string;
+	let store: ExperienceStore;
+
+	beforeEach(async () => {
+		dir = mkdtempSync(join(tmpdir(), "agent-server-obs-"));
+		sessionDir = join(dir, "sessions");
+		store = new ExperienceStore(join(dir, "experience.db"));
+		await store.initSchema();
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		store.close();
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	const sseChunks = [
+		'data: {"choices":[{"delta":{"content":"你好！"}}]}\n\n',
+		'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}\n\n',
+		"data: [DONE]\n\n",
+	];
+
+	it("records a hit trace with x-request-id header (non-stream)", async () => {
+		await store.insert(makeExperience());
+		mockGatewayFetch(sseStream(sseChunks));
+		const app = createServer({ store, gatewayUrl: GATEWAY_URL, sessionDir });
+		const res = await app.inject({
+			method: "POST",
+			url: "/v1/chat/completions",
+			payload: { model: "agent-auto", messages: [{ role: "user", content: "你好" }] },
+		});
+		expect(res.statusCode).toBe(200);
+		const requestId = res.headers["x-request-id"];
+		expect(typeof requestId).toBe("string");
+		const stats = await store.getHitRateStats(1);
+		expect(stats.total).toBe(1);
+		expect(stats.hits).toBe(1);
+		expect(stats.recent[0]).toMatchObject({
+			requestId,
+			hit: 1,
+			retrievedCount: 1,
+			finishReason: "stop",
+			promptTokens: 10,
+			completionTokens: 5,
+		});
+		expect(stats.byKind).toEqual([{ kind: "EVIDENCE:null", cnt: 1 }]);
+		await app.close();
+	});
+
+	it("records a miss trace on an empty store", async () => {
+		mockGatewayFetch(sseStream(sseChunks));
+		const app = createServer({ store, gatewayUrl: GATEWAY_URL, sessionDir });
+		await app.inject({
+			method: "POST",
+			url: "/v1/chat/completions",
+			payload: { model: "agent-auto", messages: [{ role: "user", content: "unrelated" }] },
+		});
+		const stats = await store.getHitRateStats(1);
+		expect(stats.total).toBe(1);
+		expect(stats.hits).toBe(0);
+		await app.close();
+	});
+
+	it("serves /api/stats/hit-rate and /stats", async () => {
+		await store.recordRequestTrace({
+			requestId: "r1",
+			model: "m",
+			stream: false,
+			retrievedCount: 1,
+			retrievedIds: ["e"],
+			retrievedKinds: ["ABILITY:Method"],
+			hit: true,
+		});
+		const app = createServer({ store, gatewayUrl: GATEWAY_URL, sessionDir });
+		const api = await app.inject({ method: "GET", url: "/api/stats/hit-rate?window_hours=24" });
+		expect(api.statusCode).toBe(200);
+		const stats = api.json();
+		expect(stats.total).toBe(1);
+		expect(stats.hits).toBe(1);
+		expect(stats.by_kind ?? stats.byKind).toBeDefined();
+		const page = await app.inject({ method: "GET", url: "/stats" });
+		expect(page.statusCode).toBe(200);
+		expect(page.headers["content-type"]).toContain("text/html");
+		expect(page.body).toContain("/api/stats/hit-rate");
+		await app.close();
+	});
+
+	it("records the error path when the gateway fails", async () => {
+		vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("no gateway"));
+		const app = createServer({ store, gatewayUrl: GATEWAY_URL, sessionDir });
+		const res = await app.inject({
+			method: "POST",
+			url: "/v1/chat/completions",
+			payload: { model: "agent-auto", messages: [{ role: "user", content: "hi" }] },
+		});
+		expect(res.statusCode).toBe(502);
+		const stats = await store.getHitRateStats(1);
+		expect(stats.recent[0]).toMatchObject({ finishReason: "error", error: expect.stringContaining("no gateway") });
 		await app.close();
 	});
 });

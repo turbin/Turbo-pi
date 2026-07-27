@@ -4,6 +4,7 @@ import type { Context, Model } from "@earendil-works/pi-ai";
 import type { ExperienceStore } from "./experience-store.ts";
 import { type GatewayChatRequest, GatewayClient } from "./gateway-client.ts";
 import { buildInjection } from "./injection.ts";
+import { kindsOf, logTrace } from "./observability.ts";
 import { toOpenAIRequest } from "./openai-compat.ts";
 import { retrieve } from "./retrieval.ts";
 import { buildAssistantMessage, SessionWriter } from "./session-writer.ts";
@@ -14,6 +15,8 @@ export interface ProxyHandlerOptions {
 	store: ExperienceStore;
 	gatewayUrl: string;
 	sessionPath: string;
+	/** O spec R3: request id propagated into trace rows/logs/session header. */
+	requestId?: string;
 }
 
 /** FTS bm25 top-24 -> cosine re-rank top-8 (SPEC §5.1 step 3). */
@@ -48,12 +51,36 @@ export async function handleStream(
 	writer.writeSessionHeader({
 		id: body.options?.sessionId ?? basename(opts.sessionPath, ".jsonl"),
 		cwd: process.cwd(),
-		metadata: { model: body.model.id, provider: body.model.provider },
+		metadata: { model: body.model.id, provider: body.model.provider, requestId: opts.requestId },
 	});
 
 	try {
 		const query = lastUserText(body.context);
 		const retrieved = await retrieve(opts.store, query, RETRIEVAL_LIMIT);
+		if (opts.requestId) {
+			// O spec observability point 1 (retrieval): local experience content.
+			const kinds = kindsOf(retrieved);
+			await opts.store.recordRequestTrace({
+				requestId: opts.requestId,
+				model: body.model.id,
+				stream: true,
+				retrievedCount: retrieved.length,
+				retrievedIds: retrieved.map((r) => r.experience.id),
+				retrievedKinds: kinds,
+				hit: retrieved.length > 0,
+			});
+			const kindCounts = kinds.reduce<Record<string, number>>((acc, k) => {
+				acc[k] = (acc[k] ?? 0) + 1;
+				return acc;
+			}, {});
+			logTrace(opts.requestId, "retrieval", {
+				hit: retrieved.length > 0 ? 1 : 0,
+				retrieved: retrieved.length,
+				kinds: Object.entries(kindCounts)
+					.map(([k, c]) => `${k}:${c}`)
+					.join(","),
+			});
+		}
 		const injected = await buildInjection(body.context, retrieved, { store: opts.store });
 		const gatewayReq = toGatewayRequest(injected, body.model, body.options ?? {});
 

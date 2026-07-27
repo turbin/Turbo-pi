@@ -9,10 +9,12 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { ExperienceStore } from "./experience-store.ts";
 import { GatewayClient } from "./gateway-client.ts";
 import { buildInjection } from "./injection.ts";
+import { kindsOf, logTrace } from "./observability.ts";
 import { toOpenAIRequest } from "./openai-compat.ts";
 import { handleStream } from "./proxy-handler.ts";
 import { retrieve } from "./retrieval.ts";
 import { buildAssistantMessageFromOpenAI, type OpenAIChatChunk, SessionWriter } from "./session-writer.ts";
+import { STATS_PAGE_HTML } from "./stats-page.ts";
 import {
 	type AccumulatedToolCall,
 	type ToolCallValidationReport,
@@ -67,6 +69,17 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 		});
 	});
 
+	// -- O spec R2: hit-rate stats API + page -------------------------------
+	fastify.get("/api/stats/hit-rate", async (request, reply) => {
+		const query = request.query as { window_hours?: string };
+		const windowHours = Number(query.window_hours) > 0 ? Number(query.window_hours) : 24;
+		return reply.send(await store.getHitRateStats(windowHours));
+	});
+
+	fastify.get("/stats", async (_request, reply) => {
+		return reply.header("content-type", "text/html; charset=utf-8").send(STATS_PAGE_HTML);
+	});
+
 	fastify.post("/api/stream", async (request, reply) => {
 		const body = request.body as StreamRequest;
 		const sessionPath = join(sessionDir, `${Date.now()}-${randomUUID()}.jsonl`);
@@ -85,6 +98,10 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 	// collect the SSE events and return a single chat.completion JSON body.
 	fastify.post("/v1/chat/completions", async (request, reply) => {
 		const body = request.body as Record<string, unknown>;
+		// O spec R4: request id ties logs, trace rows, session, and response header.
+		const requestId = String(request.id);
+		const startedAt = Date.now();
+		reply.header("x-request-id", requestId);
 		// Opt-in request dump for debugging; off by default so user prompts and
 		// code are not written outside var/ (review finding: fixed /tmp path).
 		if (process.env.AGENT_SERVER_DEBUG_DUMP === "1") {
@@ -148,7 +165,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 				writer.writeSessionHeader({
 					id: basename(sessionPath, ".jsonl"),
 					cwd: process.cwd(),
-					metadata: { model: model.id, provider: model.provider },
+					metadata: { model: model.id, provider: model.provider, requestId },
 				});
 				try {
 					const query =
@@ -159,10 +176,29 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 							.pop() ?? "";
 					console.log("[agent-server] stream query:", query);
 					const retrieved = await retrieve(store, query, 8);
-					console.log(
-						"[agent-server] stream retrieved:",
-						retrieved.map((r) => r.experience.id),
-					);
+					// O spec observability point 1 (retrieval): local experience content.
+					const kinds = kindsOf(retrieved);
+					await store.recordRequestTrace({
+						requestId,
+						model: model.id,
+						stream: true,
+						retrievedCount: retrieved.length,
+						retrievedIds: retrieved.map((r) => r.experience.id),
+						retrievedKinds: kinds,
+						hit: retrieved.length > 0,
+					});
+					const kindCounts = kinds.reduce<Record<string, number>>((acc, k) => {
+						acc[k] = (acc[k] ?? 0) + 1;
+						return acc;
+					}, {});
+					logTrace(requestId, "retrieval", {
+						hit: retrieved.length > 0 ? 1 : 0,
+						retrieved: retrieved.length,
+						kinds: Object.entries(kindCounts)
+							.map(([k, c]) => `${k}:${c}`)
+							.join(","),
+						query_len: query.length,
+					});
 					const injected = await buildInjection(context as any, retrieved, { store });
 					const openaiReq = toOpenAIRequest(injected, model as any);
 
@@ -181,17 +217,34 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 					const gateway = new GatewayClient(gatewayUrl);
 					const gatewayStream = await gateway.stream({ ...openaiReq, stream: true });
 					writer.writeCustomEntry("response_started");
+					logTrace(requestId, "forward", { model: model.id, stream: 1 });
 					reply.header("content-type", "text/event-stream");
 					const tee = teeOpenAISSEWithSession(gatewayStream, writer, model as Model<any>, injected.tools);
-					return reply.send(Readable.fromWeb(tee as unknown as NodeReadableStream<Uint8Array>));
+					return reply.send(
+						Readable.fromWeb(
+							traceStreamCompletion(
+								tee,
+								requestId,
+								store,
+								startedAt,
+							) as unknown as NodeReadableStream<Uint8Array>,
+						),
+					);
 				} catch (err) {
 					writer.writeCustomEntry("error", { message: String(err) });
 					await writer.close();
+					await store.recordRequestTrace({
+						requestId,
+						finishReason: "error",
+						latencyMs: Date.now() - startedAt,
+						error: String(err),
+					});
+					logTrace(requestId, "error", { message: String(err) });
 					throw err;
 				}
 			}
 
-			const stream = await handleStream({ model, context, options }, { store, gatewayUrl, sessionPath });
+			const stream = await handleStream({ model, context, options }, { store, gatewayUrl, sessionPath, requestId });
 			const reader = stream.getReader();
 			const chunks: string[] = [];
 			const toolCalls = new Map<number, { id: string; name: string; args: string }>();
@@ -219,6 +272,13 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 					} else if (event.type === "done") {
 						done = event;
 					} else if (event.type === "error") {
+						await store.recordRequestTrace({
+							requestId,
+							finishReason: "error",
+							latencyMs: Date.now() - startedAt,
+							error: String(event.errorMessage ?? "unknown"),
+						});
+						logTrace(requestId, "error", { message: String(event.errorMessage ?? "unknown") });
 						return reply.code(502).send({ error: { message: String(event.errorMessage ?? "unknown") } });
 					}
 				}
@@ -247,6 +307,19 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 			};
 			const promptTokens = (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0);
 			const completionTokens = u.output ?? 0;
+			// O spec observability point 2 (completion): remote LLM result.
+			await store.recordRequestTrace({
+				requestId,
+				finishReason: String(finishReason),
+				promptTokens,
+				completionTokens,
+				latencyMs: Date.now() - startedAt,
+			});
+			logTrace(requestId, "done", {
+				finish: finishReason,
+				tokens: `${promptTokens}/${completionTokens}`,
+				latency_ms: Date.now() - startedAt,
+			});
 			return reply.send({
 				id: `chatcmpl-${randomUUID()}`,
 				object: "chat.completion",
@@ -267,6 +340,13 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 			});
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
+			await store.recordRequestTrace({
+				requestId,
+				finishReason: "error",
+				latencyMs: Date.now() - startedAt,
+				error: message,
+			});
+			logTrace(requestId, "error", { message });
 			return reply.code(502).send({ error: { message } });
 		}
 	});
@@ -386,4 +466,77 @@ export async function startServer(port = 8788): Promise<void> {
 	const host = process.env.HOST ?? "127.0.0.1";
 	await server.listen({ port, host });
 	console.log(`agent-server listening on ${host}:${port}`);
+}
+
+/**
+ * Wrap the raw OpenAI SSE passthrough to capture finish_reason/usage for the
+ * O spec observability point 2 on the streaming path. Bytes pass through
+ * unchanged; at stream end (or error) the completion phase of the
+ * request_traces row is written and a `phase=done`/`phase=error` log emitted.
+ */
+function traceStreamCompletion(
+	stream: ReadableStream<Uint8Array>,
+	requestId: string,
+	store: ExperienceStore,
+	startedAt: number,
+): ReadableStream<Uint8Array> {
+	const reader = stream.getReader();
+	let finishReason: string | undefined;
+	let promptTokens: number | undefined;
+	let completionTokens: number | undefined;
+	return new ReadableStream<Uint8Array>({
+		async pull(controller) {
+			try {
+				const { value, done } = await reader.read();
+				if (done) {
+					controller.close();
+					await store.recordRequestTrace({
+						requestId,
+						finishReason: finishReason ?? "stop",
+						promptTokens,
+						completionTokens,
+						latencyMs: Date.now() - startedAt,
+					});
+					logTrace(requestId, "done", {
+						finish: finishReason ?? "stop",
+						tokens: `${promptTokens ?? 0}/${completionTokens ?? 0}`,
+						latency_ms: Date.now() - startedAt,
+					});
+					return;
+				}
+				for (const line of new TextDecoder().decode(value).split("\n")) {
+					if (!line.startsWith("data: ")) continue;
+					const payload = line.slice(6).trim();
+					if (!payload || payload === "[DONE]") continue;
+					try {
+						const chunk = JSON.parse(payload) as {
+							choices?: { finish_reason?: string | null }[];
+							usage?: { prompt_tokens?: number; completion_tokens?: number };
+						};
+						const reason = chunk.choices?.[0]?.finish_reason;
+						if (reason) finishReason = reason;
+						if (chunk.usage) {
+							promptTokens = chunk.usage.prompt_tokens;
+							completionTokens = chunk.usage.completion_tokens;
+						}
+					} catch {
+						// Malformed chunk: pass through, tracing is best-effort.
+					}
+				}
+				controller.enqueue(value);
+			} catch (err) {
+				await store.recordRequestTrace({
+					requestId,
+					finishReason: "error",
+					latencyMs: Date.now() - startedAt,
+					error: String(err),
+				});
+				logTrace(requestId, "error", { message: String(err) });
+				controller.error(err);
+			}
+		},
+		async cancel(reason) {
+			await reader.cancel(reason).catch(() => {});
+		},
+	});
 }
