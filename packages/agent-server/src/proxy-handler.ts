@@ -4,7 +4,7 @@ import type { Context, Model } from "@earendil-works/pi-ai";
 import type { ExperienceStore } from "./experience-store.ts";
 import { type GatewayChatRequest, GatewayClient } from "./gateway-client.ts";
 import { buildInjection } from "./injection.ts";
-import { kindsOf, logTrace } from "./observability.ts";
+import { kindsOf, logTrace, summarizeKinds, titlesOf } from "./observability.ts";
 import { toOpenAIRequest } from "./openai-compat.ts";
 import { retrieve } from "./retrieval.ts";
 import { buildAssistantMessage, SessionWriter } from "./session-writer.ts";
@@ -69,16 +69,11 @@ export async function handleStream(
 				retrievedKinds: kinds,
 				hit: retrieved.length > 0,
 			});
-			const kindCounts = kinds.reduce<Record<string, number>>((acc, k) => {
-				acc[k] = (acc[k] ?? 0) + 1;
-				return acc;
-			}, {});
 			logTrace(opts.requestId, "retrieval", {
 				hit: retrieved.length > 0 ? 1 : 0,
 				retrieved: retrieved.length,
-				kinds: Object.entries(kindCounts)
-					.map(([k, c]) => `${k}:${c}`)
-					.join(","),
+				kinds: summarizeKinds(kinds),
+				injected: retrieved.length > 0 ? titlesOf(retrieved) : "",
 			});
 		}
 		const injected = await buildInjection(body.context, retrieved, { store: opts.store });

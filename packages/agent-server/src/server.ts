@@ -9,7 +9,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { ExperienceStore } from "./experience-store.ts";
 import { GatewayClient } from "./gateway-client.ts";
 import { buildInjection } from "./injection.ts";
-import { kindsOf, logTrace } from "./observability.ts";
+import { kindsOf, logTrace, summarizeKinds, titlesOf } from "./observability.ts";
 import { toOpenAIRequest } from "./openai-compat.ts";
 import { handleStream } from "./proxy-handler.ts";
 import { retrieve } from "./retrieval.ts";
@@ -187,16 +187,11 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 						retrievedKinds: kinds,
 						hit: retrieved.length > 0,
 					});
-					const kindCounts = kinds.reduce<Record<string, number>>((acc, k) => {
-						acc[k] = (acc[k] ?? 0) + 1;
-						return acc;
-					}, {});
 					logTrace(requestId, "retrieval", {
 						hit: retrieved.length > 0 ? 1 : 0,
 						retrieved: retrieved.length,
-						kinds: Object.entries(kindCounts)
-							.map(([k, c]) => `${k}:${c}`)
-							.join(","),
+						kinds: summarizeKinds(kinds),
+						injected: retrieved.length > 0 ? titlesOf(retrieved) : "",
 						query_len: query.length,
 					});
 					const injected = await buildInjection(context as any, retrieved, { store });

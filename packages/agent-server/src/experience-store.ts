@@ -403,7 +403,7 @@ export class ExperienceStore {
 			.all(cutoff) as { day: string; total: number; hits: number }[];
 		const recent = this.db
 			.prepare(
-				"SELECT request_id AS requestId, ts, model, stream, retrieved_count AS retrievedCount, hit, finish_reason AS finishReason, prompt_tokens AS promptTokens, completion_tokens AS completionTokens, latency_ms AS latencyMs, error FROM request_traces WHERE ts >= ? ORDER BY ts DESC LIMIT 20",
+				"SELECT request_id AS requestId, ts, model, stream, retrieved_count AS retrievedCount, retrieved_ids AS retrievedIds, hit, finish_reason AS finishReason, prompt_tokens AS promptTokens, completion_tokens AS completionTokens, latency_ms AS latencyMs, error FROM request_traces WHERE ts >= ? ORDER BY ts DESC LIMIT 20",
 			)
 			.all(cutoff) as Record<string, unknown>[];
 		// byKind: expand the JSON retrieved_kinds arrays in JS (window is small).

@@ -41,8 +41,10 @@ var d=await r.json();
 document.getElementById('summary').innerHTML='<p>总请求 <b>'+d.total+'</b>，命中 <b>'+d.hits+'</b>，命中率 '+bar(d.hit_rate)+'</p>';
 rows(document.getElementById('kinds'),d.by_kind.map(function(k){return [k.kind,k.cnt]}));
 rows(document.getElementById('daily'),d.daily.map(function(x){return [x.day,x.total,x.hits,bar(x.total?x.hits/x.total:0)]}));
-rows(document.getElementById('recent'),d.recent.map(function(x){return [x.ts,x.requestId,x.model,
-x.hit?'<b>命中('+x.retrievedCount+')</b>':'<span class="miss">未命中</span>',
+rows(document.getElementById('recent'),d.recent.map(function(x){var ids='';
+try{var a=JSON.parse(x.retrievedIds||'[]');ids=a.join(', ')}catch(e){}
+return [x.ts,x.requestId,x.model,
+x.hit?'<b>命中('+x.retrievedCount+')</b><br><small>'+ids+'</small>':'<span class="miss">未命中</span>',
 x.finishReason||'',x.latencyMs!=null?x.latencyMs+'ms':'',x.error||'']}));
 }
 load();

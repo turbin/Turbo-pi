@@ -18,6 +18,32 @@ export function kindsOf(retrieved: RetrievedExperience[]): string[] {
 	});
 }
 
+/** Human-readable Chinese labels for kind strings (logs/stats page). */
+const KIND_LABELS: Record<string, string> = {
+	"ABILITY:Method": "方法",
+	"ABILITY:Guard": "护栏",
+	"EVIDENCE:null": "证据",
+	"EVIDENCE:Workflow": "工作流",
+	"SKILL:null": "技能",
+	"SOP:null": "SOP",
+};
+
+/** Kind strings → compact Chinese summary, e.g. "方法×7,证据×1". */
+export function summarizeKinds(kinds: string[]): string {
+	const counts = new Map<string, number>();
+	for (const kind of kinds) counts.set(kind, (counts.get(kind) ?? 0) + 1);
+	return [...counts.entries()]
+		.map(([kind, cnt]) => `${KIND_LABELS[kind] ?? kind}×${cnt}`)
+		.join(",");
+}
+
+/** Titles of retrieved experiences for the trace log: first `max` + overflow count. */
+export function titlesOf(retrieved: RetrievedExperience[], max = 3): string {
+	const titles = retrieved.slice(0, max).map((r) => r.experience.title);
+	const rest = retrieved.length - titles.length;
+	return rest > 0 ? `${titles.join("; ")} 等${retrieved.length}条` : titles.join("; ");
+}
+
 /** One structured trace log line on stdout (container logs stay parseable). */
 export function logTrace(requestId: string, phase: string, fields: Record<string, unknown> = {}): void {
 	const parts = Object.entries(fields)

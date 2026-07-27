@@ -49,4 +49,15 @@ SPEC：` design/2026-07-27-agent-server-observability-spec.md`
 2. request id 为进程内单调（req-N），重启后从 req-1 重新计数；查询时请配合 ts 列。
 3. 页面无鉴权（与既有端点一致，本地信任边界）。
 
+## 6. Follow-up（2026-07-27 晚，用户反馈）：日志可读性增强
+
+**反馈**：`kinds=EVIDENCE:null:1,ABILITY:Method:7` 是代码符号，人读不出“本地经验库返回了什么”。
+
+**修改**（同日完成，252 测试全绿，已部署）：
+1. 日志 kinds 改中文标签：`方法/护栏/证据/工作流/技能/SOP`（`observability.ts` 的 `KIND_LABELS` + `summarizeKinds`）；
+2. retrieval 日志行新增 `injected="<前 3 条经验标题> 等N条"`（`titlesOf`）——直接看到本地经验库注入了哪些内容；
+3. `/stats` 页面命中行显示注入的经验 id 列表（`request_traces.recent` 补 `retrieved_ids` 列查询，无 schema 变更）。
+
+实测日志：`req=req-1 phase=retrieval hit=1 retrieved=8 kinds=证据×1,方法×7 injected="Since the call is idempotent, ...; Exponential Backoff with Jitter...; Idempotent API Retry... 等8条"`。
+
 Refer Spec：` design/2026-07-27-agent-server-observability-spec.md`；` design/2026-07-25-agent-server-eval-report-design.md`（L3 指标来源）
