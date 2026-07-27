@@ -45,20 +45,24 @@ request_traces(
 
 - `GET /api/stats/hit-rate?window_hours=N`（默认 24）→ JSON：
   `{ window_hours, total, hits, hit_rate, by_kind: [{kind, cnt}], daily: [{day, total, hits}], recent: [{request_id, ts, model, hit, retrieved_count, latency_ms} ×20] }`
-- `GET /stats` → **无框架静态 HTML**（内联 JS fetch 上述 API，表格 + 文本条形图；零构建零依赖，conservative）。
+- `GET /stats` → **无框架静态 HTML**（内联 JS fetch 上述 API，表格 + 文本条形图；零构建零依赖，conservative）；命中行下方显示该请求注入的经验 id 列表（follow-up 增强）。
 
 ### R3 请求级 trace 日志
 
 stdout 结构化日志行（容器 `docker compose logs` 直接可读），格式：
 
 ```
-[agent-server] req=<id> phase=retrieval hit=1 retrieved=3 kinds=EVIDENCE:2,ABILITY:Method:1 query_len=42
+[agent-server] req=<id> phase=retrieval hit=1 retrieved=8 kinds=证据×1,方法×7 injected="<前 3 条经验标题> 等N条" query_len=42
 [agent-server] req=<id> phase=forward model=deepseek-v4-pro stream=1
 [agent-server] req=<id> phase=done finish=tool_calls tokens=812/132 latency_ms=3410
 [agent-server] req=<id> phase=error message="..."
 ```
 
-**本地/远程区分规则**：`phase=retrieval` 行列出的 `retrieved_ids` 即"本地经验库返回的内容"；`phase=done` 的响应内容一律来自"远程大模型生成"。session JSONL 中已有 `experience_injection` / `custom_message`（注入上下文）与 assistant message（远程生成）的区分，request id 把三者串起来：
+- `kinds=`：中文类别汇总（映射：`ABILITY:Method`→方法、`ABILITY:Guard`→护栏、`EVIDENCE:null`→证据、`EVIDENCE:Workflow`→工作流、`SKILL:null`→技能、`SOP:null`→SOP；未知 kind 原样输出）；
+- `injected=`：本地经验库实际注入条目的标题（前 3 条 + 等 N 条），使命中行可读地呈现"本地返回了什么"；
+- 中文标签与 injected 字段为 2026-07-27 用户反馈后的 follow-up 增强（决策记录 §6）。
+
+**本地/远程区分规则**：`phase=retrieval` 行（kinds/injected）即"本地经验库返回的内容"；`phase=done` 的响应内容一律来自"远程大模型生成"。session JSONL 中已有 `experience_injection` / `custom_message`（注入上下文）与 assistant message（远程生成）的区分，request id 把三者串起来：
 - session header `metadata.requestId` 写入；
 - 响应头 `x-request-id` 返回给客户端。
 
