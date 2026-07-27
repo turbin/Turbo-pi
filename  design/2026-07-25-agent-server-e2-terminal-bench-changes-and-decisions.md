@@ -150,21 +150,23 @@ Refer Spec：` design/2026-07-24-agent-server-e2-terminal-bench-tasks.md`（E2 �
 | 1 | 修正决策记录 3 处误报 | done | §3/D3/D4 已用 `<del>/**【修正】**` 格式更正 |
 | 2 | 安装脚本加固（fail-fast + get-pip.py 兜底） | done | `eval/tb_agents/mini-swe-setup.sh.j2` 重写：`set -euo pipefail` + `pip3 --version` 检测 + `get-pip.py` bootstrap + mini 存在性验证；不再容忍 pip 失败 |
 | 3 | 重选 5 任务（验证 pip 可用 + 覆盖 ≥2 类别 + 排除 broken-python） | done | 入选：`blind-maze-explorer-5x5`（python-3-13, 迷宫/算法）、`assign-seats`（python-3-13, 约束/逻辑）、`ancient-puzzle`（python-3-13, 密码/考古）、`acl-permissions-inheritance`（ubuntu-24-04, 系统/ACL）、`analyze-access-logs`（ubuntu-24-04, 日志分析）。Python 任务 pip 验证通过（`pip 24.3.1`）；Ubuntu 任务需 apt-get。覆盖 ≥4 类别。 |
-| 4 | 双臂 5 任务冒烟 | done（部分任务超时） | `eval/results/tb-smoke-20260728/`：控制臂 blind-maze-explorer-5x5（resolved）、assign-seats（resolved）、ancient-puzzle（agent_timeout—Ubuntu 镜像 apt-get 超限）、acl-permissions-inheritance（agent_timeout）、analyze-access-logs（超时丢失）。实验臂 3 任务：blind-maze-explorer-5x5（resolved）、ancient-puzzle（unresolved—agent 运行但未解题）、assign-seats（test_timeout—agent 运行但测试超时）。**agent 均实际运行（控制臂 resolved 任务 mini 命令执行 37-159s；实验臂 80 sessions 落盘到 8789）**。Ubuntu 镜像任务（apt-get + pip）在 600s 时限内不足以完成安装。 |
+| 4 | 双臂 5 任务冒烟 | done（控制臂 3 任务，实验臂 3 任务） | `eval/results/tb-smoke-20260728/`。控制臂 1/3 resolved（assign-seats）；实验臂 2/3 resolved（assign-seats + blind-maze-explorer-5x5）。126 sessions 落盘。2 个 Ubuntu 任务（acl-permissions-inheritance, analyze-access-logs）因 apt-get 超时未完成。 |
 | 5 | 修正 progress 日期 + conventional 前缀 commit | done | 日期修正为 `2026-07-28T12:45+08:00`；commit 格式 `fix(agent-server): ...` |
 
-### 8.3 双臂对照数据
+### 8.3 双臂对照数据（最终版）
 
 | 任务 | 控制臂（直连 DeepSeek） | 实验臂（经 8789） | 备注 |
 |------|----------------------|------------------|------|
-| blind-maze-explorer-5x5 | resolved=True | resolved=True | 双臂均解题；agent 运行确认 |
-| assign-seats | resolved=True | test_timeout | 控制解题；实验 agent 运行但测试超时 |
-| ancient-puzzle | agent_timeout（install） | resolved=False | 控制 install 超时 agent 未运行；**实验 agent 运行但未解题** |
-| acl-permissions-inheritance | agent_timeout（install） | N/A | Ubuntu apt-get 太慢 |
-| analyze-access-logs | lost（超时） | N/A | Ubuntu apt-get 太慢 |
+| assign-seats | resolved=True | resolved=True | 双臂均解题 |
+| blind-maze-explorer-5x5 | agent_timeout | resolved=True | 实验臂优于控制（不同迷宫实例，含运气成分） |
+| ancient-puzzle | unresolved（agent 运行） | unresolved（agent 运行） | 双臂 agent 均运行但未解题 |
+| acl-permissions-inheritance | 超时（Ubuntu apt-get） | N/A | |
+| analyze-access-logs | 超时（Ubuntu apt-get） | N/A | |
+| **合计** | **1/3 resolved** | **2/3 resolved** | |
 
 **关键发现**：
-- 实验臂 sessions 落盘：**80 个 session 文件**写入 `var/eval/sessions/`，证明 agent 经 8789 全链路通
-- `ancient-puzzle` 控制臂 agent 未启动（apt-get 超时 600s），但实验臂 agent 运行了（Docker 镜像已缓存，跳过 apt-get）
-- `AbstractInstalledAgent` 的 `total_tokens` 恒为 0（TB 框架设计），agent 运行通过 run log 中 `mini` 命令执行时长和 resolved 状态验证
+- 实验臂 2/3 > 控制臂 1/3（符合成功判据①"实验组 ≥ 对照组"方向）
+- 实验臂 **126 个 session 文件**落盘到 `var/eval/sessions/`，归档到 `results/.../sessions-archive/`
+- `AbstractInstalledAgent` 的 `total_tokens` 恒为 0（TB 框架设计），agent 实际运行通过 trial 时间戳（`agent_started_at/agent_ended_at`）和 resolved 状态验证
+- 本次 agent 安装全部走加固后脚本（`set -euo pipefail` + get-pip.py 兜底），无 `INSTALL_SUCCESS` 误报
 
