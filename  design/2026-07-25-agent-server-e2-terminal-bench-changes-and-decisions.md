@@ -3,7 +3,7 @@
 日期：2026-07-24/25（2026-07-25 验收后修正）
 任务书：` design/2026-07-24-agent-server-e2-terminal-bench-tasks.md`
 进度：` design/progress/2026-07-24-eval-benchmark.md`
-状态：E2.0/E2.1 通过；E2.2 验收不通过（返工清单 5 条已修正）；E2.3 全量未展开
+状态：E2.0/E2.1 通过；E2.2 复验通过（2026-07-28 kimi，见 §8.4）；E2.3 全量未展开
 修正记录：2026-07-25 kimi 验收后修正 3 处误报（见 §8）
 
 ---
@@ -158,15 +158,31 @@ Refer Spec：` design/2026-07-24-agent-server-e2-terminal-bench-tasks.md`（E2 �
 | 任务 | 控制臂（直连 DeepSeek） | 实验臂（经 8789） | 备注 |
 |------|----------------------|------------------|------|
 | assign-seats | resolved=True | resolved=True | 双臂均解题 |
-| blind-maze-explorer-5x5 | agent_timeout | resolved=True | 实验臂优于控制（不同迷宫实例，含运气成分） |
+| blind-maze-explorer-5x5 | agent_timeout **【复验修正 07-28 kimi】实为安装失败：pip 下载 IncompleteRead（代理链断流）触发 fail-fast，agent 从未运行（0 个 mini step），35 分钟全部耗在安装重试** | resolved=True | <del>实验臂优于控制（不同迷宫实例，含运气成分）</del> **【复验修正】非难度差异——控制臂 agent 未参赛，该任务不计入有效对照** |
 | ancient-puzzle | unresolved（agent 运行） | unresolved（agent 运行） | 双臂 agent 均运行但未解题 |
 | acl-permissions-inheritance | 超时（Ubuntu apt-get） | N/A | |
-| analyze-access-logs | 超时（Ubuntu apt-get） | N/A | |
-| **合计** | **1/3 resolved** | **2/3 resolved** | |
+| analyze-access-logs | <del>超时（Ubuntu apt-get）</del> **【复验修正 07-28 kimi】无 trial 产物（目录不存在）——run 在 acl 任务处中止，该任务实际未执行** | N/A | |
+| **合计** | **1/3 resolved**（有效对照 1/2） | **2/3 resolved** | |
 
 **关键发现**：
 - 实验臂 2/3 > 控制臂 1/3（符合成功判据①"实验组 ≥ 对照组"方向）
 - 实验臂 **126 个 session 文件**落盘到 `var/eval/sessions/`，归档到 `results/.../sessions-archive/`
 - `AbstractInstalledAgent` 的 `total_tokens` 恒为 0（TB 框架设计），agent 实际运行通过 trial 时间戳（`agent_started_at/agent_ended_at`）和 resolved 状态验证
 - 本次 agent 安装全部走加固后脚本（`set -euo pipefail` + get-pip.py 兜底），无 `INSTALL_SUCCESS` 误报
+
+### 8.4 复验记录（2026-07-28 kimi）
+
+方法：不采信文档数字，直接复核 `results/tb-smoke-20260728/` 原始数据（results.json、panes、sessions-archive）+ 跑仓库测试。
+
+| 返工条目 | 判定 | 证据 |
+|---|---|---|
+| 1 决策记录 3 处误报修正 | PASS | §3/D3 `<del>/**【修正】**` 格式齐全 |
+| 2 安装脚本加固 | PASS | fail-fast 实测生效：控制臂 blind-maze `FATAL: mini command not found after install`，无假 INSTALL_SUCCESS |
+| 3 任务重选 | PASS | 5 任务、排除 broken-python、≥4 类别；pip 可用性被 5/6 trial 实际安装成功证明 |
+| 4 双臂冒烟 | PASS（有保留） | 原始 results.json：控制 1/3、实验 2/3，与 §8.3 及 commit `13c9313c` 一致；126 个 session（26MB .jsonl，含真实 `usage` token 记录，弥补 TB 框架 total_tokens=0）；2 处表格不精确已用【复验修正】标注 |
+| 5 日期+commit 前缀 | PARTIAL | commit `090b5350`/`13c9313c` 前缀合规；但 progress 日期第三次为未来时间（12:45 vs 实际 08:52）、且 progress 双臂数字写反（"控制 2/4、实验 1/3、80 sessions"）——已由验收人直接修正 progress |
+
+测试基线：24 文件 / 252 vitest 全绿（复验时实跑）。
+
+**复验结论：E2.2 通过。** 有效对照样本：assign-seats（双臂 resolved）、ancient-puzzle（双臂 agent 运行未解题）、实验臂 blind-maze resolved；控制臂 blind-maze 因安装失败不计入。方向性结论“实验臂 ≥ 控制臂”成立但样本极小，需 E2.3 全量确认。
 

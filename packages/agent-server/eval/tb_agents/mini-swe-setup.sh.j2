@@ -1,12 +1,16 @@
 #!/bin/bash
-# Terminal-Bench mini-swe-agent installation script (fail-fast + fallback).
+# Terminal-Bench mini-swe-agent installation script (offline-first, fail-fast).
 # Used by MiniSweAgentProxy.
 #
 # Strategy:
-#   1. apt-get install python3-pip (with retry, proxy-aware)
-#   2. If pip3 works → pip install mini-swe-agent (Tsinghua mirror)
-#   3. If pip3 missing (broken-python class task) → get-pip.py bootstrap
-#   4. If still no pip → fail with clear error (NEVER print INSTALL_SUCCESS)
+#   1. apt-get install python3-pip (with retry, proxy-aware) — skipped if pip works
+#   2. If /wheelhouse exists → install offline with --no-index --find-links
+#      (pip, setuptools, wheel, mini-swe-agent + all deps are local)
+#   3. If pip3 missing (broken-python class task) → bootstrap:
+#      a. offline: python3 /wheelhouse/get-pip.py --no-index --find-links /wheelhouse
+#      b. network fallback: download get-pip.py from bootstrap.pypa.io
+#   4. If no /wheelhouse → install from Tsinghua PyPI mirror (network)
+#   5. If still no pip → fail with clear error (NEVER print INSTALL_SUCCESS)
 #
 # Fail-fast: set -euo pipefail ensures any failure stops the script immediately.
 # The calling AbstractInstalledAgent checks for INSTALL_SUCCESS; its absence
@@ -16,38 +20,54 @@ set -euo pipefail
 
 MIRROR="https://pypi.tuna.tsinghua.edu.cn/simple"
 MAX_RETRIES=3
+WHEELHOUSE="/wheelhouse"
+
+PIP_ARGS="-i $MIRROR"
+if [ -d "$WHEELHOUSE" ]; then
+    PIP_ARGS="--no-index --find-links $WHEELHOUSE"
+    echo "Wheelhouse found at $WHEELHOUSE — installing offline (no network)."
+fi
 
 # ── apt-get with retry (proxy chain may be flaky) ──────────────────────────
-for i in $(seq 1 $MAX_RETRIES); do
-    if apt-get update -qq && apt-get install -y -qq python3 python3-pip python3-venv 2>/dev/null; then
-        break
-    fi
-    echo "apt-get attempt $i/$MAX_RETRIES failed, retrying in 5s..."
-    sleep 5
-done
-
-# ── Verify pip3 works ──────────────────────────────────────────────────────
+# Skipped entirely when python3 + pip already work (e.g. python:3.13 images).
 if ! python3 -m pip --version >/dev/null 2>&1; then
-    echo "pip3 not functional after apt-get. Bootstrapping via get-pip.py..."
-    # Download get-pip.py (try curl, fallback to wget)
-    curl -sS --max-time 30 -o /tmp/get-pip.py https://bootstrap.pypa.io/get-pip.py 2>/dev/null \
-        || wget -q -O /tmp/get-pip.py https://bootstrap.pypa.io/get-pip.py 2>/dev/null \
-        || { echo "FATAL: Cannot download get-pip.py"; exit 1; }
-    python3 /tmp/get-pip.py -q 2>&1 \
-        || { echo "FATAL: get-pip.py bootstrap failed"; exit 1; }
-    rm -f /tmp/get-pip.py
+    for i in $(seq 1 $MAX_RETRIES); do
+        if apt-get update -qq && apt-get install -y -qq python3 python3-pip python3-venv 2>/dev/null; then
+            break
+        fi
+        echo "apt-get attempt $i/$MAX_RETRIES failed, retrying in 5s..."
+        sleep 5
+    done
+fi
+
+# ── Verify pip3 works, else bootstrap via get-pip.py ───────────────────────
+if ! python3 -m pip --version >/dev/null 2>&1; then
+    echo "pip3 not functional. Bootstrapping via get-pip.py..."
+    if [ -f "$WHEELHOUSE/get-pip.py" ]; then
+        # Offline bootstrap: install pip from the local wheelhouse
+        python3 "$WHEELHOUSE/get-pip.py" -q --no-index --find-links "$WHEELHOUSE" 2>&1 \
+            || { echo "FATAL: offline get-pip.py bootstrap failed"; exit 1; }
+    else
+        # Network fallback: download get-pip.py (try curl, fallback to wget)
+        curl -sS --max-time 30 -o /tmp/get-pip.py https://bootstrap.pypa.io/get-pip.py 2>/dev/null \
+            || wget -q -O /tmp/get-pip.py https://bootstrap.pypa.io/get-pip.py 2>/dev/null \
+            || { echo "FATAL: Cannot download get-pip.py"; exit 1; }
+        python3 /tmp/get-pip.py -q 2>&1 \
+            || { echo "FATAL: get-pip.py bootstrap failed"; exit 1; }
+        rm -f /tmp/get-pip.py
+    fi
 fi
 
 # Final check
 python3 -m pip --version >/dev/null 2>&1 || { echo "FATAL: pip3 still not functional after bootstrap"; exit 1; }
 
 # ── Install mini-swe-agent ────────────────────────────────────────────────
-python3 -m pip install --upgrade pip -q -i "$MIRROR" 2>&1
+python3 -m pip install --upgrade pip -q $PIP_ARGS 2>&1
 
 {% if version %}
-python3 -m pip install "mini-swe-agent=={{ version }}" -i "$MIRROR" 2>&1
+python3 -m pip install "mini-swe-agent=={{ version }}" $PIP_ARGS 2>&1
 {% else %}
-python3 -m pip install mini-swe-agent -i "$MIRROR" 2>&1
+python3 -m pip install mini-swe-agent $PIP_ARGS 2>&1
 {% endif %}
 
 # Verify mini is on PATH

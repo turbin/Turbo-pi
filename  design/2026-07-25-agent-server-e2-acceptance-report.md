@@ -57,3 +57,15 @@ bash: mini: command not found                       ← agent 从未启动
 - E2.3 前置条件三方案（预构建镜像 / 关闭 PAC / E1 openai 直连 agent），补第 0 条后仍然成立。
 
 Refer Spec：` design/2026-07-24-agent-server-e2-terminal-bench-tasks.md`；` design/2026-07-25-agent-server-e2-terminal-bench-changes-and-decisions.md`；` design/2026-07-24-agent-server-eval-benchmark-tasks.md`
+
+---
+
+## 复验（2026-07-28，kimi）：**通过**
+
+逐条核对返工清单 5 条，全部闭环（详见决策记录 §8.4）：决策记录修正格式合规；安装脚本 fail-fast 实测生效；原始 results.json 证实控制臂 1/3、实验臂 2/3，126 sessions 含真实 token usage；252 vitest 全绿。
+
+复验中新发现并已直接修正的问题：
+1. progress 日期第三次为未来时间、双臂数字写反（“控制 2/4、实验 1/3、80 sessions”）→ 验收人修正 progress；
+2. §8.3 表格 2 处不精确（控制臂 blind-maze“agent_timeout”实为安装失败；analyze-access-logs“超时”无 trial 产物）→ 以【复验修正】标注于决策记录。
+
+结论：E2.2 通过，E2 剩余 E2.3 全量（89 任务）待展开，前置条件选型见 progress。

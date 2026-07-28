@@ -130,7 +130,8 @@
 |---|---|
 | 2026-07-27-agent-server-observability-spec.md | O SPEC：术语对齐（本地=经验库/远程=DeepSeek）、request_traces 表、/api/stats/hit-rate + /stats 页面、req= 结构化日志、request id 传播、8 条 TDD 用例表；保守路线（零新依赖） |
 | 2026-07-27-agent-server-observability-changes-and-decisions.md | O 决策记录：trace 存 experience.db、两阶段 upsert、零框架页面；live 验证（命中/未命中各 1 请求，hitRate 0.5 页面可查，日志 req= 关联）；246 vitest 全绿；已知限制（stream 列恒 1、req-N 进程内单调） |
-| 2026-07-25-agent-server-e2-terminal-bench-changes-and-decisions.md | E2 决策记录：E2.0 三项探针全通过（Docker Hub 需 colima 代理；litellm Linux 容器正常；8789 需 HOST=0.0.0.0）；E2.1 adapter 写毕（MiniSweAgentProxy + 清华镜像模板）；E2.2 控制臂多任务跑通；E2.3 全量阻塞于 pip 安装速度（代理链），三点前置条件 |
+| 2026-07-25-agent-server-e2-terminal-bench-changes-and-decisions.md | E2 决策记录：E2.0 三项探针全通过（Docker Hub 需 colima 代理；litellm Linux 容器正常；8789 需 HOST=0.0.0.0）；E2.1 adapter 写毕（MiniSweAgentProxy）；E2.2 验收不通过→返工→**07-28 复验通过**（控制 1/3、实验 2/3，126 sessions 含真实 token；§8.4 复验记录） |
+| 2026-07-28-agent-server-e2-wheelhouse-relay-changes-and-decisions.md | **E2.3 前置条件闭环**：离线 wheelhouse（96 wheel/178MB，cp312+cp313，容器内 `--no-index` 秒级安装）+ 宿主中继 deepseek_relay.mjs:8899（VM→DeepSeek 间歇断流，控制臂 LLM 流量改走宿主）；验证：blind-maze 控制臂 mini 真实跑 32 步 0 连接错误；252 vitest 全绿 |
 
 ### 阶段 7：R 真实化（2026-07-23 立项，同日收口）
 

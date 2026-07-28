@@ -2,4 +2,5 @@ var/
 eval/results/
 eval/tb_tasks/
 eval/tb_registry/
+eval/wheelhouse/
 __pycache__/
