@@ -28,11 +28,21 @@ if [ -d "$WHEELHOUSE" ]; then
     echo "Wheelhouse found at $WHEELHOUSE — installing offline (no network)."
 fi
 
-# ── apt-get with retry (proxy chain may be flaky) ──────────────────────────
-# Skipped entirely when python3 + pip already work (e.g. python:3.13 images).
-if ! python3 -m pip --version >/dev/null 2>&1; then
+# ── apt proxy + mirror (VM uplink is flaky; route via host forward proxy) ──
+if [ -n "${HTTPS_PROXY:-}" ]; then
+    export http_proxy="${HTTP_PROXY:-$HTTPS_PROXY}" https_proxy="$HTTPS_PROXY"
+    # Host-bound traffic (LLM relay 8899 / agent-server 8789) must NOT go through the proxy
+    export NO_PROXY="${NO_PROXY:-host.docker.internal,127.0.0.1,localhost}" no_proxy="$NO_PROXY"
+    mkdir -p /etc/apt/apt.conf.d
+    printf 'Acquire::http::Proxy "%s";\nAcquire::https::Proxy "%s";\n' "$http_proxy" "$https_proxy" > /etc/apt/apt.conf.d/99eval-proxy || true
+fi
+sed -i 's|deb\.debian\.org|mirrors.tuna.tsinghua.edu.cn|g; s|security\.debian\.org|mirrors.tuna.tsinghua.edu.cn|g; s|archive\.ubuntu\.com|mirrors.tuna.tsinghua.edu.cn|g; s|security\.ubuntu\.com|mirrors.tuna.tsinghua.edu.cn|g; s|ports\.ubuntu\.com|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+
+# ── pip bootstrap: offline get-pip.py FIRST (no network), apt only if ──────
+# ── python3 itself is missing. Ubuntu images ship python3 without pip. ─────
+if ! command -v python3 >/dev/null 2>&1; then
     for i in $(seq 1 $MAX_RETRIES); do
-        if apt-get update -qq && apt-get install -y -qq python3 python3-pip python3-venv 2>/dev/null; then
+        if apt-get update -qq && apt-get install -y -qq python3 2>/dev/null; then
             break
         fi
         echo "apt-get attempt $i/$MAX_RETRIES failed, retrying in 5s..."
@@ -40,12 +50,11 @@ if ! python3 -m pip --version >/dev/null 2>&1; then
     done
 fi
 
-# ── Verify pip3 works, else bootstrap via get-pip.py ───────────────────────
 if ! python3 -m pip --version >/dev/null 2>&1; then
     echo "pip3 not functional. Bootstrapping via get-pip.py..."
     if [ -f "$WHEELHOUSE/get-pip.py" ]; then
         # Offline bootstrap: install pip from the local wheelhouse
-        python3 "$WHEELHOUSE/get-pip.py" -q --no-index --find-links "$WHEELHOUSE" 2>&1 \
+        python3 "$WHEELHOUSE/get-pip.py" -q --no-index --find-links "$WHEELHOUSE" --break-system-packages 2>&1 \
             || { echo "FATAL: offline get-pip.py bootstrap failed"; exit 1; }
     else
         # Network fallback: download get-pip.py (try curl, fallback to wget)
@@ -61,13 +70,19 @@ fi
 # Final check
 python3 -m pip --version >/dev/null 2>&1 || { echo "FATAL: pip3 still not functional after bootstrap"; exit 1; }
 
+# PEP 668 (Ubuntu 24.04+): system python is externally managed
+BSP=""
+if ls /usr/lib/python3*/EXTERNALLY-MANAGED >/dev/null 2>&1; then
+    BSP="--break-system-packages"
+fi
+
 # ── Install mini-swe-agent ────────────────────────────────────────────────
-python3 -m pip install --upgrade pip -q $PIP_ARGS 2>&1
+python3 -m pip install --upgrade pip -q $PIP_ARGS $BSP 2>&1
 
 {% if version %}
-python3 -m pip install "mini-swe-agent=={{ version }}" $PIP_ARGS 2>&1
+python3 -m pip install "mini-swe-agent=={{ version }}" $PIP_ARGS $BSP 2>&1
 {% else %}
-python3 -m pip install mini-swe-agent $PIP_ARGS 2>&1
+python3 -m pip install mini-swe-agent $PIP_ARGS $BSP 2>&1
 {% endif %}
 
 # Verify mini is on PATH

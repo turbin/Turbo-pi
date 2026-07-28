@@ -2,7 +2,7 @@
 
 状态：进行中
 任务书：` design/2026-07-24-agent-server-eval-benchmark-tasks.md`
-最近更新：2026-07-28T15:25+08:00 by kimi（E2.2 复验通过；E2.3 前置条件闭环：离线 wheelhouse + 宿主中继）
+最近更新：2026-07-29T00:30+08:00 by kimi（E2.3 小规模 5 任务双臂完成：4/5 vs 4/5，infra 全通，全量就绪）
 
 ## 1. 子任务状态表
 
@@ -10,7 +10,7 @@
 |---|---|---|---|---|
 | E0 评估实例 + 接线冒烟（含 harness 选型决策点） | done | kimi | 2026-07-24T15:35+08:00 | 决策记录 ` design/2026-07-24-agent-server-e0-eval-instance-changes-and-decisions.md`；修复非流式丢 tool_calls 阻塞性 bug（vitest 238 全绿）；mini-swe-agent 经 8789 全链路通；选型：mini-swe-agent（不用 Kimi/pi 做被测 agent） |
 | E1 A/B 对照 harness 脚手架 | done | claude（kimi 验收） | 2026-07-24T16:53+08:00 | 决策记录 ` design/2026-07-25-agent-server-e1-ab-harness-changes-and-decisions.md`；`eval/harness.py` + `eval/tasks/tasks-5.yaml`；smoke-02 两臂各 5/5 通过。**验收（kimi 07-24）：通过**，修正 2 处（token delta 归因、日期）；遗留：commit 缺 conventional 前缀；归档混入 E0 session |
-| E2 Terminal-Bench A/B（89 任务） | E2.0/E2.1/E2.2 done；E2.3 前置条件 done，全量待启动 | claude（kimi 验收） | 2026-07-28T08:58+08:00 | **复验（kimi 07-28）：通过**。原始 results.json 证实控制臂 1/3 resolved（assign-seats）、实验臂 2/3 resolved（assign-seats + blind-maze），126 sessions（含真实 token usage）落盘；252 vitest 全绿。保留项：控制臂 blind-maze 实为安装失败（pip IncompleteRead，agent 未跑）；analyze-access-logs 无 trial 产物。详见验收报告复验节 |
+| E2 Terminal-Bench A/B（89 任务） | E2.0/E2.1/E2.2 done；E2.3 小规模 done，全量待启动 | claude（kimi 验收） | 2026-07-29T00:30+08:00 | **复验（kimi 07-28）：通过**。原始 results.json 证实控制臂 1/3 resolved（assign-seats）、实验臂 2/3 resolved（assign-seats + blind-maze），126 sessions（含真实 token usage）落盘；252 vitest 全绿。保留项：控制臂 blind-maze 实为安装失败（pip IncompleteRead，agent 未跑）；analyze-access-logs 无 trial 产物。详见验收报告复验节；**E2.3 小规模（kimi 07-29）：控制臂 4/5 = 实验臂 4/5**（唯一失败 ancient-puzzle 双臂 agent 真实运行未解出，有效对照）；六类环境失败全部机制性解决（wheelhouse/中继/测试注入/colima 代理/顺序执行/NO_PROXY），全量 infra 就绪，见 ` design/2026-07-28-agent-server-e2-wheelhouse-relay-changes-and-decisions.md` §7-8 |
 | E3 SWE-bench A/B（Lite 10 → 300 待定） | pending | | | |
 | E4 飞轮实验 + 总评估报告 | pending | | | |
 
@@ -19,7 +19,8 @@
 ## 2. 交接信息（跨 agent 共享事实）
 
 - 2026-07-28 kimi：**E2.3 前置条件完成**——①离线 wheelhouse：`eval/wheelhouse/`（96 wheel/178MB，gitignored），adapter `perform_task` 复制进容器 `/wheelhouse`，安装脚本离线优先。②宿主中继 `eval/deepseek_relay.mjs`（0.0.0.0:8899 → api.deepseek.com）：**环境事实变更——7897 代理已失效、VM→DeepSeek 直连间歇性断流**，控制臂 LLM 流量必须走中继（`OPENAI_BASE_URL=http://host.docker.internal:8899/v1`）。验证：blind-maze 控制臂 mini 真实 32 步 0 连接错误。详见 ` design/2026-07-28-agent-server-e2-wheelhouse-relay-changes-and-decisions.md`。
-- 2026-07-28 kimi：E2.3 全量启动方式——中继当前在跑（PID 28593，孤儿进程；重启用 `node eval/deepseek_relay.mjs`）；实验臂仍需 8789 评估实例（`HOST=0.0.0.0`）；宿主跑 tb 前 unset 所有 proxy 变量。Ubuntu 系任务 apt 依赖外网，VM 断流时段会失败，计为环境失败类别。
+- 2026-07-28 kimi：E2.3 全量启动方式（v2，以此为准）——前置三进程：中继 `node eval/deepseek_relay.mjs`（8899）、正向代理 `node eval/host_forward_proxy.mjs`（8898）、8789 评估实例（`HOST=0.0.0.0`）。tb 进程导出 `HTTP(S)_PROXY=http://host.docker.internal:8898`（build/install 用），控制臂 `OPENAI_BASE_URL=http://host.docker.internal:8899/v1`，实验臂 `...:8789/v1`。**双臂必须顺序执行**（部分任务硬编码宿主端口，如 ancient-puzzle 8090）。测试期网络：`eval/inject-proxy-into-tests.sh`（已注入 5 任务，全量前需跑全部任务）。colima daemon 代理已配为 192.168.5.2:8898（07-28 重启）；Docker Hub 拉取走 daocloud 镜像 + retag。
+- 2026-07-28 kimi：首轮小规模失败教训——①双臂并行端口冲突；②实验臂撞 colima 重启窗口整轮作废；③TB run-tests.sh 自身要外网（apt+uv+pytest），需注入代理+镜像；④oracle 型错误：deb.debian.org 直连 15kB/s，清华镜像必需。
 
 - 2026-07-24 kimi：测试基线 22 文件 / 236 vitest + 29 pytest 全绿。Node 走 `scripts/with-node25.sh`（25.9.0）。
 - 2026-07-24 kimi：**生产环境在 Docker**（compose 三服务：server 8788 / evolution 24h / weekly-report 168h，DeepSeek teacher）。**评估环境独立**：host tsx 起第二个 agent-server，PORT=8789，`var/eval/` 独立 DB/sessions——benchmark 流量绝不进生产库。
