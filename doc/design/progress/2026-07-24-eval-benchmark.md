@@ -2,7 +2,7 @@
 
 状态：进行中
 任务书：`doc/design/2026-07-24-agent-server-eval-benchmark-tasks.md`
-最近更新：2026-07-30T19:45+08:00 by kimi（E2' ALFWorld 全量 134×2 启动；agent-server stop/thinking 透传修复已上线 8789）
+最近更新：2026-07-30T21:25+08:00 by kimi（学生-老师链路接回完成；ALFWorld 三腿：L1 完成 SR 6.7%，L2 学生腿运行中，L3 排队）
 
 ## 1. 子任务状态表
 
@@ -12,7 +12,7 @@
 | E1 A/B 对照 harness 脚手架 | done | claude（kimi 验收） | 2026-07-24T16:53+08:00 | 决策记录 `doc/design/2026-07-25-agent-server-e1-ab-harness-changes-and-decisions.md`；`eval/harness.py` + `eval/tasks/tasks-5.yaml`；smoke-02 两臂各 5/5 通过。**验收（kimi 07-24）：通过**，修正 2 处（token delta 归因、日期）；遗留：commit 缺 conventional 前缀；归档混入 E0 session |
 | ~~E2 Terminal-Bench A/B~~【废 07-30】 | E2.0/E2.1/E2.2 done；E2.3 全量中止（控制臂 8 trial/2 resolved 归档 `eval/results/tb-full-20260729/`） | claude（kimi 验收） | 2026-07-30T15:30+08:00 | **复验（kimi 07-28）：通过**。原始 results.json 证实控制臂 1/3 resolved（assign-seats）、实验臂 2/3 resolved（assign-seats + blind-maze），126 sessions（含真实 token usage）落盘；252 vitest 全绿。保留项：控制臂 blind-maze 实为安装失败（pip IncompleteRead，agent 未跑）；analyze-access-logs 无 trial 产物。详见验收报告复验节；**E2.3 小规模（kimi 07-29）：控制臂 4/5 = 实验臂 4/5**（唯一失败 ancient-puzzle 双臂 agent 真实运行未解出，有效对照）；六类环境失败全部机制性解决（wheelhouse/中继/测试注入/colima 代理/顺序执行/NO_PROXY），全量 infra 就绪，见 `doc/design/2026-07-28-agent-server-e2-wheelhouse-relay-changes-and-decisions.md` §7-8 |
 | ~~E3 SWE-bench A/B~~【废 07-30】 | cancelled | | | |
-| E2' ALFWorld A/B（134×2） | in_progress（全量运行中） | kimi | 2026-07-30T19:45+08:00 | 环境/agent/冒烟全通（修复：v4-flash reasoning content 为空→thinking disabled 透传；chat 模型动作格式→system 指令）；冒烟 5 局双臂 token 口径一致（~110-150k in/局，成本在预估内） |
+| E2' ALFWorld 三腿 A/B | L1 done（SR 9/134=6.7%）；L2 in_progress；L3 pending | kimi | 2026-07-30T21:25+08:00 | **链路接回**（决策记录 `doc/design/2026-07-30-agent-server-student-teacher-reconnect-changes-and-decisions.md`）：8789→8787→omlx+DeepSeek 升级全通；学生测速 3.2min/局、升级率 ~30%；L1=直连 DeepSeek（9/134）；L2=8787 学生基线；L3=8789 注入（session 已归档清空） |
 | E3' QwenClawBench A/B（100×2） | pending | | | |
 | E4' Claw-Eval 文本子集 A/B（199×2） | pending | | | |
 | E5 飞轮实验 + 总评估报告（原 E4） | pending | | | |
