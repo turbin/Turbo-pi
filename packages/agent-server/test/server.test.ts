@@ -365,6 +365,7 @@ describe("stop/temperature passthrough to gateway", () => {
 				stop: ["\n"],
 				temperature: 0,
 				max_tokens: 100,
+				thinking: { type: "disabled" },
 			},
 		});
 
@@ -373,6 +374,7 @@ describe("stop/temperature passthrough to gateway", () => {
 		expect(gatewayBody.stop).toEqual(["\n"]);
 		expect(gatewayBody.temperature).toBe(0);
 		expect(gatewayBody.max_tokens).toBe(100);
+		expect(gatewayBody.thinking).toEqual({ type: "disabled" });
 		await app.close();
 	});
 
@@ -395,6 +397,7 @@ describe("stop/temperature passthrough to gateway", () => {
 				stop: ["\n"],
 				temperature: 0,
 				max_tokens: 100,
+				thinking: { type: "disabled" },
 			},
 		});
 
@@ -404,6 +407,7 @@ describe("stop/temperature passthrough to gateway", () => {
 		expect(gatewayBody.stop).toEqual(["\n"]);
 		expect(gatewayBody.temperature).toBe(0);
 		expect(gatewayBody.max_tokens).toBe(100);
+		expect(gatewayBody.thinking).toEqual({ type: "disabled" });
 		expect(gatewayBody.stream).toBe(true);
 		await app.close();
 	});

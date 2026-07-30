@@ -100,6 +100,10 @@ class ChatCompletionEnvelopeV1(StrictModel):
     top_p: float | None = None
     stop: str | list[str] | None = None
     reasoning_effort: str | None = None
+    # Vendor-specific thinking-mode switch (e.g. DeepSeek {"type": "disabled"}).
+    # Accepted explicitly: dropped on the local path, forwarded when escalating
+    # to a cloud provider (see build_chat_request forward_thinking).
+    thinking: dict | None = None
 
     @model_validator(mode="after")
     def _check_token_params(self) -> "ChatCompletionEnvelopeV1":

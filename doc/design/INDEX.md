@@ -138,6 +138,7 @@
 | 文件 | 内容 |
 |---|---|
 | 2026-07-30-agent-server-eval-benchmark-pivot-changes-and-decisions.md | **E 里程碑 benchmark 替换【用户拍板】**：Terminal-Bench/SWE-bench 弃用（TB 全量中止，8 trial 数据归档）；E2'=ALFWorld（134 局，自写 ReAct loop）、E3'=QwenClawBench（100 任务，OpenClaw harness）、E4'=Claw-Eval 文本子集（199 任务）；judge=deepseek-v4-pro；三 benchmark 臂切换均零代码（端点配置）；预估总成本 $20-35 |
+| 2026-07-30-agent-server-student-teacher-reconnect-changes-and-decisions.md | **学生-老师链路接回【用户拍板选 B】**：omlx 学生模型零负荷问题——agent-gateway 开 DeepSeek 云升级 + channel 出云 + envelope 显式接受 thinking（本地弃/云透传）；8789 env 改指 8787；**三腿实验设计**（L1 DeepSeek 直连参考 / L2 学生管线基线 / L3 学生管线+注入）；omlx 双探针过（key/stop）；生产 8788 接回推迟 |
 
 ### 阶段 7：R 真实化（2026-07-23 立项，同日收口）
 

@@ -153,6 +153,10 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 			temperature: typeof body.temperature === "number" ? body.temperature : undefined,
 			maxTokens: typeof body.max_tokens === "number" ? body.max_tokens : undefined,
 			stop: typeof body.stop === "string" || Array.isArray(body.stop) ? (body.stop as string | string[]) : undefined,
+			thinking:
+				typeof body.thinking === "object" && body.thinking !== null
+					? (body.thinking as Record<string, unknown>)
+					: undefined,
 		};
 		const sessionPath = join(sessionDir, `${Date.now()}-${randomUUID()}.jsonl`);
 		try {
@@ -217,6 +221,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 						...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
 						...(options.maxTokens !== undefined ? { max_tokens: options.maxTokens } : {}),
 						...(options.stop !== undefined ? { stop: options.stop } : {}),
+						...(options.thinking !== undefined ? { thinking: options.thinking } : {}),
 					});
 					writer.writeCustomEntry("response_started");
 					logTrace(requestId, "forward", { model: model.id, stream: 1 });

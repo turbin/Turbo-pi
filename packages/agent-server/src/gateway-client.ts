@@ -11,6 +11,7 @@ export interface GatewayChatRequest extends OpenAIChatRequest {
 	temperature?: number;
 	max_tokens?: number;
 	stop?: string | string[];
+	thinking?: Record<string, unknown>;
 }
 
 /** Non-streaming chat completion response from the gateway. */

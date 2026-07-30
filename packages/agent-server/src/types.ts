@@ -13,6 +13,8 @@ export interface ProxyStreamOptions extends Partial<SimpleStreamOptions> {
 	authToken?: string;
 	/** OpenAI stop sequences, forwarded to the gateway unchanged. */
 	stop?: string | string[];
+	/** Vendor-specific thinking-mode switch (e.g. DeepSeek {type: "disabled"}), forwarded opaquely. */
+	thinking?: Record<string, unknown>;
 }
 
 export interface Experience {

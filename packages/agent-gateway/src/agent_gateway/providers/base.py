@@ -37,8 +37,14 @@ class Provider(Protocol):
     async def complete(self, envelope: ChatCompletionEnvelopeV1) -> ModelResult: ...
 
 
-def build_chat_request(envelope: ChatCompletionEnvelopeV1, *, model: str) -> dict:
-    """Translate ChatCompletionEnvelopeV1 into an OpenAI chat request body."""
+def build_chat_request(
+    envelope: ChatCompletionEnvelopeV1, *, model: str, forward_thinking: bool = False
+) -> dict:
+    """Translate ChatCompletionEnvelopeV1 into an OpenAI chat request body.
+
+    `thinking` is only forwarded when forward_thinking=True (cloud escalation
+    path); local providers never receive it.
+    """
     payload: dict = {
         "model": model,
         "messages": [message.model_dump(exclude_none=True) for message in envelope.messages],
@@ -63,6 +69,8 @@ def build_chat_request(envelope: ChatCompletionEnvelopeV1, *, model: str) -> dic
         payload["top_p"] = envelope.top_p
     if envelope.stop is not None:
         payload["stop"] = envelope.stop
+    if forward_thinking and envelope.thinking is not None:
+        payload["thinking"] = envelope.thinking
     return payload
 
 

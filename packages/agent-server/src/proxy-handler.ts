@@ -154,6 +154,7 @@ function toGatewayRequest(
 	if (options.temperature !== undefined) req.temperature = options.temperature;
 	if (options.maxTokens !== undefined) req.max_tokens = options.maxTokens;
 	if (options.stop !== undefined) req.stop = options.stop;
+	if (options.thinking !== undefined) req.thinking = options.thinking;
 	return req;
 }
 

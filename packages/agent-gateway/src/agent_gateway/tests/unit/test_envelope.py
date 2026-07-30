@@ -137,3 +137,24 @@ def test_reasoning_effort_accepted_but_not_forwarded() -> None:
     assert env.reasoning_effort == "high"
     upstream = build_chat_request(env, model="agent-auto")
     assert "reasoning_effort" not in upstream
+
+
+def test_thinking_accepted_and_dropped_on_local_path() -> None:
+    from agent_gateway.providers.base import build_chat_request
+
+    payload = valid_payload()
+    payload["thinking"] = {"type": "disabled"}
+    env = ChatCompletionEnvelopeV1.model_validate(payload)
+    assert env.thinking == {"type": "disabled"}
+    upstream = build_chat_request(env, model="agent-auto")
+    assert "thinking" not in upstream
+
+
+def test_thinking_forwarded_on_cloud_path() -> None:
+    from agent_gateway.providers.base import build_chat_request
+
+    payload = valid_payload()
+    payload["thinking"] = {"type": "disabled"}
+    env = ChatCompletionEnvelopeV1.model_validate(payload)
+    upstream = build_chat_request(env, model="agent-auto", forward_thinking=True)
+    assert upstream["thinking"] == {"type": "disabled"}

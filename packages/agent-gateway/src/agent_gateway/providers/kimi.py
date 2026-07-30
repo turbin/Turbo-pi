@@ -67,7 +67,7 @@ class KimiProvider:
         await self._client.aclose()
 
     async def complete(self, envelope: ChatCompletionEnvelopeV1) -> ModelResult:
-        payload = build_chat_request(envelope, model=self.model)
+        payload = build_chat_request(envelope, model=self.model, forward_thinking=True)
         try:
             response = await self._client.post("/chat/completions", json=payload)
         except httpx.HTTPError as exc:

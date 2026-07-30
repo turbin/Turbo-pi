@@ -60,13 +60,27 @@ def main() -> None:
             try:
                 resp = client.chat.completions.create(
                     model=args.model,
-                    messages=[{"role": "user", "content": prompt}],
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are playing a text-based household task game. "
+                                "Respond with exactly one short command per turn, e.g. "
+                                "'go to cabinet 1', 'take mug 1 from countertop 1', "
+                                "'open drawer 1', or 'think: <reasoning>'. "
+                                "Output the command only, no other text."
+                            ),
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
                     stop=["\n"],
                     temperature=0,
                     max_tokens=100,
+                    extra_body={"thinking": {"type": "disabled"}},
                 )
                 usage = resp.usage.model_dump() if resp.usage else {}
-                return resp.choices[0].message.content.strip(), usage
+                action = resp.choices[0].message.content.strip().lstrip(">").strip()
+                return action, usage
             except Exception as e:  # noqa: BLE001 - retry any transient API error
                 wait = min(2**attempt * 4, 60)
                 print(f"  llm error ({type(e).__name__}: {e}); retry in {wait}s", file=sys.stderr)
