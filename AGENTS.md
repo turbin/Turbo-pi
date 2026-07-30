@@ -20,21 +20,21 @@ Packages:
 Other notable entries:
 
 - `.pi/` — this repo's own pi configuration (extensions, prompt templates, skills) used when running pi here.
-- ` design/` — design documents (note: the directory name contains a leading space). See "Design Documents" below for how to read it.
+- `doc/design/` — design documents. See "Design Documents" below for how to read it.
 - `scripts/` — repo tooling (release, shrinkwrap generation, checks, stats).
 - `packages/coding-agent/docs/` — user documentation; `packages/coding-agent/examples/` — extension examples (some are their own workspaces).
 
-## Design Documents (` design/`)
+## Design Documents (`doc/design/`)
 
-All design specs, per-task decision records, live verification reports, phase closeouts, and acceptance reports live in ` design/` (**the directory name starts with a space** — quote it in shell commands: `ls " design/"`; naive `ls design/` or unquoted globbing will miss it or hit a stray wrong directory).
+All design specs, per-task decision records, live verification reports, phase closeouts, and acceptance reports live in `doc/design/`.
 
 How to read it:
 
-- **Start at ` design/INDEX.md`**: one-line summary of every document (grouped by phase), a decision-change timeline from P0 onward (【立】created /【改】revised /【废】retired /【留】deferred, with each retired decision traced to the change that replaced it), and a "living decisions" quick-reference table of what is currently in force.
+- **Start at `doc/design/INDEX.md`**: one-line summary of every document (grouped by phase), a decision-change timeline from P0 onward (【立】created /【改】revised /【废】retired /【留】deferred, with each retired decision traced to the change that replaced it), and a "living decisions" quick-reference table of what is currently in force.
 - **Per-phase reading order**: phase spec/plan → per-task `*-changes-and-decisions.md` records → live verification report → closeout / acceptance report.
-- **Cross-task constraints** (repo-only modifications, omlx untouchable, commit format, git discipline) have a single canonical home: the "通用约束" section of ` design/2026-07-22-agent-server-p3-candidate-tasks.md`. Later task briefs reference it — change it there, not per document.
-- **Maintenance rule**: when adding a new design document, update ` design/INDEX.md` in the same commit.
-- **` design/progress/` 子目录**：里程碑进度与多 agent 交接文件（子任务状态表、共享环境事实、断点恢复指引），每里程碑一个文件，规范见 ` design/progress/README.md`。执行 agent 必须按更新纪律认领/完成/中断时更新；它存操作性状态，` design/` 根文档仍存长期决策。
+- **Cross-task constraints** (repo-only modifications, omlx untouchable, commit format, git discipline) have a single canonical home: the "通用约束" section of `doc/design/2026-07-22-agent-server-p3-candidate-tasks.md`. Later task briefs reference it — change it there, not per document.
+- **Maintenance rule**: when adding a new design document, update `doc/design/INDEX.md` in the same commit.
+- **`doc/design/progress/` 子目录**：里程碑进度与多 agent 交接文件（子任务状态表、共享环境事实、断点恢复指引），每里程碑一个文件，规范见 `doc/design/progress/README.md`。执行 agent 必须按更新纪律认领/完成/中断时更新；它存操作性状态，`doc/design/` 根文档仍存长期决策。
 
 ## Technology Stack
 
@@ -148,7 +148,7 @@ This overrides the `{feat,fix,docs}[...]` message format above for work done in 
 
 After completing any change task:
 
-1. Summarize every design decision made during the work, with the reason for each, and save it as a Markdown file under ` design/` (note: the directory name contains a leading space), named `<date>-<topic>-changes-and-decisions.md`.
+1. Summarize every design decision made during the work, with the reason for each, and save it as a Markdown file under `doc/design/`, named `<date>-<topic>-changes-and-decisions.md`.
 2. Commit the change points with a message in exactly this format:
 
    ```text
