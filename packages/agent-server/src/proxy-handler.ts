@@ -153,6 +153,7 @@ function toGatewayRequest(
 	const req: GatewayChatRequest = toOpenAIRequest(payload, model as Model<"openai-completions">);
 	if (options.temperature !== undefined) req.temperature = options.temperature;
 	if (options.maxTokens !== undefined) req.max_tokens = options.maxTokens;
+	if (options.stop !== undefined) req.stop = options.stop;
 	return req;
 }
 

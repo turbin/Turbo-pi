@@ -10,6 +10,7 @@ export interface GatewayChatRequest extends OpenAIChatRequest {
 	stream?: boolean;
 	temperature?: number;
 	max_tokens?: number;
+	stop?: string | string[];
 }
 
 /** Non-streaming chat completion response from the gateway. */

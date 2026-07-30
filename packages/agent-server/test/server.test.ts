@@ -329,6 +329,86 @@ describe("POST /v1/chat/completions non-streaming response", () => {
 	});
 });
 
+describe("stop/temperature passthrough to gateway", () => {
+	let dir: string;
+	let sessionDir: string;
+	let store: ExperienceStore;
+
+	beforeEach(async () => {
+		dir = mkdtempSync(join(tmpdir(), "agent-server-passthrough-"));
+		sessionDir = join(dir, "sessions");
+		store = new ExperienceStore(join(dir, "experience.db"));
+		await store.initSchema();
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		store.close();
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("forwards stop/temperature/max_tokens to the gateway (non-streaming)", async () => {
+		const sseChunks = [
+			'data: {"choices":[{"delta":{"content":"1"}}]}\n\n',
+			'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}\n\n',
+			"data: [DONE]\n\n",
+		];
+		const mock = mockGatewayFetch(sseStream(sseChunks));
+		const app = createServer({ store, gatewayUrl: GATEWAY_URL, sessionDir });
+
+		const res = await app.inject({
+			method: "POST",
+			url: "/v1/chat/completions",
+			payload: {
+				model: "agent-auto",
+				messages: [{ role: "user", content: "count" }],
+				stop: ["\n"],
+				temperature: 0,
+				max_tokens: 100,
+			},
+		});
+
+		expect(res.statusCode).toBe(200);
+		const gatewayBody = JSON.parse(String(mock.mock.calls[0][1].body));
+		expect(gatewayBody.stop).toEqual(["\n"]);
+		expect(gatewayBody.temperature).toBe(0);
+		expect(gatewayBody.max_tokens).toBe(100);
+		await app.close();
+	});
+
+	it("forwards stop/temperature/max_tokens to the gateway (streaming)", async () => {
+		const sseChunks = [
+			'data: {"choices":[{"delta":{"content":"1"}}]}\n\n',
+			'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}\n\n',
+			"data: [DONE]\n\n",
+		];
+		const mock = mockGatewayFetch(sseStream(sseChunks));
+		const app = createServer({ store, gatewayUrl: GATEWAY_URL, sessionDir });
+
+		const res = await app.inject({
+			method: "POST",
+			url: "/v1/chat/completions",
+			payload: {
+				model: "agent-auto",
+				messages: [{ role: "user", content: "count" }],
+				stream: true,
+				stop: ["\n"],
+				temperature: 0,
+				max_tokens: 100,
+			},
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(res.body).toContain("data:");
+		const gatewayBody = JSON.parse(String(mock.mock.calls[0][1].body));
+		expect(gatewayBody.stop).toEqual(["\n"]);
+		expect(gatewayBody.temperature).toBe(0);
+		expect(gatewayBody.max_tokens).toBe(100);
+		expect(gatewayBody.stream).toBe(true);
+		await app.close();
+	});
+});
+
 describe("O spec: observability endpoints and request traces", () => {
 	let dir: string;
 	let sessionDir: string;

@@ -152,6 +152,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 		const options = {
 			temperature: typeof body.temperature === "number" ? body.temperature : undefined,
 			maxTokens: typeof body.max_tokens === "number" ? body.max_tokens : undefined,
+			stop: typeof body.stop === "string" || Array.isArray(body.stop) ? (body.stop as string | string[]) : undefined,
 		};
 		const sessionPath = join(sessionDir, `${Date.now()}-${randomUUID()}.jsonl`);
 		try {
@@ -210,7 +211,13 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 					});
 
 					const gateway = new GatewayClient(gatewayUrl);
-					const gatewayStream = await gateway.stream({ ...openaiReq, stream: true });
+					const gatewayStream = await gateway.stream({
+						...openaiReq,
+						stream: true,
+						...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
+						...(options.maxTokens !== undefined ? { max_tokens: options.maxTokens } : {}),
+						...(options.stop !== undefined ? { stop: options.stop } : {}),
+					});
 					writer.writeCustomEntry("response_started");
 					logTrace(requestId, "forward", { model: model.id, stream: 1 });
 					reply.header("content-type", "text/event-stream");

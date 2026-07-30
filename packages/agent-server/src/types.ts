@@ -11,6 +11,8 @@ export interface StreamRequest {
 export interface ProxyStreamOptions extends Partial<SimpleStreamOptions> {
 	sessionId?: string;
 	authToken?: string;
+	/** OpenAI stop sequences, forwarded to the gateway unchanged. */
+	stop?: string | string[];
 }
 
 export interface Experience {

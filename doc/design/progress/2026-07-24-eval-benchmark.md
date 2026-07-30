@@ -2,7 +2,7 @@
 
 状态：进行中
 任务书：`doc/design/2026-07-24-agent-server-eval-benchmark-tasks.md`
-最近更新：2026-07-30T10:05+08:00 by kimi（E2.3 全量启动：控制臂 79 任务运行中，用户已确认报价 $7-30；半程成本检查后接实验臂）
+最近更新：2026-07-30T15:30+08:00 by kimi（**改道**：TB/SWE-bench 弃用，E2'=ALFWorld、E3'=QwenClawBench、E4'=Claw-Eval；P1 ALFWorld 环境安装中）
 
 ## 1. 子任务状态表
 
@@ -10,9 +10,12 @@
 |---|---|---|---|---|
 | E0 评估实例 + 接线冒烟（含 harness 选型决策点） | done | kimi | 2026-07-24T15:35+08:00 | 决策记录 `doc/design/2026-07-24-agent-server-e0-eval-instance-changes-and-decisions.md`；修复非流式丢 tool_calls 阻塞性 bug（vitest 238 全绿）；mini-swe-agent 经 8789 全链路通；选型：mini-swe-agent（不用 Kimi/pi 做被测 agent） |
 | E1 A/B 对照 harness 脚手架 | done | claude（kimi 验收） | 2026-07-24T16:53+08:00 | 决策记录 `doc/design/2026-07-25-agent-server-e1-ab-harness-changes-and-decisions.md`；`eval/harness.py` + `eval/tasks/tasks-5.yaml`；smoke-02 两臂各 5/5 通过。**验收（kimi 07-24）：通过**，修正 2 处（token delta 归因、日期）；遗留：commit 缺 conventional 前缀；归档混入 E0 session |
-| E2 Terminal-Bench A/B（89 任务） | E2.0/E2.1/E2.2 done；E2.3 小规模 done，全量待启动 | claude（kimi 验收） | 2026-07-29T00:30+08:00 | **复验（kimi 07-28）：通过**。原始 results.json 证实控制臂 1/3 resolved（assign-seats）、实验臂 2/3 resolved（assign-seats + blind-maze），126 sessions（含真实 token usage）落盘；252 vitest 全绿。保留项：控制臂 blind-maze 实为安装失败（pip IncompleteRead，agent 未跑）；analyze-access-logs 无 trial 产物。详见验收报告复验节；**E2.3 小规模（kimi 07-29）：控制臂 4/5 = 实验臂 4/5**（唯一失败 ancient-puzzle 双臂 agent 真实运行未解出，有效对照）；六类环境失败全部机制性解决（wheelhouse/中继/测试注入/colima 代理/顺序执行/NO_PROXY），全量 infra 就绪，见 `doc/design/2026-07-28-agent-server-e2-wheelhouse-relay-changes-and-decisions.md` §7-8 |
-| E3 SWE-bench A/B（Lite 10 → 300 待定） | pending | | | |
-| E4 飞轮实验 + 总评估报告 | pending | | | |
+| ~~E2 Terminal-Bench A/B~~【废 07-30】 | E2.0/E2.1/E2.2 done；E2.3 全量中止（控制臂 8 trial/2 resolved 归档 `eval/results/tb-full-20260729/`） | claude（kimi 验收） | 2026-07-30T15:30+08:00 | **复验（kimi 07-28）：通过**。原始 results.json 证实控制臂 1/3 resolved（assign-seats）、实验臂 2/3 resolved（assign-seats + blind-maze），126 sessions（含真实 token usage）落盘；252 vitest 全绿。保留项：控制臂 blind-maze 实为安装失败（pip IncompleteRead，agent 未跑）；analyze-access-logs 无 trial 产物。详见验收报告复验节；**E2.3 小规模（kimi 07-29）：控制臂 4/5 = 实验臂 4/5**（唯一失败 ancient-puzzle 双臂 agent 真实运行未解出，有效对照）；六类环境失败全部机制性解决（wheelhouse/中继/测试注入/colima 代理/顺序执行/NO_PROXY），全量 infra 就绪，见 `doc/design/2026-07-28-agent-server-e2-wheelhouse-relay-changes-and-decisions.md` §7-8 |
+| ~~E3 SWE-bench A/B~~【废 07-30】 | cancelled | | | |
+| E2' ALFWorld A/B（134×2） | in_progress | kimi | 2026-07-30T15:30+08:00 | 环境安装中；方案见 `doc/design/2026-07-30-agent-server-eval-benchmark-pivot-changes-and-decisions.md` |
+| E3' QwenClawBench A/B（100×2） | pending | | | |
+| E4' Claw-Eval 文本子集 A/B（199×2） | pending | | | |
+| E5 飞轮实验 + 总评估报告（原 E4） | pending | | | |
 
 依赖：E0 → E1 → {E2, E3 可并行} → E4。
 

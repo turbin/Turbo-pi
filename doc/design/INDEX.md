@@ -133,6 +133,12 @@
 | 2026-07-25-agent-server-e2-terminal-bench-changes-and-decisions.md | E2 决策记录：E2.0 三项探针全通过（Docker Hub 需 colima 代理；litellm Linux 容器正常；8789 需 HOST=0.0.0.0）；E2.1 adapter 写毕（MiniSweAgentProxy）；E2.2 验收不通过→返工→**07-28 复验通过**（控制 1/3、实验 2/3，126 sessions 含真实 token；§8.4 复验记录） |
 | 2026-07-28-agent-server-e2-wheelhouse-relay-changes-and-decisions.md | **E2.3 前置条件闭环**：离线 wheelhouse（96 wheel/178MB，cp312+cp313，容器内 `--no-index` 秒级安装）+ 宿主中继 deepseek_relay.mjs:8899（VM→DeepSeek 间歇断流，控制臂 LLM 流量改走宿主）；验证：blind-maze 控制臂 mini 真实跑 32 步 0 连接错误；252 vitest 全绿 |
 
+### 阶段 9：E 评估改道（2026-07-30，进行中）
+
+| 文件 | 内容 |
+|---|---|
+| 2026-07-30-agent-server-eval-benchmark-pivot-changes-and-decisions.md | **E 里程碑 benchmark 替换【用户拍板】**：Terminal-Bench/SWE-bench 弃用（TB 全量中止，8 trial 数据归档）；E2'=ALFWorld（134 局，自写 ReAct loop）、E3'=QwenClawBench（100 任务，OpenClaw harness）、E4'=Claw-Eval 文本子集（199 任务）；judge=deepseek-v4-pro；三 benchmark 臂切换均零代码（端点配置）；预估总成本 $20-35 |
+
 ### 阶段 7：R 真实化（2026-07-23 立项，同日收口）
 
 | 文件 | 内容 |
@@ -247,6 +253,8 @@
 - 【立】E1 proxy 隔离：harness 启动时强制清除 HTTPS_PROXY/HTTP_PROXY 等（.env 中为 docker 设置的 host.docker.internal 代理在宿主机不解析）
 - 【立】E1 防泄漏：实验臂每轮结束后将 var/eval/sessions/ 归档并清空，确保下一轮从空库起跑
 - 【验】E1 smoke-02：两臂各 5/5 通过，实验臂 token +38%（注入开销，冷库注入为空块），session 归档机制验证通过
+- 【废】E2 Terminal-Bench / E3 SWE-bench（2026-07-30 用户拍板）：benchmark 替换为 ALFWorld（E2'）+ QwenClawBench（E3'）+ Claw-Eval 文本子集（E4'）；TB 全量中止（控制臂 8 trial/2 resolved 归档）；wheelhouse/中继/正向代理基础设施保留复用 → 取代记录 `2026-07-30-agent-server-eval-benchmark-pivot-changes-and-decisions.md`
+- 【立】评估 judge 口径：agent=deepseek-v4-flash、judge=deepseek-v4-pro（hybrid 评分对 judge 质量敏感，judge 成本 <$5）
 
 ---
 
