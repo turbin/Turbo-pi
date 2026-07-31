@@ -34,6 +34,7 @@ How to read it:
 - **Per-phase reading order**: phase spec/plan → per-task `*-changes-and-decisions.md` records → live verification report → closeout / acceptance report.
 - **Cross-task constraints** (repo-only modifications, omlx untouchable, commit format, git discipline) have a single canonical home: the "通用约束" section of `doc/design/2026-07-22-agent-server-p3-candidate-tasks.md`. Later task briefs reference it — change it there, not per document.
 - **Maintenance rule**: when adding a new design document, update `doc/design/INDEX.md` in the same commit.
+- **`doc/design/plans/` 子目录（2026-07-31 起）**：本工程产生的所有计划（plan）与任务书必须存放于此，命名 `<date>-<topic>-plan.md`，并在 INDEX.md 登记（同 commit）。不得只留在 agent 会话的临时 plan 文件中。
 - **`doc/design/progress/` 子目录**：里程碑进度与多 agent 交接文件（子任务状态表、共享环境事实、断点恢复指引），每里程碑一个文件，规范见 `doc/design/progress/README.md`。执行 agent 必须按更新纪律认领/完成/中断时更新；它存操作性状态，`doc/design/` 根文档仍存长期决策。
 
 ## Technology Stack

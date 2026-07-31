@@ -142,7 +142,6 @@
 | 2026-07-31-student-teacher-implementation-report.md | **学生-老师实现结果详细报告**：工程变更明细（gateway thinking/agent-server stop 透传/ALFWorld infra）、逐层验证记录（含时序图）、三腿结果与判据、根因研究、9 篇文献 grounding、5 项已知限制、后续路线优先级；commit 序列与测试基线 |
 | 2026-07-31-agent-server-alfworld-three-leg-report.md | **ALFWorld 三腿 A/B 报告**：L1 DeepSeek 9/134（6.7%）/ L2 学生基线 8（6.0%）/ L3 学生+注入 10（7.5%）——判据①注入无害成立；腿间差在噪声内（诚实声明）；L3 期间评估库经验=0（注入为空块，有益性待 E5）；升级率 73-74%、云端 token 学生腿省 21% 但墙钟 5-6 倍；12,744 session 已归档为 E5 原料；usage 透传缺陷待修 |
 | 2026-07-31-agent-model-selection-and-planner-executor-literature.md | **文献综述**（5 篇论文下载本地解析，`doc/research/papers/`）：instruct 增益是 prompt 模板依赖（zero-shot 差 30pp+）、Harness-Bench 分数=model×harness、COPE 置信路由 ALFWorld 省 29%、ReWOO/PEACE 静态规划在探索环境失效（论文点名）；**planner-executor 不能防数据外泄**（有效形态云端仍需见执行状态）——正解=本地执行+脱敏摘要+DLP；路线修正：门控扩展为置信路由、否决静态规划、评估须按 model×harness 配置报告 |
-| 2026-07-31-agent-self-evolution-roadmap.md | **自进化路线图【用户设计意图 + 已批准】**：目标=学教师推理/轨迹增强本地 Agent+小模型；四约束（不微调只外挂记忆/harness 自进化/门控→云→学习/相似轨迹合并）；差距分析（escalation 未回流进化、无聚类合并、harness 静态）；R0 评估收口+学生修复 → R1 轨迹合并+入库验证 → R2 升级轨迹学习闭环（核心价值回路）→ R3 harness 自进化（人工审批门）→ R4 全本地化决策点；北极星=升级率下降+SR 升+云成本降 |
 | 2026-07-31-agent-server-student-empty-output-analysis.md | **empty_output 根因分析报告**：L2 升级率 74%（99.5% empty_output）——7 个假设逐一排除（stop/长 prompt/换载/reasoning 丢弃/gateway bug/历史诱导/rapid-fire），决定性实验直连 omlx 证实 **gemma-4-12B 对 ReAct 范例+长历史 prompt 立即吐 EOS/空白**（content 缺失，completion_tokens≈2）；门控兜底零感知但 token 反超直连；建议学生换 Qwen3.5-27B-Distilled（S1）；含架构图与时序图 |
 
 ### 阶段 7：R 真实化（2026-07-23 立项，同日收口）
@@ -154,6 +153,17 @@
 | 2026-07-23-agent-server-r2-mock-vs-real-evaluation.md | R2 对照评估：role 偏倚为 Mock 门控产物（真实单轮 4 Method 0 Workflow）；截断与并存行两触发条件命中但均评审无需动作；切换真实 teacher 的 plist 指令（用户动作）+ 成本估算（增量派生观察项）；基线已刷新为真实 teacher 版 |
 | 2026-07-23-agent-server-r3-c-heavy-review.md | R3 评审：**C-重 No-Go**（真实 teacher 下 C-轻成立，重启条件明确）；两触发评审正式结论（截断不可惜上限维持、并存行非重复不清理）；runbook §3 判读规则修订 |
 | progress/2026-07-23-r-real-teacher.md | R 里程碑进度与交接：R1-R3 状态表、LLM 切换机制等共享环境事实、断点恢复指引 |
+
+### 阶段 10：plans 子目录（计划与任务书，2026-07-31 起规范设立）
+
+**规范**：本工程产生的所有计划（plan）与任务书必须存放于 `doc/design/plans/`，命名 `<date>-<topic>-plan.md`（路线图等长期文档同目录），并在本 INDEX 登记（与文件同 commit 更新）。
+
+| 文件 | 内容 |
+|---|---|
+| plans/2026-07-29-eval-e23-closeout-plan.md | E2.3 全量收口计划：spec 符合性审计（4 处合规缺口）+ Phase A-C（归档/报价/预算检查点/全量执行/收口） |
+| plans/2026-07-30-eval-benchmark-pivot-plan.md | E 改道计划 v3：benchmark 替换为 ALFWorld+QwenClawBench+Claw-Eval（三 benchmark 调研结论、臂切换、成本表） |
+| plans/2026-07-30-student-teacher-reconnect-plan.md | 学生-老师链路接回计划：勘察结论（代码行级）+ 三腿实验设计 + S1-S7 执行步骤 + 验收标准 |
+| plans/2026-07-31-agent-self-evolution-roadmap.md | **自进化路线图【用户设计意图 + 已批准】**：四约束（不微调只外挂记忆/harness 自进化/门控→云→学习/相似轨迹合并）；R0 评估收口 → R1 轨迹合并+入库验证 → R2 升级轨迹学习闭环 → R3 harness 自进化（人工审批门） → R4 全本地化决策点；北极星=升级率下降+SR 升+云成本降 |
 
 进度跟踪目录 `doc/design/progress/`：每个里程碑一个进度文件，多 agent 交接 + 断点恢复用；规范见 `progress/README.md`。
 
