@@ -2,7 +2,7 @@
 
 状态：进行中
 任务书：`doc/design/2026-07-24-agent-server-eval-benchmark-tasks.md`
-最近更新：2026-07-30T21:25+08:00 by kimi（学生-老师链路接回完成；ALFWorld 三腿：L1 完成 SR 6.7%，L2 学生腿运行中，L3 排队）
+最近更新：2026-07-31T15:00+08:00 by kimi（ALFWorld 三腿全完成：L1 6.7% / L2 6.0% / L3 7.5%，判据①成立；报告已出）
 
 ## 1. 子任务状态表
 
@@ -12,8 +12,9 @@
 | E1 A/B 对照 harness 脚手架 | done | claude（kimi 验收） | 2026-07-24T16:53+08:00 | 决策记录 `doc/design/2026-07-25-agent-server-e1-ab-harness-changes-and-decisions.md`；`eval/harness.py` + `eval/tasks/tasks-5.yaml`；smoke-02 两臂各 5/5 通过。**验收（kimi 07-24）：通过**，修正 2 处（token delta 归因、日期）；遗留：commit 缺 conventional 前缀；归档混入 E0 session |
 | ~~E2 Terminal-Bench A/B~~【废 07-30】 | E2.0/E2.1/E2.2 done；E2.3 全量中止（控制臂 8 trial/2 resolved 归档 `eval/results/tb-full-20260729/`） | claude（kimi 验收） | 2026-07-30T15:30+08:00 | **复验（kimi 07-28）：通过**。原始 results.json 证实控制臂 1/3 resolved（assign-seats）、实验臂 2/3 resolved（assign-seats + blind-maze），126 sessions（含真实 token usage）落盘；252 vitest 全绿。保留项：控制臂 blind-maze 实为安装失败（pip IncompleteRead，agent 未跑）；analyze-access-logs 无 trial 产物。详见验收报告复验节；**E2.3 小规模（kimi 07-29）：控制臂 4/5 = 实验臂 4/5**（唯一失败 ancient-puzzle 双臂 agent 真实运行未解出，有效对照）；六类环境失败全部机制性解决（wheelhouse/中继/测试注入/colima 代理/顺序执行/NO_PROXY），全量 infra 就绪，见 `doc/design/2026-07-28-agent-server-e2-wheelhouse-relay-changes-and-decisions.md` §7-8 |
 | ~~E3 SWE-bench A/B~~【废 07-30】 | cancelled | | | |
-| E2' ALFWorld 三腿 A/B | L1 done（SR 9/134=6.7%）；L2 in_progress；L3 pending | kimi | 2026-07-30T21:25+08:00 | **链路接回**（决策记录 `doc/design/2026-07-30-agent-server-student-teacher-reconnect-changes-and-decisions.md`）：8789→8787→omlx+DeepSeek 升级全通；学生测速 3.2min/局、升级率 ~30%；L1=直连 DeepSeek（9/134）；L2=8787 学生基线；L3=8789 注入（session 已归档清空） |
+| E2' ALFWorld 三腿 A/B | **done** | kimi | 2026-07-31T15:00+08:00 | **链路接回**（决策记录 `doc/design/2026-07-30-agent-server-student-teacher-reconnect-changes-and-decisions.md`）：8789→8787→omlx+DeepSeek 升级全通；学生测速 3.2min/局、升级率 ~30%；L1=直连 DeepSeek（9/134）；L2=8787 学生基线；L3=8789 注入（session 已归档清空） |
 | E3' QwenClawBench A/B（100×2） | pending | | | |
+| E5 飞轮实验（冷库 L3 轨迹→进化→热库重跑） | **next**（原料：sessions-archive-l3 6372 sessions） | | | |
 | E4' Claw-Eval 文本子集 A/B（199×2） | pending | | | |
 | E5 飞轮实验 + 总评估报告（原 E4） | pending | | | |
 
@@ -22,6 +23,7 @@
 ## 2. 交接信息（跨 agent 共享事实）
 
 - 2026-07-28 kimi：**E2.3 前置条件完成**——①离线 wheelhouse：`eval/wheelhouse/`（96 wheel/178MB，gitignored），adapter `perform_task` 复制进容器 `/wheelhouse`，安装脚本离线优先。②宿主中继 `eval/deepseek_relay.mjs`（0.0.0.0:8899 → api.deepseek.com）：**环境事实变更——7897 代理已失效、VM→DeepSeek 直连间歇性断流**，控制臂 LLM 流量必须走中继（`OPENAI_BASE_URL=http://host.docker.internal:8899/v1`）。验证：blind-maze 控制臂 mini 真实 32 步 0 连接错误。详见 `doc/design/2026-07-28-agent-server-e2-wheelhouse-relay-changes-and-decisions.md`。
+- 2026-07-31 kimi：三腿报告 `doc/design/2026-07-31-agent-server-alfworld-three-leg-report.md`。关键事实：①L3 期间评估库经验=0（6373 请求 0 命中，注入为空块）——L3≈L2+空注入，有益性证明只能来自 E5 热库轮；②L3 的 client 侧 usage=0（gateway 路径 usage 未透传回 client，follow-up）；③腿间差 1-2 局在噪声内，报告按 Harness-Bench 纪律以 model×harness 配置呈现。
 - 2026-07-30 kimi：**agent-server 生产修复**——`stop`/`thinking` 参数透传（types/proxy-handler/gateway-client/server + 2 TDD 用例，254 全绿，commit 32a46959 + 后续）；8789 已重启加载修复。ALFWorld 双臂跑法：`eval/alfworld_agent.py --base-url <8899中继|8789> --output ...`（控制臂 8899、实验臂 8789，KEY 从 ../.env 用 grep 提取，`source` 方式不可靠）。
 - 2026-07-28 kimi：E2.3 全量启动方式（v2，以此为准）——前置三进程：中继 `node eval/deepseek_relay.mjs`（8899）、正向代理 `node eval/host_forward_proxy.mjs`（8898）、8789 评估实例（`HOST=0.0.0.0`）。tb 进程导出 `HTTP(S)_PROXY=http://host.docker.internal:8898`（build/install 用），控制臂 `OPENAI_BASE_URL=http://host.docker.internal:8899/v1`，实验臂 `...:8789/v1`。**双臂必须顺序执行**（部分任务硬编码宿主端口，如 ancient-puzzle 8090）。测试期网络：`eval/inject-proxy-into-tests.sh`（已注入 5 任务，全量前需跑全部任务）。colima daemon 代理已配为 192.168.5.2:8898（07-28 重启）；Docker Hub 拉取走 daocloud 镜像 + retag。
 - 2026-07-28 kimi：首轮小规模失败教训——①双臂并行端口冲突；②实验臂撞 colima 重启窗口整轮作废；③TB run-tests.sh 自身要外网（apt+uv+pytest），需注入代理+镜像；④oracle 型错误：deb.debian.org 直连 15kB/s，清华镜像必需。
