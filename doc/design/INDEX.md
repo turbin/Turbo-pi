@@ -142,6 +142,7 @@
 | 2026-07-31-student-teacher-implementation-report.md | **学生-老师实现结果详细报告**：工程变更明细（gateway thinking/agent-server stop 透传/ALFWorld infra）、逐层验证记录（含时序图）、三腿结果与判据、根因研究、9 篇文献 grounding、5 项已知限制、后续路线优先级；commit 序列与测试基线 |
 | 2026-07-31-agent-server-alfworld-three-leg-report.md | **ALFWorld 三腿 A/B 报告**：L1 DeepSeek 9/134（6.7%）/ L2 学生基线 8（6.0%）/ L3 学生+注入 10（7.5%）——判据①注入无害成立；腿间差在噪声内（诚实声明）；L3 期间评估库经验=0（注入为空块，有益性待 E5）；升级率 73-74%、云端 token 学生腿省 21% 但墙钟 5-6 倍；12,744 session 已归档为 E5 原料；usage 透传缺陷待修 |
 | 2026-07-31-agent-model-selection-and-planner-executor-literature.md | **文献综述**（5 篇论文下载本地解析，`doc/research/papers/`）：instruct 增益是 prompt 模板依赖（zero-shot 差 30pp+）、Harness-Bench 分数=model×harness、COPE 置信路由 ALFWorld 省 29%、ReWOO/PEACE 静态规划在探索环境失效（论文点名）；**planner-executor 不能防数据外泄**（有效形态云端仍需见执行状态）——正解=本地执行+脱敏摘要+DLP；路线修正：门控扩展为置信路由、否决静态规划、评估须按 model×harness 配置报告 |
+| 2026-07-31-agent-self-evolution-roadmap.md | **自进化路线图【用户设计意图 + 已批准】**：目标=学教师推理/轨迹增强本地 Agent+小模型；四约束（不微调只外挂记忆/harness 自进化/门控→云→学习/相似轨迹合并）；差距分析（escalation 未回流进化、无聚类合并、harness 静态）；R0 评估收口+学生修复 → R1 轨迹合并+入库验证 → R2 升级轨迹学习闭环（核心价值回路）→ R3 harness 自进化（人工审批门）→ R4 全本地化决策点；北极星=升级率下降+SR 升+云成本降 |
 | 2026-07-31-agent-server-student-empty-output-analysis.md | **empty_output 根因分析报告**：L2 升级率 74%（99.5% empty_output）——7 个假设逐一排除（stop/长 prompt/换载/reasoning 丢弃/gateway bug/历史诱导/rapid-fire），决定性实验直连 omlx 证实 **gemma-4-12B 对 ReAct 范例+长历史 prompt 立即吐 EOS/空白**（content 缺失，completion_tokens≈2）；门控兜底零感知但 token 反超直连；建议学生换 Qwen3.5-27B-Distilled（S1）；含架构图与时序图 |
 
 ### 阶段 7：R 真实化（2026-07-23 立项，同日收口）
