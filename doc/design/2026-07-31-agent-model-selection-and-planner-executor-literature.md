@@ -16,7 +16,9 @@
 | COPE: Efficient LLM Collaboration via Planning（2026-01） | `2506.11578.pdf/.txt` | 小大模型置信度级联协作（含 ALFWorld 实测） |
 | PEACE: Planner–Executor with Constraint Enforcement（2026-05） | `2606.00104.pdf/.txt` | 单 pass 规划 + 确定性执行 + 有界重规划（UAV） |
 | ReWOO: Decoupling Reasoning from Observations（2023-05） | `2305.18323.pdf/.txt` | 静态规划蓝图，token 5× 节省；明确以 ALFWorld 为反例 |
-| TRUST: Uncertainty-Aligned RL for Tool-Calling（2026-06） | `2606.06976.pdf`（下载待补） | agentic tool-calling 后训练（备选参考） |
+| TRUST: Uncertainty-Aligned RL for Tool-Calling（2026-06） | `2606.06976.html/.txt` | agentic tool-calling 后训练（备选参考） |
+
+补充（TRUST，2026-06，arXiv 2606.06976）：不确定性对齐 RL 专治 tool-calling 决策——对比 turn-level GRPO，Acc Norm 绝对提升 **8.37pp**，幻觉指标（Tool Hallucination + FDAR）从 30.49% 降至 **22.90%**；benchmark 为 When2Call/ToolSandbox/BFCL-V4。对我们的启示：学生模型的"何时调工具/何时输出"决策能力是可以后训练出来的——支持 S4（升级轨迹蒸馏学生）的技术可行性。
 
 ## 1. Q1：微调风格差异与 agent 选型
 
