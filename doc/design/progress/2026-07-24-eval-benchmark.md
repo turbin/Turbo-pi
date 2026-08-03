@@ -2,7 +2,7 @@
 
 状态：进行中
 任务书：`doc/design/2026-07-24-agent-server-eval-benchmark-tasks.md`
-最近更新：2026-07-31T15:00+08:00 by kimi（ALFWorld 三腿全完成：L1 6.7% / L2 6.0% / L3 7.5%，判据①成立；报告已出）
+最近更新：2026-08-03T21:45+08:00 by kimi（E5 完成：热库 SR 8.2% > 冷库 7.5%，升级率 -18.2pp，判据②方向成立但效应量噪声级）
 
 ## 1. 子任务状态表
 
@@ -14,7 +14,7 @@
 | ~~E3 SWE-bench A/B~~【废 07-30】 | cancelled | | | |
 | E2' ALFWorld 三腿 A/B | **done** | kimi | 2026-07-31T15:00+08:00 | **链路接回**（决策记录 `doc/design/2026-07-30-agent-server-student-teacher-reconnect-changes-and-decisions.md`）：8789→8787→omlx+DeepSeek 升级全通；学生测速 3.2min/局、升级率 ~30%；L1=直连 DeepSeek（9/134）；L2=8787 学生基线；L3=8789 注入（session 已归档清空） |
 | E3' QwenClawBench A/B（100×2） | pending | | | |
-| E5 飞轮实验（冷库 L3 轨迹→进化→热库重跑） | **next**（原料：sessions-archive-l3 6372 sessions） | | | |
+| E5 飞轮实验（冷库 L3 轨迹→进化→热库重跑） | **done** | kimi | 2026-08-03T21:45+08:00 | R2 热库 SR 11/134=8.2% > R1 冷库 10/134=7.5%（判据②方向成立，+1 局在噪声内）；**次级强信号：升级率 72.6%→54.4%（-18.2pp）、云端 token -18%**；检索命中 6231/6231=100%；决策记录 `doc/design/2026-08-03-agent-server-e5-flywheel-changes-and-decisions.md`；建议进化 2-3 轮复测看复利效应 | 坑：6372 per-request session 喂进化会超时/SIGKILL → 合成 134 局干净 session（`var/eval/sessions-r1/`，从 L3 JSONL 轨迹+任务行前缀匹配回構）；进化 metric=238（active EVIDENCE 238 条，均 quality 0.547）；热库轮 request_traces 命中 40/40（检索真正工作） |
 | E4' Claw-Eval 文本子集 A/B（199×2） | pending | | | |
 | E5 飞轮实验 + 总评估报告（原 E4） | pending | | | |
 

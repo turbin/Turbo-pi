@@ -139,6 +139,7 @@
 |---|---|
 | 2026-07-30-agent-server-eval-benchmark-pivot-changes-and-decisions.md | **E 里程碑 benchmark 替换【用户拍板】**：Terminal-Bench/SWE-bench 弃用（TB 全量中止，8 trial 数据归档）；E2'=ALFWorld（134 局，自写 ReAct loop）、E3'=QwenClawBench（100 任务，OpenClaw harness）、E4'=Claw-Eval 文本子集（199 任务）；judge=deepseek-v4-pro；三 benchmark 臂切换均零代码（端点配置）；预估总成本 $20-35 |
 | 2026-07-30-agent-server-student-teacher-reconnect-changes-and-decisions.md | **学生-老师链路接回【用户拍板选 B】**：omlx 学生模型零负荷问题——agent-gateway 开 DeepSeek 云升级 + channel 出云 + envelope 显式接受 thinking（本地弃/云透传）；8789 env 改指 8787；**三腿实验设计**（L1 DeepSeek 直连参考 / L2 学生管线基线 / L3 学生管线+注入）；omlx 双探针过（key/stop）；生产 8788 接回推迟 |
+| 2026-08-03-agent-server-e5-flywheel-changes-and-decisions.md | **E5 飞轮实验**：冷 7.5% → 热 8.2%（判据②方向成立、效应量噪声级）；强次级信号：升级率 -18.2pp（72.6%→54.4%）、云端 token -18%、检索命中 100%；进化 metric=238（合成 134 干净轨迹解决管线超时）；决策：不宣告强胜利，建议进化 2-3 轮看复利 |
 | 2026-07-31-development-roadmap.md | **开发路线（当前最新）**：近期 E 收口（E5 飞轮决定性实验/S1 换型/usage 修复/P2/P3）→ 中期学生成色（置信路由/S4 蒸馏/卡片聚类去重+入库验证/S7 生产接回/技术债）→ 远期 spec 遗留 Go Gates（规则学习/反馈分类/scope/New API/双云/零外泄）；Go/No-Go 门决策图；不变量 4 条 |
 | 2026-07-31-student-teacher-implementation-report.md | **学生-老师实现结果详细报告**：工程变更明细（gateway thinking/agent-server stop 透传/ALFWorld infra）、逐层验证记录（含时序图）、三腿结果与判据、根因研究、9 篇文献 grounding、5 项已知限制、后续路线优先级；commit 序列与测试基线 |
 | 2026-07-31-agent-server-alfworld-three-leg-report.md | **ALFWorld 三腿 A/B 报告**：L1 DeepSeek 9/134（6.7%）/ L2 学生基线 8（6.0%）/ L3 学生+注入 10（7.5%）——判据①注入无害成立；腿间差在噪声内（诚实声明）；L3 期间评估库经验=0（注入为空块，有益性待 E5）；升级率 73-74%、云端 token 学生腿省 21% 但墙钟 5-6 倍；12,744 session 已归档为 E5 原料；usage 透传缺陷待修 |
