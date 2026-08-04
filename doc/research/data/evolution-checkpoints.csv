@@ -1,0 +1,2 @@
+id,kind,epoch,metric,snapshot,created_at
+ckpt-81bbf802b3a1d148,evolution,1785727803809,238,"{""etlInserted"":18185,""pipeline"":{""skills"":0,""sops"":0,""cards"":129},""promoted"":129,""rescored"":109,""promotedFromDormant"":109,""removedDormant"":8076}",2026-08-03T03:30:03.809Z

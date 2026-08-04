@@ -90,6 +90,11 @@ stop 参数（3 变体均 EMPTY）｜长 prompt（2-4k tokens vs 上限 262k）�
 |---|---|---|
 | 逐局明细（536 行：腿×局×胜负/步数/无效动作/token/耗时） | `doc/research/data/alfworld-trials.csv` | 由 §7 四处 JSONL 直接生成 |
 | 升级统计（窗口×provider×purpose×原因） | `doc/research/data/escalation-stats.csv` | gateway var/agent_gateway.db model_runs |
+| **逐请求检索命中明细（6231 行）** | `doc/research/data/request-traces.csv` | request_id/ts/retrieved_ids/kinds/hit/finish/tokens/latency——R2 热库轮每请求的注入全貌 |
+| **逐门控调用明细（32185 行）** | `doc/research/data/model-runs.csv` | trace_id/sequence/purpose/provider/quality_signals/tokens/时间戳——0703 起 gateway 全部调用（含升级对） |
+| **经验库全量（18314 行）** | `doc/research/data/experiences.csv` | id/type/title/quality/status/times_selected/payload_json——238 active + dormant + removed |
+| **冷/热逐局轨迹对照（268 行，1.3MB）** | `doc/research/data/round-comparison-per-game.csv` | 每局两行（R1/R2）含完整轨迹文本——论文 case study 直接素材 |
+| 进化 checkpoint | `doc/research/data/evolution-checkpoints.csv` | metric=238 记录 |
 | L1 轨迹 | `packages/agent-server/eval/results/alfworld-20260730/control-full.jsonl` | 134 局全轨迹 |
 | L2 轨迹 | `.../student-full.jsonl` | 同上 |
 | L3 冷库轨迹 | `.../experiment-full.jsonl` | 同上 |
