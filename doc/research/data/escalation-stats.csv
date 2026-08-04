@@ -1,0 +1,10 @@
+window,provider,purpose,calls,input_tokens,output_tokens,escalation_reason,reason_count
+L2-control-student,deepseek,escalation,4721,10717616,66023,empty_output,4700
+L2-control-student,deepseek,escalation,4721,10717616,66023,finish_reason_length,6
+L2-control-student,omlx,primary,6274,14403298,38892,,
+L3-experiment-student-inj-cold,deepseek,escalation,4706,11111566,82703,empty_output,4691
+L3-experiment-student-inj-cold,deepseek,escalation,4706,11111566,82703,finish_reason_length,13
+L3-experiment-student-inj-cold,omlx,primary,6484,15259747,40457,,
+R2-experiment-student-inj-warm,deepseek,escalation,3376,9101347,74079,empty_output,3342
+R2-experiment-student-inj-warm,deepseek,escalation,3376,9101347,74079,finish_reason_length,28
+R2-experiment-student-inj-warm,omlx,primary,6204,16878687,70244,,
