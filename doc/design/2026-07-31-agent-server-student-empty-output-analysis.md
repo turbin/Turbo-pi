@@ -175,6 +175,23 @@ sequenceDiagram
 
 **证据强度与边界**：与全部 8 组对照实验一致的行为级机制模型 + 文献（2601.13244 的负例样本、Harness-Bench 36.4% 格式失败）。无法做权重级因果验证（无 gemma 训练数据与激活工具）；omlx 服务层因素已部分排除但未完全排除。最终判别实验：agent 后训练同级模型跑同一批 EMPTY prompt（prompt 集现存可复用）。
 
+## 4.5 D3 判别实验（2026-08-04）：机制链闭合
+
+**设计**：取 §4 中 gemma 曾 EMPTY 的 prompt 集（4 组 head+hist20 + 1 组 head-only），同参数（stop/temp=0/max_tokens=100）分别打 gemma-4-12B-it-4bit（阴性对照）与 Qwen3.5-9B-4bit（agentic 训练，同 ~10B 量级）。数据：`eval/results/d3-discriminate-20260804.json`。
+
+**结果**：
+
+| case | gemma-4-12B | Qwen3.5-9B |
+|---|---|---|
+| game8 heat head+hist20 | EMPTY | 正常应答 |
+| game3 clean head+hist20 | 正常 | 正常应答 |
+| game12 cool head+hist20 | EMPTY | 正常应答 |
+| game20 clean head+hist20 | EMPTY | 正常应答 |
+| game8 heat head-only | EMPTY | 正常应答 |
+| **EMPTY rate** | **4/5** | **0/5** |
+
+**结论**：同规模量级、同一 omlx 服务层、同一批 prompt——chat 微调的 gemma 复现空输出，agentic 训练的 Qwen3.5-9B 全部正常应答。**"空输出是微调分布失配、不是 12B 级模型的宿命"由此从行为级机制模型升级为受控实验结论**；omlx 服务层因素彻底排除。注：Qwen3.5-9B 的应答带思考叙述前缀（非严格 ReAct 单行格式），格式对齐仍需 harness 适配，但"立即吐 EOS"的失效模式不存在。
+
 ## 5. 结论
 
 1. **根因**：gemma-4-12B-it-4bit 学生模型对 ReAct 协议 prompt（多范例 + 长历史）产出空响应（immediate EOS），非任何基础设施缺陷。gateway、agent-server、omlx、agent 四者均无 bug。
