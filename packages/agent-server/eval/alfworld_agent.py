@@ -36,11 +36,40 @@ PREFIXES = {
 
 MAX_STEPS = 49
 
-
 def process_ob(ob: str) -> str:
     if ob.startswith("You arrive at loc "):
         ob = ob[ob.find(". ") + 2 :]
     return ob
+
+
+# Command extraction: reasoning-distilled models (e.g. Qwen3.5-27B-Distilled)
+# narrate before acting ("Let me think...") instead of emitting the ReAct
+# command on the first line. Generate without stop=["\n"] and extract the
+# command: last line starting with a known verb, or a backticked command.
+# For single-command outputs (DeepSeek) this is a no-op. (2026-08-04 fix)
+COMMAND_VERBS = (
+    "go to", "take", "put", "open", "close", "clean", "heat", "cool",
+    "use", "look", "examine", "inventory", "think:",
+)
+
+
+def extract_command(text: str) -> str:
+    import re
+
+    # Find verb-initial command phrases anywhere in the text (line-anchored or
+    # after prose/backticks), take the last one, and cut at the verb start.
+    verb_re = re.compile(
+        r"(go to |take |put |open |close |clean |heat |cool |use |examine |inventory\b|look\b|think:)"
+    )
+    matches = []
+    for m in verb_re.finditer(text):
+        phrase = text[m.start():].split("\n")[0]
+        phrase = phrase.strip().strip("`").rstrip(".").strip()
+        if phrase:
+            matches.append(phrase)
+    if matches:
+        return matches[-1].lstrip(">").strip()
+    return text.strip().split("\n")[-1].strip().lstrip(">").strip()
 
 
 def main() -> None:
@@ -68,18 +97,19 @@ def main() -> None:
                                 "Respond with exactly one short command per turn, e.g. "
                                 "'go to cabinet 1', 'take mug 1 from countertop 1', "
                                 "'open drawer 1', or 'think: <reasoning>'. "
-                                "Output the command only, no other text."
+                                "You may think briefly, but your final line MUST be "
+                                "the command itself."
                             ),
                         },
                         {"role": "user", "content": prompt},
                     ],
-                    stop=["\n"],
                     temperature=0,
-                    max_tokens=100,
+                    max_tokens=200,
                     extra_body={"thinking": {"type": "disabled"}},
                 )
                 usage = resp.usage.model_dump() if resp.usage else {}
-                action = resp.choices[0].message.content.strip().lstrip(">").strip()
+                raw = resp.choices[0].message.content.strip()
+                action = extract_command(raw)
                 return action, usage
             except Exception as e:  # noqa: BLE001 - retry any transient API error
                 wait = min(2**attempt * 4, 60)
