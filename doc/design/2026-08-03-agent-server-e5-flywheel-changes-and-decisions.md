@@ -64,4 +64,19 @@ SPEC：`doc/design/2026-07-24-agent-server-eval-benchmark-tasks.md`（E 总任�
 2. R2 S1 学生换型（27B）——与飞轮独立，可并行
 3. 或者按路线推进 R4 QwenClawBench
 
+## 7. 追加分析：为什么热库只领先 1 局（2026-08-03 用户追问）
+
+**数据事实**：
+
+1. **经验形态**：238 条 active 全部是 EVIDENCE 原始碎片（Action/Observation 句子），Method/Guard/guidance 类 = **0 条**；检索命中的是同类游戏的位置/动作描述（如 "On the desk 1, you see a desklamp 1"）
+2. **效应分解**：empty_output 升级 4691→3342（**-29%**）；轨迹无效动作率（obs="Nothing happens."）41.2%→28.6%（**-12.6pp**）；SR 仅 +1 局
+
+**结论（分层瓶颈解释）**：注入碎片是 gemma 缺失的**格式示范**，大幅修复了生成层（空输出/无效动作）——升级率 -18.2pp 的来源即此；但 SR 天花板在**规划层**（valid_unseen 物体位置未见，探索策略弱），位置类碎片对规划既不可用还可能构成错误暗示（正负对冲）。净值 = 大格式收益 × 规划对冲 = +1 局。**这不是飞轮无效，而是当前经验形态（原始碎片）够不到规划瓶颈。**
+
+**改进路径**（优先级序）：
+
+1. 经验提炼升级方法级：Method/Guard ABILITY 或 Skill-DISCO 式过程技能（当前 pipeline 未产出，因 R1 成功轨迹仅 10/134——稀疏，Skill-DISCO 论文同样警告）
+2. 位置类碎片过滤/降权（检索侧加类型权重或 payload 黑名单）
+3. 成功轨迹富集先行：S1 换型 27B 或老师直连跑出更多成功局，再进化——先解决"无米下锅"
+
 Refer Spec：`doc/design/2026-07-24-agent-server-eval-benchmark-tasks.md`；`doc/design/2026-07-31-agent-server-alfworld-three-leg-report.md`；`doc/design/2026-07-31-agent-server-student-empty-output-analysis.md`
