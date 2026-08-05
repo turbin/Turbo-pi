@@ -15,6 +15,14 @@ export interface ProxyStreamOptions extends Partial<SimpleStreamOptions> {
 	stop?: string | string[];
 	/** Vendor-specific thinking-mode switch (e.g. DeepSeek {type: "disabled"}), forwarded opaquely. */
 	thinking?: Record<string, unknown>;
+	/**
+	 * Experience injection switch. When false, retrieval/injection are skipped
+	 * and the model sees exactly the caller's context, while session recording
+	 * and request traces continue unchanged (control arms run through the same
+	 * code path). Defaults to the server-level setting (env
+	 * AGENT_SERVER_INJECTION, default on); an explicit boolean overrides it.
+	 */
+	injection?: boolean;
 }
 
 export interface Experience {

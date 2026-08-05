@@ -96,6 +96,10 @@ def main() -> None:
     ap.add_argument("--json-out", default="")
     args = ap.parse_args()
 
+    from preflight import ensure_for_base_url
+
+    ensure_for_base_url(args.base_url)
+
     cases = build_cases()
     results = []
     print(f"{'case':38s} | {'gemma-4-12B':28s} | {'Qwen3.5-9B':28s}")

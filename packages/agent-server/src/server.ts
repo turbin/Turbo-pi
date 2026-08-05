@@ -26,6 +26,8 @@ export interface CreateServerOptions {
 	store?: ExperienceStore;
 	gatewayUrl?: string;
 	sessionDir?: string;
+	/** Server-level injection default; env AGENT_SERVER_INJECTION=off disables. Per-request `injection` overrides. */
+	injection?: boolean;
 }
 
 /**
@@ -37,6 +39,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 	const fastify = Fastify({ logger: false });
 	const gatewayUrl = opts.gatewayUrl ?? process.env.GATEWAY_URL ?? "http://127.0.0.1:8787";
 	const sessionDir = opts.sessionDir ?? process.env.AGENT_SERVER_SESSION_DIR ?? "./var/sessions";
+	const injectionDefault = opts.injection ?? process.env.AGENT_SERVER_INJECTION !== "off";
 
 	let store = opts.store;
 	if (!store) {
@@ -84,7 +87,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 		const body = request.body as StreamRequest;
 		const sessionPath = join(sessionDir, `${Date.now()}-${randomUUID()}.jsonl`);
 		try {
-			const stream = await handleStream(body, { store, gatewayUrl, sessionPath });
+			const stream = await handleStream(body, { store, gatewayUrl, sessionPath, injection: injectionDefault });
 			reply.header("content-type", "text/event-stream");
 			return reply.send(Readable.fromWeb(stream as unknown as NodeReadableStream<Uint8Array>));
 		} catch (err) {
@@ -158,6 +161,10 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 					? (body.thinking as Record<string, unknown>)
 					: undefined,
 		};
+		// Injection switch: request body `injection: false` (or true) overrides
+		// the server-level default. Sessions and request traces are recorded
+		// regardless — control arms must stay inside the learning loop.
+		const injectionOn = typeof body.injection === "boolean" ? body.injection : injectionDefault;
 		const sessionPath = join(sessionDir, `${Date.now()}-${randomUUID()}.jsonl`);
 		try {
 			if (body.stream === true) {
@@ -180,7 +187,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 							.filter((content: string) => !content.startsWith("<system-reminder>"))
 							.pop() ?? "";
 					console.log("[agent-server] stream query:", query);
-					const retrieved = await retrieve(store, query, 8);
+					const retrieved = injectionOn ? await retrieve(store, query, 8) : [];
 					// O spec observability point 1 (retrieval): local experience content.
 					const kinds = kindsOf(retrieved);
 					await store.recordRequestTrace({
@@ -198,14 +205,20 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 						kinds: summarizeKinds(kinds),
 						injected: retrieved.length > 0 ? titlesOf(retrieved) : "",
 						query_len: query.length,
+						...(injectionOn ? {} : { injection: "off" }),
 					});
-					const injected = await buildInjection(context as any, retrieved, { store });
+					const injected = injectionOn
+						? await buildInjection(context as any, retrieved, { store })
+						: (context as any);
 					const openaiReq = toOpenAIRequest(injected, model as any);
 
 					for (const message of messages) {
 						writer.writeMessage(message);
 					}
-					writer.writeCustomEntry("experience_injection", { retrieved: retrieved.map((r) => r.experience.id) });
+					writer.writeCustomEntry("experience_injection", {
+						retrieved: retrieved.map((r) => r.experience.id),
+						...(injectionOn ? {} : { disabled: true }),
+					});
 					// SPEC §6: record the injected context the model actually saw
 					// (same custom_message entry handleStream writes).
 					writer.writeCustomEntry("custom_message", {
@@ -251,7 +264,10 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 				}
 			}
 
-			const stream = await handleStream({ model, context, options }, { store, gatewayUrl, sessionPath, requestId });
+			const stream = await handleStream(
+				{ model, context, options: { ...options, injection: injectionOn } },
+				{ store, gatewayUrl, sessionPath, requestId },
+			);
 			const reader = stream.getReader();
 			const chunks: string[] = [];
 			const toolCalls = new Map<number, { id: string; name: string; args: string }>();

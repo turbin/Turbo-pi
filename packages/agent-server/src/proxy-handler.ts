@@ -17,6 +17,8 @@ export interface ProxyHandlerOptions {
 	sessionPath: string;
 	/** O spec R3: request id propagated into trace rows/logs/session header. */
 	requestId?: string;
+	/** Server-level injection default; `StreamRequest.options.injection` overrides per-request. */
+	injection?: boolean;
 }
 
 /** FTS bm25 top-24 -> cosine re-rank top-8 (SPEC §5.1 step 3). */
@@ -55,8 +57,12 @@ export async function handleStream(
 	});
 
 	try {
-		const query = lastUserText(body.context);
-		const retrieved = await retrieve(opts.store, query, RETRIEVAL_LIMIT);
+		// Injection switch: when off, the model sees exactly the caller's
+		// context (control arms run through this same code path so their
+		// sessions/traces still land in the store), while retrieval, the
+		// evidence block, the skill catalog, and SOP schemas are all skipped.
+		const injectionOn = body.options?.injection ?? opts.injection ?? true;
+		const retrieved = injectionOn ? await retrieve(opts.store, lastUserText(body.context), RETRIEVAL_LIMIT) : [];
 		if (opts.requestId) {
 			// O spec observability point 1 (retrieval): local experience content.
 			const kinds = kindsOf(retrieved);
@@ -74,15 +80,26 @@ export async function handleStream(
 				retrieved: retrieved.length,
 				kinds: summarizeKinds(kinds),
 				injected: retrieved.length > 0 ? titlesOf(retrieved) : "",
+				...(injectionOn ? {} : { injection: "off" }),
 			});
 		}
-		const injected = await buildInjection(body.context, retrieved, { store: opts.store });
+		const injected = injectionOn
+			? await buildInjection(body.context, retrieved, { store: opts.store })
+			: {
+					messages: body.context.messages,
+					systemPrompt: body.context.systemPrompt,
+					tools: body.context.tools,
+				};
 		const gatewayReq = toGatewayRequest(injected, body.model, body.options ?? {});
 
 		for (const message of body.context.messages) {
 			writer.writeMessage(message);
 		}
-		writer.writeCustomEntry("experience_injection", { retrieved: retrieved.map((r) => r.experience.id) });
+		writer.writeCustomEntry("experience_injection", {
+			retrieved: retrieved.map((r) => r.experience.id),
+			// Distinguish "injection off" from "retrieval found nothing".
+			...(injectionOn ? {} : { disabled: true }),
+		});
 		// SPEC §6: record the injected context the model actually saw, so
 		// replayed sessions reflect the real prompt (finding 23).
 		writer.writeCustomEntry("custom_message", {

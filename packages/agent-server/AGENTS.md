@@ -14,6 +14,8 @@
 
 - `GATEWAY_URL` 语义：**裸 base 不带 /v1**；`AGENT_GATEWAY_KEY` 对 gateway 是 channel key、对 DeepSeek 直连是 API key（同一变量两种语义）。
 - 生产 compose 栈（8788 server + evolution + weekly-report sidecar）`restart: unless-stopped`，colima 重启自动恢复。
+- **注入开关**（08-05）：`AGENT_SERVER_INJECTION=off` 关服务级默认；请求级 `injection: true/false`（`/v1/chat/completions` body 或 `/api/stream` 的 `options.injection`）覆盖。关闭时跳过检索+注入但 **session/trace 照常记录**——控制臂必须走 8789 + `injection:false`，不再物理旁路（学习回路要吃全量 trace）。session 里 `experience_injection.disabled=true` 区分“关”与“未命中”。
+- **preflight 门禁**（08-05）：`eval/preflight.py`，所有跑批入口（alfworld_agent/harness/d3_discriminate）启动前必过——按 base-url 端口推导依赖链（8789→8787→8000；8899→relay），探活+nohup 自动拉起自有服务（8789/8787/8899），omlx 只能人工起。手动体检：`eval/.venv/bin/python eval/preflight.py <base-url>`。
 
 ## 长任务/服务进程纪律（血泪教训）
 
@@ -32,6 +34,7 @@
 - 协议：ReAct 论文 2-shot、49 步、temperature=0；`stop=["\n"]` + `thinking:{type:"disabled"}` 依赖 agent-server 透传（07-30 修复，改动须保持）。
 - **蒸馏/reasoning 模型会输出叙述文本而非命令**——`extract_command()` 负责从叙述中提取动作（去 stop 参数、max_tokens=200、`>` 剥离）；改 agent 时保持该函数与 `process_ob` 同时存在（07-04 事故：误删 process_ob 导致 NameError）。
 - 确定性：游戏顺序 sorted 固定，双臂/多轮逐局对齐；输出 JSONL append，支持 `--start N` 续跑。
+- 双臂跑法（08-05 起）：基线臂 `--base-url http://127.0.0.1:8789/v1 --injection off`，实验臂同地址 `--injection on`（或省略）——两臂同路径过 agent-server，trace 全落库。
 
 ## 进化管线（offline/）
 

@@ -341,6 +341,11 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Print planned runs without executing")
     args = parser.parse_args()
 
+    # Dependency gate: the experiment arm needs the full local stack up.
+    from preflight import ensure_for_base_url
+
+    ensure_for_base_url(EXPERIMENT_ENDPOINT)
+
     tasks_path = Path(args.tasks)
     if not tasks_path.is_absolute():
         tasks_path = Path.cwd() / tasks_path

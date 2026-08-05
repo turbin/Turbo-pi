@@ -293,6 +293,59 @@ describe("POST /api/stream", () => {
 		expect(injection?.data.retrieved).toEqual([]);
 	});
 
+	it("skips retrieval and injection when disabled per-request, but still records the session", async () => {
+		await store.insert(makeExperience());
+		const fetchMock = mockGatewayFetch(
+			sseStream(['data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n', "data: [DONE]\n\n"]),
+		);
+		const server = createServer({ store, gatewayUrl: GATEWAY_URL, sessionDir });
+
+		const payload = { ...PAYLOAD, options: { ...PAYLOAD.options, injection: false } };
+		const resp = await server.inject({ method: "POST", url: "/api/stream", payload });
+
+		expect(resp.statusCode).toBe(200);
+		// The model sees exactly the caller's context: no evidence block, no
+		// skill catalog, no SOP schemas — even though the store has an active hit.
+		const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+		const sent = JSON.parse(init.body as string);
+		expect(sent.messages).toEqual([{ role: "user", content: "你好" }]);
+
+		// The session is still recorded; the injection entry is marked disabled
+		// so replay/analysis can tell "off" apart from "no hits".
+		const entries = readSessionEntries();
+		expect(entries[0].type).toBe("session");
+		const injection = entries.find((e) => e.customType === "experience_injection");
+		expect(injection?.data.retrieved).toEqual([]);
+		expect(injection?.data.disabled).toBe(true);
+	});
+
+	it("server-level injection default off is overridable per-request", async () => {
+		await store.insert(makeExperience());
+		mockGatewayFetch(sseStream(['data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n', "data: [DONE]\n\n"]));
+		const server = createServer({ store, gatewayUrl: GATEWAY_URL, sessionDir, injection: false });
+
+		// Default: off.
+		const off = await server.inject({ method: "POST", url: "/api/stream", payload: PAYLOAD });
+		expect(off.statusCode).toBe(200);
+		let entries = readSessionEntries();
+		expect(entries.find((e) => e.customType === "experience_injection")?.data.disabled).toBe(true);
+
+		// Per-request injection:true re-enables. (Re-stub fetch: the SSE stream
+		// body is single-use.)
+		mockGatewayFetch(sseStream(['data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n', "data: [DONE]\n\n"]));
+		rmSync(sessionDir, { recursive: true, force: true });
+		const on = await server.inject({
+			method: "POST",
+			url: "/api/stream",
+			payload: { ...PAYLOAD, options: { ...PAYLOAD.options, injection: true } },
+		});
+		expect(on.statusCode).toBe(200);
+		entries = readSessionEntries();
+		const injection = entries.find((e) => e.customType === "experience_injection");
+		expect(injection?.data.retrieved).toEqual(["exp-1"]);
+		expect(injection?.data.disabled).toBeUndefined();
+	});
+
 	it("returns 502 and records the error when the gateway fails", async () => {
 		mockGatewayFetch(null, false, 500);
 		const server = createServer({ store, gatewayUrl: GATEWAY_URL, sessionDir });

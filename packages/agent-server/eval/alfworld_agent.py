@@ -21,6 +21,8 @@ from pathlib import Path
 import yaml
 from openai import OpenAI
 
+from preflight import ensure_for_base_url
+
 EVAL_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = EVAL_DIR / "alfworld" / "base_config.yaml"
 PROMPTS_PATH = EVAL_DIR / "alfworld" / "alfworld_3prompts.json"
@@ -80,7 +82,21 @@ def main() -> None:
     ap.add_argument("--output", required=True)
     ap.add_argument("--games", type=int, default=134)
     ap.add_argument("--start", type=int, default=0)
+    ap.add_argument(
+        "--injection",
+        choices=["on", "off"],
+        default=None,
+        help="experience injection override; only honored by agent-server (:8789). "
+        "Default: server-side setting (env AGENT_SERVER_INJECTION, on). "
+        "Control arms should run via :8789 with --injection off so their "
+        "traces still feed the learning loop.",
+    )
     args = ap.parse_args()
+
+    # Dependency gate: probe (and auto-start what we own) before burning hours.
+    ensure_for_base_url(args.base_url)
+    if args.injection and ":8789" not in args.base_url:
+        print("warning: --injection is ignored by non-agent-server endpoints", file=sys.stderr)
 
     client = OpenAI(base_url=args.base_url, api_key=args.api_key, timeout=120.0)
 
@@ -105,7 +121,10 @@ def main() -> None:
                     ],
                     temperature=0,
                     max_tokens=200,
-                    extra_body={"thinking": {"type": "disabled"}},
+                    extra_body={
+                        "thinking": {"type": "disabled"},
+                        **({"injection": args.injection == "on"} if args.injection else {}),
+                    },
                 )
                 usage = resp.usage.model_dump() if resp.usage else {}
                 raw = resp.choices[0].message.content.strip()
