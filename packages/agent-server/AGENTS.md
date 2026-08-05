@@ -16,6 +16,7 @@
 - 生产 compose 栈（8788 server + evolution + weekly-report sidecar）`restart: unless-stopped`，colima 重启自动恢复。
 - **注入开关**（08-05）：`AGENT_SERVER_INJECTION=off` 关服务级默认；请求级 `injection: true/false`（`/v1/chat/completions` body 或 `/api/stream` 的 `options.injection`）覆盖。关闭时跳过检索+注入但 **session/trace 照常记录**——控制臂必须走 8789 + `injection:false`，不再物理旁路（学习回路要吃全量 trace）。session 里 `experience_injection.disabled=true` 区分“关”与“未命中”。
 - **preflight 门禁**（08-05）：`eval/preflight.py`，所有跑批入口（alfworld_agent/harness/d3_discriminate）启动前必过——按 base-url 端口推导依赖链（8789→8787→8000；8899→relay），探活+nohup 自动拉起自有服务（8789/8787/8899），omlx 只能人工起。手动体检：`eval/.venv/bin/python eval/preflight.py <base-url>`。
+- **Web 监控**（08-05）：`GET /dashboard` 单页面板（链路状态/命中率/日志 tail，5s 自刷）；JSON 接口 `/api/status/chain`（self/gateway/omlx/evolution checkpoint）、`/api/logs?lines=N`（≤1000）。开关：`AGENT_SERVER_WEB=off`（默认 on）关三端点（404），数据 API（hit-rate、evolution/status）常开。日志文件 sink：`AGENT_SERVER_LOG_PATH`（默认 `./var/log/agent-server.log`），stdout 不变。**pkill 批量杀 tsx 会误杀 8789**——杀临时实例用精确 PID（08-05 事故）。
 
 ## 长任务/服务进程纪律（血泪教训）
 

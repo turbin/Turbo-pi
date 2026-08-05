@@ -22,6 +22,8 @@
 
 ## 2. 交接信息（跨 agent 共享事实）
 
+- 2026-08-05 kimi：**Web 监控面板落地**（决策记录 `doc/design/2026-08-05-agent-server-web-monitor-changes-and-decisions.md`）：`8789/dashboard` 单页（链路/命中率/日志，5s 自刷）；`/api/status/chain`、`/api/logs?lines=N`；`AGENT_SERVER_WEB=off` 可关（默认 on）。日志文件 `var/log/agent-server.log`。vitest 262 全绿。**教训：pkill -f "tsx src/start.ts" 会误杀 8789——杀实例用精确 PID**。
+
 - 2026-08-05 kimi：**注入开关 + preflight 门禁落地**（决策记录 `doc/design/2026-08-05-agent-server-injection-toggle-and-eval-preflight-changes-and-decisions.md`）。①`AGENT_SERVER_INJECTION=off` / 请求级 `injection:true|false`（`/v1` body 或 `/api/stream` options）；关闭=跳过检索+注入（含 skill catalog/SOP schema）但 session/trace 照录，`experience_injection.disabled=true` 可区分。②**控制臂新跑法**：`alfworld_agent.py --base-url http://127.0.0.1:8789/v1 --injection off`——不再物理旁路，基线轨迹进学习回路（27B 冷库 v2 是最后一代旁路基线，对比时注明口径）。③所有跑批入口启动前自动过 `eval/preflight.py`（按端口推导依赖链，8789/8787/8899 down 自动 nohup 拉起，omlx 只探活）。vitest 256 全绿、npm run check 干净。
 
 - 2026-07-28 kimi：**E2.3 前置条件完成**——①离线 wheelhouse：`eval/wheelhouse/`（96 wheel/178MB，gitignored），adapter `perform_task` 复制进容器 `/wheelhouse`，安装脚本离线优先。②宿主中继 `eval/deepseek_relay.mjs`（0.0.0.0:8899 → api.deepseek.com）：**环境事实变更——7897 代理已失效、VM→DeepSeek 直连间歇性断流**，控制臂 LLM 流量必须走中继（`OPENAI_BASE_URL=http://host.docker.internal:8899/v1`）。验证：blind-maze 控制臂 mini 真实 32 步 0 连接错误。详见 `doc/design/2026-07-28-agent-server-e2-wheelhouse-relay-changes-and-decisions.md`。

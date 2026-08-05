@@ -1,15 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
+import { existsSync, mkdirSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import type { Model } from "@earendil-works/pi-ai";
 import Fastify, { type FastifyInstance } from "fastify";
+import { DASHBOARD_PAGE_HTML } from "./dashboard-page.ts";
 import { ExperienceStore } from "./experience-store.ts";
 import { GatewayClient } from "./gateway-client.ts";
 import { buildInjection } from "./injection.ts";
-import { kindsOf, logTrace, summarizeKinds, titlesOf } from "./observability.ts";
+import { kindsOf, logTrace, setLogFile, summarizeKinds, titlesOf } from "./observability.ts";
 import { toOpenAIRequest } from "./openai-compat.ts";
 import { handleStream } from "./proxy-handler.ts";
 import { retrieve } from "./retrieval.ts";
@@ -28,6 +29,10 @@ export interface CreateServerOptions {
 	sessionDir?: string;
 	/** Server-level injection default; env AGENT_SERVER_INJECTION=off disables. Per-request `injection` overrides. */
 	injection?: boolean;
+	/** Web monitor switch; env AGENT_SERVER_WEB=off disables /dashboard, /api/logs, /api/status/chain. Default on. */
+	web?: boolean;
+	/** Trace-log file path for the file sink + /api/logs; env AGENT_SERVER_LOG_PATH. Default ./var/log/agent-server.log. */
+	logPath?: string;
 }
 
 /**
@@ -40,6 +45,14 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 	const gatewayUrl = opts.gatewayUrl ?? process.env.GATEWAY_URL ?? "http://127.0.0.1:8787";
 	const sessionDir = opts.sessionDir ?? process.env.AGENT_SERVER_SESSION_DIR ?? "./var/sessions";
 	const injectionDefault = opts.injection ?? process.env.AGENT_SERVER_INJECTION !== "off";
+	const webEnabled = opts.web ?? process.env.AGENT_SERVER_WEB !== "off";
+	const logPath = opts.logPath ?? process.env.AGENT_SERVER_LOG_PATH ?? "./var/log/agent-server.log";
+	setLogFile(logPath);
+	logTrace("-", "startup", {
+		web: webEnabled ? "on" : "off",
+		injection: injectionDefault ? "on" : "off",
+		log: logPath,
+	});
 
 	let store = opts.store;
 	if (!store) {
@@ -82,6 +95,41 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 	fastify.get("/stats", async (_request, reply) => {
 		return reply.header("content-type", "text/html; charset=utf-8").send(STATS_PAGE_HTML);
 	});
+
+	// -- Web monitor (2026-08-05): dashboard + chain status + log access. -----
+	// Gated by the web switch (AGENT_SERVER_WEB=off); data APIs above stay open.
+	if (webEnabled) {
+		fastify.get("/dashboard", async (_request, reply) => {
+			return reply.header("content-type", "text/html; charset=utf-8").send(DASHBOARD_PAGE_HTML);
+		});
+
+		fastify.get("/api/status/chain", async (_request, reply) => {
+			const gateway = await probeService(`${gatewayUrl}/v1/models`, gatewayAuthHeaders());
+			const omlxUrl = process.env.OMLX_URL ?? "http://127.0.0.1:8000";
+			const omlx = await probeService(`${omlxUrl}/v1/models`);
+			const latest = await store.getLatestCheckpoint("evolution");
+			return reply.send({
+				self: { ok: true, uptimeS: Math.round(process.uptime()), web: true, injection: injectionDefault },
+				gateway,
+				omlx,
+				evolution: latest
+					? { id: latest.id, epoch: new Date(latest.epoch).toISOString(), metric: latest.metric }
+					: null,
+			});
+		});
+
+		fastify.get("/api/logs", async (request, reply) => {
+			const query = request.query as { lines?: string };
+			const limit = Math.min(Math.max(Number(query.lines) || 200, 1), 1000);
+			if (!existsSync(logPath)) return reply.send({ lines: [] });
+			const content = await readFile(logPath, "utf-8");
+			const lines = content
+				.trimEnd()
+				.split("\n")
+				.filter((l) => l.length > 0);
+			return reply.send({ lines: lines.slice(-limit) });
+		});
+	}
 
 	fastify.post("/api/stream", async (request, reply) => {
 		const body = request.body as StreamRequest;
@@ -482,6 +530,39 @@ export function teeOpenAISSEWithSession(
 			await closeWriter("aborted", { reason: String(reason) });
 		},
 	});
+}
+
+interface ServiceProbe {
+	ok: boolean;
+	status?: number;
+	latencyMs?: number;
+	models?: string[];
+	error?: string;
+}
+
+/** Any HTTP response (even 401) means the service is alive; only network-level failure is down. */
+async function probeService(url: string, headers: Record<string, string> = {}): Promise<ServiceProbe> {
+	const t0 = Date.now();
+	try {
+		const resp = await fetch(url, { headers, signal: AbortSignal.timeout(3000) });
+		const probe: ServiceProbe = { ok: true, status: resp.status, latencyMs: Date.now() - t0 };
+		if (resp.ok) {
+			try {
+				const body = (await resp.json()) as { data?: { id?: string }[] };
+				if (Array.isArray(body.data)) probe.models = body.data.map((m) => String(m.id));
+			} catch {
+				// Non-JSON body: alive is all we need.
+			}
+		}
+		return probe;
+	} catch (err) {
+		return { ok: false, latencyMs: Date.now() - t0, error: String(err) };
+	}
+}
+
+function gatewayAuthHeaders(): Record<string, string> {
+	const key = process.env.AGENT_GATEWAY_KEY;
+	return key ? { authorization: `Bearer ${key}` } : {};
 }
 
 export async function startServer(port = 8788): Promise<void> {
