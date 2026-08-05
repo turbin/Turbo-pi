@@ -112,6 +112,14 @@ tmux send-keys -t pi-test Escape               # special keys (also C-o for ctrl
 tmux kill-session -t pi-test
 ```
 
+## Issue Snapshot（用户报告问题登记）
+
+用户报告的错误/异常登记在 `doc/issues-snapshot/`（流程详见该目录 README.md）：
+
+- 每个 issue 一个 `issue-NNN-<slug>.md`（现象/根因/修复/回归测试），索引在 `doc/issues-snapshot/index.md`（状态 open/fixed/closed）。
+- 每个 issue 必须配回归测试：agent-server 放 `test/regressions/issue-NNN-<slug>.test.ts`，coding-agent 沿用 `test/suite/regressions/`。先复现失败（red）再修复转绿；修复后测试永久保留。
+- **推送前门控**：每次新版本推送前跑 `./test.sh`（覆盖全部 regressions），确认已知问题不复发；closed 判定需要一个发布周期无复发，文件与测试不删除。
+
 ## Dependency and Install Security
 
 - Treat npm dep and lockfile changes as reviewed code. Direct external deps stay pinned to exact versions.

@@ -49,6 +49,10 @@
 - reasoning 模型（v4-flash 等）默认输出落在 `reasoning_content`——客户端要么传 `thinking:disabled`，要么读 reasoning_content；max_tokens 太小会得到空 content。
 - omlx 支持 `stop` 截断（已实证）；多模型换载正常。
 
+## issue 登记
+
+- 用户报告的问题登记 `doc/issues-snapshot/`（流程见根 AGENTS.md「Issue Snapshot」），回归测试放 `test/regressions/issue-NNN-*.test.ts`，推送前随 `./test.sh` 全量验证。首个登记：issue-001（stats/dashboard 命中率 NaN%，snake_case↔camelCase 契约失配）。
+
 ## 文档纪律
 
 - 完成任务 → 决策记录（`doc/design/<date>-<topic>-changes-and-decisions.md`）+ INDEX 同步 + progress 更新 + commit（COMPLETED/TODO/Refer Spec 格式，conventional 前缀）。

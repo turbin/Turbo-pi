@@ -38,8 +38,8 @@ async function load(){
 var wh=document.getElementById('w').value;
 var r=await fetch('/api/stats/hit-rate?window_hours='+wh);
 var d=await r.json();
-document.getElementById('summary').innerHTML='<p>总请求 <b>'+d.total+'</b>，命中 <b>'+d.hits+'</b>，命中率 '+bar(d.hit_rate)+'</p>';
-rows(document.getElementById('kinds'),d.by_kind.map(function(k){return [k.kind,k.cnt]}));
+document.getElementById('summary').innerHTML='<p>总请求 <b>'+d.total+'</b>，命中 <b>'+d.hits+'</b>，命中率 '+bar(d.hitRate)+'</p>';
+rows(document.getElementById('kinds'),d.byKind.map(function(k){return [k.kind,k.cnt]}));
 rows(document.getElementById('daily'),d.daily.map(function(x){return [x.day,x.total,x.hits,bar(x.total?x.hits/x.total:0)]}));
 rows(document.getElementById('recent'),d.recent.map(function(x){var ids='';
 try{var a=JSON.parse(x.retrievedIds||'[]');ids=a.join(', ')}catch(e){}

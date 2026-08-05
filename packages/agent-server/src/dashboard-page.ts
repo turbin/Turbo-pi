@@ -70,7 +70,7 @@ async function loadHit(){
 try{
 var d=await (await fetch('/api/stats/hit-rate?window_hours=168')).json();
 document.getElementById('hit').innerHTML=
-'<p>总请求 <b>'+d.total+'</b>，命中 <b>'+d.hits+'</b>，命中率 '+bar(d.hit_rate)+'</p>';
+'<p>总请求 <b>'+d.total+'</b>，命中 <b>'+d.hits+'</b>，命中率 '+bar(d.hitRate)+'</p>';
 }catch(e){document.getElementById('hit').innerHTML='<p class="down">hit-rate 加载失败</p>';}}
 async function loadLogs(){
 try{
