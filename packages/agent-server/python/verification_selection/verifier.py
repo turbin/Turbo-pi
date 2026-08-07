@@ -233,9 +233,15 @@ class Verifier:
     # -- 单次评估 -----------------------------------------------------------
     def _score_once(self, task: str, traj_a: str, traj_b: str,
                     criterion: Criterion, reasoning: str | None) -> tuple[float, float]:
+        # 打分是机械任务：关 thinking + 封顶 max_tokens。v4-flash 是 reasoning
+        # 模型，不限制时会生成长 CoT，top_logprobs=20 逐 token 跟随使响应达
+        # 数 MB（单次 30-90s、7MB 实测），134 轨迹 × C×K 调用会超出管线超时。
+        # 输出只需 <score_A>X</score_A><score_B>Y</score_B> 约 20 token。
         text, logprobs = self.client.chat_with_logprobs(
             self.build_messages(task, traj_a, traj_b, criterion, reasoning),
-            top_logprobs=self.top_logprobs)
+            top_logprobs=self.top_logprobs,
+            max_tokens=512,
+            thinking={"type": "disabled"})
         # 双通路兼容：有 logprobs 走期望化；无 logprobs（如 MLX 后端）回退文本解析
         use_text_fallback = False
         if isinstance(logprobs, dict):

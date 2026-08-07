@@ -22,6 +22,8 @@
 
 ## 2. 交接信息（跨 agent 共享事实）
 
+- 2026-08-06 kimi：**issue-002 草案（到期提醒）**——进化管线 logprobs 大响应截断 JSON 解析失败，已修（llm_client 双副本 JSONDecodeError 重试），**用户决定：先作草案存放，待 B 热库轮报告 + C campaign 报告全部交付后，提醒用户决定转正/降级/关闭**。详见 `doc/issues-snapshot/issue-002-evolution-logprobs-json-truncation.md`。
+
 - 2026-08-05 kimi：**C 阶段脚手架并行交付**（用户批准与 B 并行）。QwenClawBench v1.1 语料已 vendor 到 `eval/qcb/tasks-v1.1/`（99 任务，gitignored）；`campaign_plan.py`（分层划分 seed=42：重复集 20 + 新任务 79 七日切片）+ `campaign_metrics.py`（判据核算）+ `campaign.py`（runner，--dry-run/--metrics）+ `tests/test_campaign.py` 9 pytest 全绿。判据预注册设计文档 `doc/design/2026-08-05-agent-server-c-campaign-design.md`。**开跑前待办 4 项见该文档 §5**（escalated 标注/judge 冒烟/harness 口径/omlx 互斥）。
 
 - 2026-08-05 kimi：**Web 监控面板落地**（决策记录 `doc/design/2026-08-05-agent-server-web-monitor-changes-and-decisions.md`）：`8789/dashboard` 单页（链路/命中率/日志，5s 自刷）；`/api/status/chain`、`/api/logs?lines=N`；`AGENT_SERVER_WEB=off` 可关（默认 on）。日志文件 `var/log/agent-server.log`。vitest 262 全绿。**教训：pkill -f "tsx src/start.ts" 会误杀 8789——杀实例用精确 PID**。

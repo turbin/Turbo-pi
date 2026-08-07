@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from typing import Any, Callable, Protocol
@@ -82,27 +83,39 @@ class OpenAICompatClient:
         return body
 
     def _post(self, body: dict) -> dict:
-        req = urllib.request.Request(
-            url=f"{self.base_url}/chat/completions",
-            data=json.dumps(body).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}",
-            },
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:  # 服务端返回非 2xx
-            snippet = ""
+        last_err: str = ""
+        for attempt in range(3):
+            req = urllib.request.Request(
+                url=f"{self.base_url}/chat/completions",
+                data=json.dumps(body).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.api_key}",
+                },
+                method="POST",
+            )
             try:
-                snippet = exc.read().decode("utf-8")[:300]
-            except Exception:  # pragma: no cover - 防御性
-                pass
-            raise LLMError(f"HTTP {exc.code}: {snippet}") from exc
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise LLMError(f"网络错误: {exc}") from exc
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as exc:  # 服务端返回非 2xx
+                snippet = ""
+                try:
+                    snippet = exc.read().decode("utf-8")[:300]
+                except Exception:  # pragma: no cover - 防御性
+                    pass
+                raise LLMError(f"HTTP {exc.code}: {snippet}") from exc
+            except json.JSONDecodeError as exc:
+                # 大响应（logprobs 可达数 MB）在网络抖动时被截断/污染，直接重试。
+                last_err = f"JSON 解析失败: {exc}"
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                raise LLMError(f"网络错误: {exc}") from exc
+            else:
+                # 200 但无 choices（上游错误体/中继异常）：同样按瞬时故障重试。
+                if "choices" in data:
+                    return data
+                last_err = f"响应缺 choices: {str(data)[:300]}"
+            time.sleep(2**attempt)
+        raise LLMError(f"响应异常（已重试 3 次）: {last_err}")
 
     # -- 协议实现 -----------------------------------------------------------
 

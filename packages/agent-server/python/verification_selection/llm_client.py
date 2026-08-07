@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -82,23 +83,35 @@ class OpenAICompatClient:
         return payload
 
     def _post(self, payload: dict) -> dict:
-        req = urllib.request.Request(
-            self.base_url + "/chat/completions",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}",
-            },
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:  # 服务端返回错误状态码
-            body = e.read().decode("utf-8", errors="replace")[:500]
-            raise LLMError(f"LLM HTTP {e.code}: {body}") from e
-        except urllib.error.URLError as e:  # 连接失败
-            raise LLMError(f"LLM 连接失败: {e.reason}") from e
+        last_err: str = ""
+        for attempt in range(3):
+            req = urllib.request.Request(
+                self.base_url + "/chat/completions",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.api_key}",
+                },
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as e:  # 服务端返回错误状态码
+                body = e.read().decode("utf-8", errors="replace")[:500]
+                raise LLMError(f"LLM HTTP {e.code}: {body}") from e
+            except json.JSONDecodeError as e:
+                # 大响应（logprobs 可达数 MB）在网络抖动时被截断/污染，直接重试。
+                last_err = f"JSON 解析失败: {e}"
+            except urllib.error.URLError as e:  # 连接失败
+                raise LLMError(f"LLM 连接失败: {e.reason}") from e
+            else:
+                # 200 但无 choices（上游错误体/中继异常）：同样按瞬时故障重试。
+                if "choices" in data:
+                    return data
+                last_err = f"响应缺 choices: {str(data)[:300]}"
+            time.sleep(2**attempt)
+        raise LLMError(f"LLM 响应异常（已重试 3 次）: {last_err}")
 
     # -- 协议实现 -----------------------------------------------------------
     def chat(self, messages: list[dict], **kw: Any) -> str:
