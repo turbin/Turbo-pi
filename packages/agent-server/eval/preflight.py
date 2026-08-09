@@ -123,8 +123,24 @@ def _wait(name: str, probe, timeout_s: float = 90.0) -> bool:
     return False
 
 
+def _omlx_headers() -> dict[str, str]:
+    """omlx 需 Bearer key（M11 指纹校验要带 key 才能拿到模型列表）。
+
+    来源优先 env OMLX_API_KEY，其次 agent-gateway config.toml 的 local_omlx.api_key。
+    """
+    key = os.environ.get("OMLX_API_KEY")
+    if not key:
+        config = REPO_ROOT / "packages" / "agent-gateway" / "config.toml"
+        if config.exists():
+            import tomllib
+
+            data = tomllib.loads(config.read_text())
+            key = (data.get("local_omlx") or {}).get("api_key")
+    return {"Authorization": f"Bearer {key}"} if key else {}
+
+
 def ensure_omlx(base_url: str = OMLX_URL) -> None:
-    models = _models_json(f"{base_url}/v1/models")
+    models = _models_json(f"{base_url}/v1/models", headers=_omlx_headers())
     if models is None:
         if _probe(f"{base_url}/v1/models"):
             sys.exit(

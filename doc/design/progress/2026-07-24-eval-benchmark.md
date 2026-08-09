@@ -22,6 +22,8 @@
 
 ## 2. 交接信息（跨 agent 共享事实）
 
+- 2026-08-09 kimi：**C D0 准备日完成，D1 启动**（用户拍板 C 优先于 B 重跑）。①judge 接线：campaign.grade 传 judge_model=deepseek-v4-pro（vendored 默认 claude-opus 不可用），JUDGE_BASE_URL 走 8899 中继；②C 专用库：ALFWorld 库归档 var/eval/archive/，8789 空库起跑；③两轮冒烟：27B 工具调用正常、单任务 ~15min/20 请求、escalated=False、judge 修复后 0.320→**0.896**（transcript 已改 OpenClaw 事件形态——lib_grading._summarize_transcript 只认该结构）；④门控预检通过（近 2h 39 请求 length 升级率 0%）；⑤preflight 修复（M11 指纹校验需带 omlx key，从 gateway config.toml 读取）；⑥新增 synthesize_campaign_sessions.py（夜间进化原料）+ transcript 落盘。测试：vitest 270 / eval+python 81 / gateway 178 / check 0。**夜间 runbook**：归档 sessions → synthesize_campaign_sessions.py --input-dir results/<run>/transcripts/dayN → run-evolution → 次日快照。
+
 - 2026-08-09 kimi：**issue-004~007 修复校验完成（commit 899745d6）——全部通过，无残留**。测试独立复跑一致（gateway 178 / vitest 270 / eval 45 / python 32 / check 0）；逐项 diff 复查正确：issue-004 body 内嵌 `x_gateway`（pydantic extra 穿透已用真实对象实测证明）+ 非流式透传 + alfworld 补 trace_id；issue-005 `--since/--last-hours` 实测：空窗口 fail blind、今日窗口 261 请求 rate 0.908 正确拦截（该流量为 B 热库收尾）；issue-006 写路径查询（含 getById）回 live 库；issue-007 必传+哨兵测试。index 已翻 fixed（待观察）。**跑批前置全部就绪，只欠方案 A/B/C 拍板 + pilot 校准**。biome 有 1 条 pre-existing info（web-monitor.test.ts:107 useTemplate，08-05 遗留，非本批次引入）。
 
 - 2026-08-09 kimi：**P0 批次校验完成（commit a7f7a618）**——测试声明独立复跑一致（178/267/42/32/check 0），P0 项 diff 复查全部实现正确，issue-003/issue-002 状态与文档纪律核验通过。4 项残留已登记为 issue-004~007（open，详见审查报告 §6 补遗）：**issue-004（高，跑批前必修）非流式升级标记双断（pydantic 无 headers + agent-server 不透传），alfworld escalations 恒 0 假绿**；issue-005 gate 脚本无时间窗（共享 DB 实测 FAIL 0.298）；issue-006 快照模式 getByContentHash 写侧去重读冻结库；issue-007 max-tokens 默认仍 200。已指派 pi agent 修复。

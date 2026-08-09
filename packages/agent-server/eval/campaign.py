@@ -97,7 +97,7 @@ def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int,
     escalated = False
     for _ in range(MAX_TURNS):
         if time.time() - t0 > timeout_s:
-            transcript.append({"role": "agent", "content": "[timeout]"})
+            transcript.append({"type": "message", "message": {"role": "assistant", "content": [{"type": "text", "text": "[timeout]"}]}})
             break
         requests += 1
         resp = client.chat.completions.create(
@@ -109,7 +109,21 @@ def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int,
         trace_ids.append(getattr(resp, "id", ""))
         escalated = escalated or bool(_gateway_marker(resp).get("escalated"))
         msg = resp.choices[0].message
-        transcript.append({"role": "assistant", "content": msg.content or "", "tool_calls": bool(msg.tool_calls)})
+        # transcript 采用 QCB lib_grading 的 OpenClaw 事件形态
+        # （{type:"message", message:{role, content:[parts]}}），
+        # judge 的 _summarize_transcript 只认这个结构。
+        parts: list[dict] = []
+        if msg.content:
+            parts.append({"type": "text", "text": msg.content})
+        for call in msg.tool_calls or []:
+            parts.append(
+                {
+                    "type": "toolCall",
+                    "name": call.function.name,
+                    "arguments": json.loads(call.function.arguments or "{}"),
+                }
+            )
+        transcript.append({"type": "message", "message": {"role": "assistant", "content": parts}})
         if not msg.tool_calls:
             messages.append({"role": "assistant", "content": msg.content or ""})
             break
@@ -124,7 +138,7 @@ def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int,
                 timeout=120,
             )
             output = (proc.stdout + proc.stderr)[:8000]
-            transcript.append({"role": "tool", "content": output[:500]})
+            transcript.append({"type": "message", "message": {"role": "toolResult", "content": [output[:500]]}})
             messages.append({"role": "tool", "tool_call_id": call.id, "content": output})
     return {
         "status": "completed",
@@ -142,7 +156,13 @@ def grade(task_id: str, execution: dict, ws: Path) -> dict:
     from lib_tasks import TaskLoader  # noqa: PLC0415
 
     task = TaskLoader(QCB_DIR / "tasks").load_task(QCB_DIR / "tasks" / f"{task_id}.md")
-    result = grade_task(task=task, execution_result=execution, skill_dir=ws)
+    # judge 口径（P-D6）：deepseek-v4-pro；vendored 默认 claude-opus 不可用，必须显式覆盖。
+    result = grade_task(
+        task=task,
+        execution_result=execution,
+        skill_dir=ws,
+        judge_model=os.environ.get("JUDGE_MODEL", "deepseek-v4-pro"),
+    )
     return result.to_dict()
 
 
@@ -205,6 +225,23 @@ def main() -> None:
                     client, args.model, task_prompt(task_id), ws, meta.timeout_seconds, injection=arm == "experiment"
                 )
                 g = grade(task_id, execution, ws)
+                # 轨迹落盘（夜间进化的原料）：每任务一份完整 transcript，
+                # 缺失即无进化输入——合成器对它硬失败。
+                traj_dir = out_dir / "transcripts" / f"day{args.day}"
+                traj_dir.mkdir(parents=True, exist_ok=True)
+                (traj_dir / f"{arm}-{task_id}.json").write_text(
+                    json.dumps(
+                        {
+                            "task_id": task_id,
+                            "arm": arm,
+                            "day": args.day,
+                            "prompt": task_prompt(task_id),
+                            "transcript": execution["transcript"],
+                            "score": g["score"],
+                        },
+                        ensure_ascii=False,
+                    )
+                )
                 row = {
                     "day": args.day,
                     "task_id": task_id,
