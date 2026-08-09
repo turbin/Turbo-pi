@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { summarizeKinds, titlesOf } from "../src/observability.ts";
 import type { Experience } from "../src/types.ts";
 
-function exp(title: string, type: Experience["type"] = "ABILITY", role?: string): { experience: Experience; score: number } {
+function exp(
+	title: string,
+	type: Experience["type"] = "ABILITY",
+	role?: string,
+): { experience: Experience; score: number } {
 	return {
 		experience: {
 			id: title,
@@ -22,10 +26,7 @@ function exp(title: string, type: Experience["type"] = "ABILITY", role?: string)
 
 describe("summarizeKinds", () => {
 	it("maps kind strings to Chinese labels with counts", () => {
-		const kinds = [
-			"EVIDENCE:null",
-			...Array(7).fill("ABILITY:Method"),
-		] as string[];
+		const kinds = ["EVIDENCE:null", ...Array(7).fill("ABILITY:Method")] as string[];
 		expect(summarizeKinds(kinds)).toBe("证据×1,方法×7");
 	});
 

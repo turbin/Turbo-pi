@@ -21,8 +21,11 @@ mkdir -p /etc/apt/apt.conf.d && printf 'Acquire::http::Proxy "$PROXY";\nAcquire:
 EOF
 )
 
-targets=("${@:-tb_tasks/*/run-tests.sh}")
-[ $# -gt 0 ] && targets=("$@")
+if [ $# -gt 0 ]; then
+    targets=("$@")
+else
+    targets=(tb_tasks/*/run-tests.sh)
+fi
 
 count=0
 for f in "${targets[@]}"; do
