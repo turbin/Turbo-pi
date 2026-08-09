@@ -22,6 +22,8 @@
 
 ## 2. 交接信息（跨 agent 共享事实）
 
+- 2026-08-09 kimi：**issue-004~007 修复校验完成（commit 899745d6）——全部通过，无残留**。测试独立复跑一致（gateway 178 / vitest 270 / eval 45 / python 32 / check 0）；逐项 diff 复查正确：issue-004 body 内嵌 `x_gateway`（pydantic extra 穿透已用真实对象实测证明）+ 非流式透传 + alfworld 补 trace_id；issue-005 `--since/--last-hours` 实测：空窗口 fail blind、今日窗口 261 请求 rate 0.908 正确拦截（该流量为 B 热库收尾）；issue-006 写路径查询（含 getById）回 live 库；issue-007 必传+哨兵测试。index 已翻 fixed（待观察）。**跑批前置全部就绪，只欠方案 A/B/C 拍板 + pilot 校准**。biome 有 1 条 pre-existing info（web-monitor.test.ts:107 useTemplate，08-05 遗留，非本批次引入）。
+
 - 2026-08-09 kimi：**P0 批次校验完成（commit a7f7a618）**——测试声明独立复跑一致（178/267/42/32/check 0），P0 项 diff 复查全部实现正确，issue-003/issue-002 状态与文档纪律核验通过。4 项残留已登记为 issue-004~007（open，详见审查报告 §6 补遗）：**issue-004（高，跑批前必修）非流式升级标记双断（pydantic 无 headers + agent-server 不透传），alfworld escalations 恒 0 假绿**；issue-005 gate 脚本无时间窗（共享 DB 实测 FAIL 0.298）；issue-006 快照模式 getByContentHash 写侧去重读冻结库；issue-007 max-tokens 默认仍 200。已指派 pi agent 修复。
 
 - 2026-08-09 kimi：**对抗性审查交付（第二轮 08-09）**——issue-003 登记（门控 length 缺陷，`doc/issues-snapshot/issue-003-gate-length-misescalation.md`，open）；全链路对抗审查报告 `doc/design/2026-08-09-adversarial-review-experiment-validity.md`：39 项发现（4 critical/21 major/14 minor），全部代码行级验证。**critical 四项**：C1 campaign.py run_agent 缺 injection 参数（committed 代码从未跑通）；C2 判据结构性永绿（escalated 硬编码 False，标注脚本不存在）；C3 alfworld 134 硬编码→`alfworld-20260730` 控制臂 17/134 局为重放（A/B 错位 12.7%，历史结论引用需注明口径）；C4 升级结果不过闸 + max_tokens 原样上云。**方案 A 修正**：agent-local 绕门控不成立（routing.py:31 忽略 model 名）；max_tokens 需 5 局 pilot 校准 + 验收门槛 length 升级率 <5%。**修复分 P0/P1/P2 待用户拍板，与重跑方案 A/B/C 一并决策**。
