@@ -83,7 +83,18 @@ C3 证实 `alfworld-20260730` 控制臂 17 局为重放（A/B 错位 12.7%）；
 - **P1（强烈建议）**：M4、M6、M7、M9、M12、M13、M17、M19、M20、M21。
 - **P2（技术债另立任务）**：全部 minor；门控 length 规则策略讨论（findings 文档 §6.3 已记）。
 
-## 6. 方法论教训（沉淀）
+## 6. 修复校验补遗（2026-08-09 P0 批次 commit a7f7a618 验证后追加）
+
+验证方式：测试全量复跑（gateway 178 / vitest 267 / eval 42 / python 32 / npm run check 0，与 commit 声明一致）+ 逐项 diff 对抗复查 + 数据级实测。P0 项实现均正确（M1/M2/M3(agent-server 侧)/M5/M8/M9/M10/M11/M14/M15/M16/M18/C1/C2/C3/C4），文档纪律齐全。残留问题 4 项：
+
+- **V1（高，建议入 P1 首位）：运行时升级标记链路在非流式路径双层断裂。** ①openai 2.48.0 的 `ChatCompletion` pydantic 对象无 `.headers`（实测构造真实对象验证：`parse_x_gateway` 恒返回 `{}`，测试用的是带 headers 的 mock）；②agent-server 非流式 `/v1` 分支不透传 marker（`GatewayClient.chat` 只回 JSON body）。后果：alfworld 结果文件 `escalations` 恒 0、`provider` 恒空——**仪器静默失明，与 issue-003 同类假绿**；且 alfworld 未记录 trace_id，无法 model_runs 回填。campaign 侧有 `resp.id`=trace_id 兜底，判据不失效。修复：gateway 响应 body 内嵌 `x_gateway` 字段（openai pydantic extra=allow 可穿透）或 harness 改 `with_raw_response` + agent-server 非流式透传 header；alfworld 补记 trace_id。
+- **V2（中）：`gate_length_escalation.py` 无时间窗。** 全历史口径，在含 B 阶段数据的共享 DB 上实测 FAIL（34557 请求 length 率 0.298）——门控本身工作正常，但“pilot 通过→开全量”流程在共享 DB 上永远过不了。修复：加 `--since`（ISO 时间戳或最近 N 小时）过滤，或 runbook 规定跑批前归档轮换 gateway DB。
+- **V3（中低）：M10 快照模式下 `getByContentHash` 读冻结库。** 写侧去重调用点 `offline/verifier.ts:69` 在快照开启时读快照，可能漏掉快照后写入的 live 经验 → 重复晋升。实际影响限于快照 env 泄漏到进化进程的场景；建议写路径一律读 live db。
+- **V4（低）：`alfworld_agent.py --max-tokens` 默认仍为 200（缺陷原值）。** pilot 校准前任何忘传参的运行即复发 issue-003；建议 pilot 定值后立即改默认，或 runbook 强制显式传参。
+
+流程备注：P0 commit 将审查会话（kimi）的 4 个未提交文档一并提交（内容完整无损）——偏离“只提交本会话文件”纪律，记录在案。
+
+## 7. 方法论教训（沉淀）
 
 1. **烟囱测试通过 ≠ 真实运行可信**：smoke-02 5/5 通过恰因规模小、未触任何悬崖（超时/成本/池回绕/升级）；验收必须以全量口径核验 ground truth（model_runs），拒绝小样本外推。
 2. **度量必须与现象同源**：C2 与 length 缺陷同构——度量管道与现象脱钩时一切读绿。任何预注册判据评审时必须追问"这个字段谁写、何时写、能否为假"。

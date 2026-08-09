@@ -17,7 +17,7 @@ export type StreamEvent =
 	| { type: "toolcall_start"; contentIndex: number; id: string; toolName: string }
 	| { type: "toolcall_delta"; contentIndex: number; delta: string }
 	| { type: "toolcall_end"; contentIndex: number }
-	| { type: "done"; reason: "stop" | "length" | "toolUse"; usage: Usage }
+	| { type: "done"; reason: "stop" | "length" | "toolUse"; usage: Usage; x_gateway?: Record<string, unknown> }
 	| { type: "error"; reason: "aborted" | "error"; errorMessage?: string; usage: Usage };
 
 export interface ToolCallValidationResult {
@@ -249,6 +249,7 @@ async function transform(
 	let textIndex = -1;
 	let thinkingIndex = -1;
 	let finishReason: string | null = null;
+	let gatewayMarker: Record<string, unknown> | undefined;
 	const toolCalls: PendingToolCall[] = [];
 
 	const handleChunk = (chunk: OpenAIChunk) => {
@@ -295,6 +296,16 @@ async function transform(
 
 	let buffer = "";
 	const handleLine = (line: string) => {
+		// issue-004: gateway 的升级标记以 SSE 注释行下发（对 OpenAI 解析器
+		// 透明）；捕获并随 done 事件传给上层，非流式 body 才能透传到客户端。
+		if (line.startsWith(": x-gateway ")) {
+			try {
+				gatewayMarker = JSON.parse(line.slice(": x-gateway ".length)) as Record<string, unknown>;
+			} catch {
+				// malformed marker: leave unset
+			}
+			return;
+		}
 		if (!line.startsWith("data:")) return;
 		const data = line.slice(5).trim();
 		if (!data || data === "[DONE]") return;
@@ -366,5 +377,5 @@ async function transform(
 		}
 	}
 
-	emit({ type: "done", reason: mapped.stopReason, usage });
+	emit({ type: "done", reason: mapped.stopReason, usage, x_gateway: gatewayMarker });
 }

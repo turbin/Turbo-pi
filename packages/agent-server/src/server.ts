@@ -398,7 +398,9 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 				tokens: `${promptTokens}/${completionTokens}`,
 				latency_ms: Date.now() - startedAt,
 			});
-			return reply.send({
+			// issue-004: 非流式响应必须携带升级标记（gateway 注释 → done 事件
+			// → body 字段）；openai SDK extra="allow" 使其直达 alfworld 等客户端。
+			const openaiBody: Record<string, unknown> = {
 				id: `chatcmpl-${randomUUID()}`,
 				object: "chat.completion",
 				created: Math.floor(Date.now() / 1000),
@@ -415,7 +417,9 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 					completion_tokens: completionTokens,
 					total_tokens: u.totalTokens ?? promptTokens + completionTokens,
 				},
-			});
+			};
+			if (done?.x_gateway) openaiBody.x_gateway = done.x_gateway;
+			return reply.send(openaiBody);
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
 			await store.recordRequestTrace({

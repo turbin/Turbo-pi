@@ -100,12 +100,18 @@ def pool_signature(pool: list[str]) -> tuple[int, str]:
 
 
 def parse_x_gateway(resp: object) -> dict:
-    """Escalation marker from the gateway x-gateway header (issue-003 M1)."""
+    """Escalation marker from the gateway response (issue-004, M1).
+
+    openai SDK 的 ChatCompletion 对象没有 .headers——标记必须从响应 body 的
+    x_gateway 字段读取（gateway extra 字段经 openai SDK extra="allow" 穿透，
+    agent-server 非流式分支透传同一字段）。历史上读 resp.headers 的版本
+    运行时恒返回 {}（mock 带 headers 所以测试绿），观测仪器静默失明。
+    """
     try:
-        raw = resp.headers.get("x-gateway")  # type: ignore[attr-defined]
-        if not raw:
+        raw = getattr(resp, "x_gateway", None)
+        if raw is None:
             return {}
-        return json.loads(raw)
+        return raw if isinstance(raw, dict) else json.loads(raw)
     except (AttributeError, json.JSONDecodeError):
         return {}
 
@@ -116,7 +122,7 @@ def process_ob(ob: str) -> str:
     return ob
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base-url", required=True)
     ap.add_argument("--api-key", required=True)
@@ -127,9 +133,9 @@ def main() -> None:
     ap.add_argument(
         "--max-tokens",
         type=int,
-        default=200,
-        help="per-turn output cap. issue-003: 200 was the root cause of the length-gate mis-escalation; "
-        "pilot calibrates 800/1024 before full runs.",
+        required=True,  # issue-007: 必传——200 是 issue-003 的缺陷原值，默认值会静默复发门控误升级
+        help="per-turn output cap（必传）。issue-003: 200 曾致 length 门控 84-87% 误升级；"
+        "pilot 校准（800/1024）后按校准值传参。",
     )
     ap.add_argument(
         "--expect-pool-size",
@@ -146,7 +152,11 @@ def main() -> None:
         "Control arms should run via :8789 with --injection off so their "
         "traces still feed the learning loop.",
     )
-    args = ap.parse_args()
+    return ap
+
+
+def main() -> None:
+    args = build_parser().parse_args()
 
     # Dependency gate: probe (and auto-start what we own) before burning hours.
     ensure_for_base_url(args.base_url)
@@ -188,6 +198,7 @@ def main() -> None:
                 return {
                     "action": action,
                     "usage": usage,
+                    "trace_id": getattr(resp, "id", ""),
                     "finish_reason": resp.choices[0].finish_reason,
                     "provider": marker.get("provider", ""),
                     "escalated": bool(marker.get("escalated", False)),
@@ -264,6 +275,7 @@ def main() -> None:
         tokens_in = tokens_out = 0
         escalations = 0
         extract_failed = 0
+        trace_ids: list[str] = []
         traj = []
         t0 = time.time()
 
@@ -274,6 +286,8 @@ def main() -> None:
             tokens_out += turn["usage"].get("completion_tokens", 0)
             escalations += 1 if turn["escalated"] else 0
             extract_failed += 0 if turn["extract_ok"] else 1
+            if turn["trace_id"]:
+                trace_ids.append(turn["trace_id"])
             observation, _, done, step_info = env.step([action])
             observation, won, done = process_ob(observation[0]), bool(step_info["won"][0]), bool(done[0])
             if action.startswith("think:"):
@@ -308,6 +322,7 @@ def main() -> None:
             "pool_hash": pool_hash,  # C3
             "escalations": escalations,  # M3: gateway x-gateway marker
             "extract_failed_steps": extract_failed,  # M16: extraction artifact rate
+            "trace_ids": trace_ids,  # issue-004: gateway trace ids（model_runs 回填兜底）
         }
         out.write(json.dumps(rec) + "\n")
         out.flush()

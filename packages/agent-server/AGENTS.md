@@ -35,7 +35,7 @@
 ## ALFWorld harness（eval/alfworld_agent.py）
 
 - 协议：ReAct 论文 2-shot、49 步、temperature=0；`stop=["\n"]` + `thinking:{type:"disabled"}` 依赖 agent-server 透传（07-30 修复，改动须保持）。
-- **蒸馏/reasoning 模型会输出叙述文本而非命令**——`extract_command()` 从叙述中提取动作（行锚定+词边界+最后非 think 优先，08-09 M16 重写）；逐局记录 `extract_failed_steps` 与 `escalations`（x-gateway 标记）；`--max-tokens` 参数化（默认 200——issue-003 根因值，pilot 校准 800/1024）。
+- **蒸馏/reasoning 模型会输出叙述文本而非命令**——`extract_command()` 从叙述中提取动作（行锚定+词边界+最后非 think 优先，08-09 M16 重写）；逐局记录 `extract_failed_steps` 与 `escalations`（body 内嵌 x_gateway 标记，08-09 issue-004 后不再读 headers——openai SDK 对象无此属性）；**`--max-tokens` 必传**（issue-007：200 是 issue-003 根因值，pilot 校准 800/1024 后按校准值传参）。
 - 确定性：游戏顺序 sorted 固定，双臂/多轮逐局对齐；**池上界 = `len(env.game_files)`**——`--games` 超池或 `--expect-pool-size` 不符即硬失败（08-09 C3：shuffled_cycle 回绕重放曾致 20260730 控制臂 17 局 A/B 错位）；`--start N` 用 `env.skip(N)` 推进迭代器（M14）；输出 JSONL append + 按 game_idx 去重（M15）；每条记录带 `pool_size`/`pool_hash`/`init_prompt`。
 - 双臂跑法（08-05 起）：基线臂 `--base-url http://127.0.0.1:8789/v1 --injection off`，实验臂同地址 `--injection on`（或省略）——两臂同路径过 agent-server，trace 全落库。
 - **跑批前门控（issue-003 回归测试 2）**：`eval/gate_length_escalation.py`——model_runs 全量口径 length 升级率 <5% 才可开全量；pilot 校准先跑冷库 5 局。

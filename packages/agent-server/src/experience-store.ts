@@ -39,11 +39,15 @@ function rowToCheckpoint(row: CheckpointRow): Checkpoint {
 export interface ExperienceStoreOptions {
 	/**
 	 * M10 (adversarial review 2026-08-09): read-only snapshot database for
-	 * experience reads (search/listActive/getById/getByContentHash). A batch
-	 * run pins the experience set it was started with; live writes (evolution
-	 * promotion, TTL cleanup, scheduler) keep going to the live database so
-	 * the learning loop is unaffected. The snapshot file must be created by
+	 * RETRIEVAL reads only (search/listActive). A batch run pins the
+	 * experience set it was started with; live writes (evolution promotion,
+	 * TTL cleanup, scheduler) keep going to the live database so the
+	 * learning loop is unaffected. The snapshot file must be created by
 	 * the runner before the server starts (eval/snapshot_store.py).
+	 *
+	 * 写路径服务查询（getById/getByContentHash——offline ETL/verifier 的
+	 * 去重）一律读 live 库，绝不读快照（issue-006）：否则快照之后写入的
+	 * 经验在去重查询中不可见，导致重复晋升/重复入库。
 	 */
 	snapshotPath?: string;
 }
@@ -230,13 +234,16 @@ export class ExperienceStore {
 	}
 
 	async getById(id: string): Promise<Experience | null> {
-		const row = this.readDb.prepare("SELECT * FROM experiences WHERE id = ?").get(id) as ExperienceRow | undefined;
+		// issue-006: 写路径服务查询读 live 库（offline/etl.ts 入库去重）。
+		const row = this.db.prepare("SELECT * FROM experiences WHERE id = ?").get(id) as ExperienceRow | undefined;
 		if (!row) return null;
 		return rowToExperience(row);
 	}
 
 	async getByContentHash(contentHash: string): Promise<Experience | null> {
-		const row = this.readDb.prepare("SELECT * FROM experiences WHERE content_hash = ?").get(contentHash) as
+		// issue-006: 写路径服务查询读 live 库（offline/verifier.ts 晋升去重）——
+		// 快照模式下读冻结库会漏掉快照之后写入的经验，造成重复晋升。
+		const row = this.db.prepare("SELECT * FROM experiences WHERE content_hash = ?").get(contentHash) as
 			| ExperienceRow
 			| undefined;
 		if (!row) return null;

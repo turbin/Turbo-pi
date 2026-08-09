@@ -72,11 +72,12 @@ describe("ExperienceStore", () => {
 			};
 			await live.insert(after);
 
-			// Snapshot-mode store: reads frozen at the copy, writes to live.
+			// Snapshot-mode store: RETRIEVAL reads (search) frozen at the copy;
+			// write-path queries (getById) and writes go to live (issue-006).
 			const snap = new ExperienceStore(livePath, { snapshotPath: snapPath });
 			await snap.initSchema();
-			expect(await snap.getById("exp-before-snapshot")).not.toBeNull();
-			expect(await snap.getById("exp-after-snapshot")).toBeNull(); // frozen
+			expect((await snap.search("hello", 10)).map((e) => e.id)).toEqual(["exp-before-snapshot"]);
+			expect(await snap.search("world", 10)).toHaveLength(0); // frozen: after-snapshot invisible
 
 			// Writes still land in the live db (learning loop keeps working).
 			const written: Experience = { ...after, id: "exp-via-snapshot-store", contentHash: "hash-via" };
@@ -84,7 +85,10 @@ describe("ExperienceStore", () => {
 			const verify = new ExperienceStore(livePath);
 			await verify.initSchema();
 			expect(await verify.getById("exp-via-snapshot-store")).not.toBeNull();
-			expect(await snap.getById("exp-via-snapshot-store")).toBeNull(); // still frozen
+			// 写路径去重查询读 live：快照模式也必须能查到 live 新写入（issue-006）。
+			expect(await snap.getById("exp-after-snapshot")).not.toBeNull();
+			expect(await snap.getByContentHash("hash-after")).not.toBeNull();
+			expect(await snap.search("world", 10)).toHaveLength(0); // 检索仍冻结
 		} finally {
 			rmSync(livePath, { force: true });
 			rmSync(snapPath, { force: true });

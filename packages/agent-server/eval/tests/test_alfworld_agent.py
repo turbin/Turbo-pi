@@ -104,23 +104,47 @@ def test_pool_signature_is_size_and_stable_hash():
     assert pool_signature(["b.ulx", "a.ulx"])[1] != digest
 
 
-# ── M1: x-gateway 解析 ──────────────────────────────────────────────────────
+# ── M1/issue-004: x-gateway 解析（body 字段，无 headers——真实 pydantic 形状）───
 
 
-def test_parse_x_gateway_marker():
-    class FakeResp:
-        headers = {"x-gateway": '{"escalated": true, "reason": "finish_reason_length", "provider": "kimi"}'}
+def test_parse_x_gateway_reads_body_field():
+    """issue-004：openai SDK 的 ChatCompletion 对象无 .headers；标记必须从
+    body 字段读（extra="allow" 穿透）。此测试用无 headers 属性的对象模拟
+    真实 pydantic 形状——防 mock/真实鸿沟复发。"""
+    class PydanticShapedResp:
+        x_gateway = {"escalated": True, "reason": "finish_reason_length", "provider": "kimi", "local_provider": "omlx"}
+        id = "chatcmpl-real-1"
 
-    marker = parse_x_gateway(FakeResp())
-    assert marker["escalated"] is True
-    assert marker["provider"] == "kimi"
+    assert parse_x_gateway(PydanticShapedResp()) == {
+        "escalated": True,
+        "reason": "finish_reason_length",
+        "provider": "kimi",
+        "local_provider": "omlx",
+    }
 
 
-def test_parse_x_gateway_missing_header():
-    class FakeResp:
-        headers = {}
+def test_parse_x_gateway_missing_body_field():
+    class PydanticShapedResp:
+        pass
 
-    assert parse_x_gateway(FakeResp()) == {}
+    assert parse_x_gateway(PydanticShapedResp()) == {}
+
+
+# ── issue-007: --max-tokens 必传哨兵 ───────────────────────────────────────
+
+
+def test_max_tokens_is_required_argument():
+    """issue-007：--max-tokens 不得有默认值——200 是 issue-003 缺陷原值，
+    忘传参即静默复发门控 length 误升级。必传 + 哨兵测试防默认值被改回。"""
+    import alfworld_agent
+
+    parser = alfworld_agent.build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--base-url", "http://x/v1", "--api-key", "k", "--output", "o.jsonl"])
+    args = parser.parse_args(
+        ["--base-url", "http://x/v1", "--api-key", "k", "--output", "o.jsonl", "--max-tokens", "800"]
+    )
+    assert args.max_tokens == 800
 
 
 # ── M18: 轨迹合成——init_prompt 必须真实，id 前缀参数化 ─────────────────────

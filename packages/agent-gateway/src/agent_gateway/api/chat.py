@@ -117,7 +117,9 @@ def request_digest(payload: dict) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def build_openai_response(trace_id: str, envelope: ChatCompletionEnvelopeV1, result: ModelResult) -> dict:
+def build_openai_response(
+    trace_id: str, envelope: ChatCompletionEnvelopeV1, result: ModelResult, marker: GatewayMarker | None = None
+) -> dict:
     """OpenAI-shaped response: logical model name, trace_id as id."""
     message: dict = {"role": "assistant", "content": result.content}
     if result.tool_calls:
@@ -148,6 +150,11 @@ def build_openai_response(trace_id: str, envelope: ChatCompletionEnvelopeV1, res
         or result.total_tokens is not None
     ):
         body["usage"] = usage_payload(result)
+    # issue-004: 升级标记内嵌 body——openai SDK 的 ChatCompletion 对象无
+    # .headers，非流式 harness（alfworld）只能读 body 字段；openai SDK
+    # extra="allow" 使其穿透 pydantic 对象直达客户端，全链路无需 headers。
+    if marker is not None:
+        body["x_gateway"] = marker.as_dict()
     return body
 
 
@@ -869,7 +876,7 @@ async def chat_completions(
     except STORE_ERRORS as exc:
         raise GatewayError("database_unavailable", f"trace store unavailable: {exc}") from exc
 
-    body = build_openai_response(trace_id, envelope, result)
+    body = build_openai_response(trace_id, envelope, result, marker)
     response.headers["x-gateway"] = marker.as_header()
     if idempotency_key:
         await save_for_replay(store, trace_id, status=200, body=body)

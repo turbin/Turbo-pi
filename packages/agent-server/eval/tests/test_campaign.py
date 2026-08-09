@@ -216,6 +216,74 @@ def test_gate_length_escalation_cli(tmp_path):
     assert main(["--db", str(empty)]) == 1
 
 
+def _gateway_db_with_window(tmp_path, name: str):
+    """建 model_runs + request_executions（带 created_at），返回 db 路径。"""
+    import sqlite3
+
+    db = tmp_path / name
+    con = sqlite3.connect(db)
+    con.execute(
+        "CREATE TABLE model_runs (trace_id TEXT, purpose TEXT, state TEXT, quality_signals_json TEXT)"
+    )
+    con.execute("CREATE TABLE request_executions (trace_id TEXT PRIMARY KEY, created_at TEXT)")
+    rows = [
+        # 旧窗口：length 升级（脏历史，B 阶段残留）
+        ("t-old-1", "2026-08-04 21:00:00.000000"),
+        ("t-old-2", "2026-08-04 21:05:00.000000"),
+        # 新窗口（pilot）：t-new-1 未升级、t-new-2 length 升级
+        ("t-new-1", "2026-08-09 10:00:00.000000"),
+        ("t-new-2", "2026-08-09 10:05:00.000000"),
+    ]
+    con.executemany("INSERT INTO request_executions VALUES (?, ?)", rows)
+    runs = [
+        ("t-old-1", "primary", "succeeded", None),
+        ("t-old-1", "escalation", "succeeded", '{"escalation_reason": "finish_reason_length"}'),
+        ("t-old-2", "primary", "succeeded", None),
+        ("t-new-1", "primary", "succeeded", None),
+        ("t-new-2", "primary", "succeeded", None),
+        ("t-new-2", "escalation", "succeeded", '{"escalation_reason": "finish_reason_length"}'),
+    ]
+    con.executemany("INSERT INTO model_runs VALUES (?, ?, ?, ?)", runs)
+    con.commit()
+    con.close()
+    return db
+
+
+def test_gate_length_escalation_since_window(tmp_path):
+    """issue-005：--since 后只统计窗口内请求——共享 DB 的历史脏数据
+    （全历史口径 2/3=0.67）不再把 pilot 窗口钉死。"""
+    from gate_length_escalation import main
+
+    db = _gateway_db_with_window(tmp_path, "gateway.db")
+
+    # 全历史口径：3 请求 2 个 length 升级 → FAIL。
+    assert main(["--db", str(db), "--max-rate", "0.5"]) == 1
+    # --since 过滤：仅 t-new-1/t-new-2 → 1/2=0.5。
+    assert main(["--db", str(db), "--max-rate", "0.9", "--since", "2026-08-09T00:00:00"]) == 0
+    assert main(["--db", str(db), "--max-rate", "0.5", "--since", "2026-08-09T00:00:00"]) == 1
+
+
+def test_gate_length_escalation_last_hours(tmp_path):
+    """issue-005：--last-hours N 相对 now 倒推窗口。"""
+    import datetime
+
+    from gate_length_escalation import main
+
+    db = _gateway_db_with_window(tmp_path, "gateway2.db")
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    # 把新窗口数据的时间改为 now（pilot 刚跑完），旧数据保持 5 天前。
+    import sqlite3
+
+    con = sqlite3.connect(db)
+    con.execute("UPDATE request_executions SET created_at = ? WHERE trace_id LIKE 't-new-%'", (now + ".000000",))
+    con.commit()
+    con.close()
+
+    # --last-hours 24：只统计 t-new-*（1/2=0.5）→ 0.9 阈值 PASS、0.5 阈值 FAIL。
+    assert main(["--db", str(db), "--max-rate", "0.9", "--last-hours", "24"]) == 0
+    assert main(["--db", str(db), "--max-rate", "0.5", "--last-hours", "24"]) == 1
+
+
 # ── issue-003 C1：run_agent 必须显式接收 injection 参数（red-first）────────
 
 

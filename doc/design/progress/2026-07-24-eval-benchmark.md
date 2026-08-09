@@ -22,6 +22,8 @@
 
 ## 2. 交接信息（跨 agent 共享事实）
 
+- 2026-08-09 kimi：**P0 批次校验完成（commit a7f7a618）**——测试声明独立复跑一致（178/267/42/32/check 0），P0 项 diff 复查全部实现正确，issue-003/issue-002 状态与文档纪律核验通过。4 项残留已登记为 issue-004~007（open，详见审查报告 §6 补遗）：**issue-004（高，跑批前必修）非流式升级标记双断（pydantic 无 headers + agent-server 不透传），alfworld escalations 恒 0 假绿**；issue-005 gate 脚本无时间窗（共享 DB 实测 FAIL 0.298）；issue-006 快照模式 getByContentHash 写侧去重读冻结库；issue-007 max-tokens 默认仍 200。已指派 pi agent 修复。
+
 - 2026-08-09 kimi：**对抗性审查交付（第二轮 08-09）**——issue-003 登记（门控 length 缺陷，`doc/issues-snapshot/issue-003-gate-length-misescalation.md`，open）；全链路对抗审查报告 `doc/design/2026-08-09-adversarial-review-experiment-validity.md`：39 项发现（4 critical/21 major/14 minor），全部代码行级验证。**critical 四项**：C1 campaign.py run_agent 缺 injection 参数（committed 代码从未跑通）；C2 判据结构性永绿（escalated 硬编码 False，标注脚本不存在）；C3 alfworld 134 硬编码→`alfworld-20260730` 控制臂 17/134 局为重放（A/B 错位 12.7%，历史结论引用需注明口径）；C4 升级结果不过闸 + max_tokens 原样上云。**方案 A 修正**：agent-local 绕门控不成立（routing.py:31 忽略 model 名）；max_tokens 需 5 局 pilot 校准 + 验收门槛 length 升级率 <5%。**修复分 P0/P1/P2 待用户拍板，与重跑方案 A/B/C 一并决策**。
 
 - 2026-08-09 kimi：**B 阶段收官+重大修正**（`doc/design/2026-08-09-agent-server-27b-b-round-findings-and-gate-length-flaw.md`）。冷/热均 21/134（Δ=0）。**门控 length 缺陷：两臂 84-87% 请求被升级到 DeepSeek（max_tokens=200 × 27B 叙述截断误杀，quality.py:90），纯 27B 从未被测过**；“27B 升级率 0%/本地独立/云端归零”结论已撤回。重跑方案 A（双臂 max_tokens=800，~4 天）/B（混合口径）/C（仅冷库，~2 天）**待用户拍板，跑批暂停**。进化管线修复已入库（llm_client 重试+打分形态）；issue-002 草案待 C 完成后提醒。

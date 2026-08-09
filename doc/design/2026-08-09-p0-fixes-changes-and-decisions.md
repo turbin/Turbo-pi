@@ -59,3 +59,16 @@
 - 历史结果数据不回改（C3 影响的 20260730 控制臂口径在报告中注明）。
 
 Refer Spec：doc/design/plans/2026-08-09-gate-length-issue-and-adversarial-review-plan.md（P0 批次清单）；doc/design/2026-08-09-adversarial-review-experiment-validity.md（发现与修复建议）；doc/issues-snapshot/issue-003-gate-length-misescalation.md；doc/issues-snapshot/issue-002-evolution-logprobs-json-truncation.md；packages/agent-server/AGENTS.md（08-05 控制臂决策，M8 恢复项）
+
+---
+
+## 追加：Kimi 审查轮（issue-004~007，2026-08-09 下午）
+
+用户将 P0 批次提交给 kimi 审查，报告 4 个新 issue，全部代码级验证属实后修复（red-first，测试全绿：gateway 178 / vitest 270 / eval 45 / python 32 / check 0）：
+
+- **issue-004 非流式标记双层断裂（最严重，观测假绿）**：openai SDK `ChatCompletion` 无 `.headers`——上轮 alfworld 读 `resp.headers` 运行时恒返回 {}（测试用带 headers 的 mock 所以绿，mock/真实鸿沟）。修复：①gateway 响应 **body 内嵌 `x_gateway` 字段**（openai `extra="allow"` 实测可穿透 SDK 对象，一处改动覆盖三层）；②agent-server 非流式分支透传——toolcall-validator 解析 SSE 注释行并随 `done` 事件携带，`/v1` 非流式 body 并入；③alfworld 改读 body 字段 + 补记 `trace_id`（model_runs 回填兜底）。**教训：带 headers 的 FakeResp 测试是假绿——仪器测试必须用与运行时相同的对象形状。**
+- **issue-005 门控无时间窗**：`gate_length_escalation.py` 全历史口径在共享 DB 上恒 FAIL（实测 0.298）。修复：`--since <ISO>` / `--last-hours N`，JOIN `request_executions.created_at`（model_runs 无时间列）窗口过滤；runbook 要求 pilot/全量带窗口。
+- **issue-006 快照写侧去重**：`getByContentHash` 读冻结库会让 verifier 晋升去重漏重；且 `getById` 也被 ETL 写路径用（比报告更广）。修复：写路径服务查询（getById/getByContentHash）一律 live，仅检索（search/listActive）读快照，注释固化原则。
+- **issue-007 max_tokens 默认值**：默认 200 = 缺陷原值。修复：`--max-tokens` 改 **required=True**（机制上消除忘传参），`build_parser()` 提取为模块级函数，哨兵测试断言缺参 SystemExit。
+
+决策：4 项均选"机制性修复"而非"文档提醒"（body 字段替代 headers、必传替代默认值、live 读替代快照读）；历史数据仍不回改；issue-003 方案 A/B/C 与 pilot 依旧待用户拍板。

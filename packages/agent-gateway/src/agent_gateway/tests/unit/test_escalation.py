@@ -190,6 +190,9 @@ async def test_escalated_response_carries_x_gateway_marker(
     assert marker["reason"] == "finish_reason_length"
     assert marker["provider"] == "kimi"
     assert marker["local_provider"] == "omlx"
+    # issue-004: 响应 body 必须内嵌同标记——openai SDK 对象无 headers，
+    # 非流式 harness（alfworld）只能读 body 字段（extra="allow" 穿透）。
+    assert resp.json()["x_gateway"] == marker
 
 
 async def test_accepted_response_carries_x_gateway_marker(
@@ -200,6 +203,8 @@ async def test_accepted_response_carries_x_gateway_marker(
     assert resp.status_code == 200
     marker = json.loads(resp.headers["x-gateway"])
     assert marker == {"escalated": False, "reason": None, "provider": "omlx", "local_provider": "omlx"}
+    # issue-004: body 字段与 header 一致。
+    assert resp.json()["x_gateway"] == marker
 
 
 async def test_sse_escalation_emits_x_gateway_comment(
