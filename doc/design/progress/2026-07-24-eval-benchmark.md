@@ -22,6 +22,8 @@
 
 ## 2. 交接信息（跨 agent 共享事实）
 
+- 2026-08-09 kimi：**B 阶段收官+重大修正**（`doc/design/2026-08-09-agent-server-27b-b-round-findings-and-gate-length-flaw.md`）。冷/热均 21/134（Δ=0）。**门控 length 缺陷：两臂 84-87% 请求被升级到 DeepSeek（max_tokens=200 × 27B 叙述截断误杀，quality.py:90），纯 27B 从未被测过**；“27B 升级率 0%/本地独立/云端归零”结论已撤回。重跑方案 A（双臂 max_tokens=800，~4 天）/B（混合口径）/C（仅冷库，~2 天）**待用户拍板，跑批暂停**。进化管线修复已入库（llm_client 重试+打分形态）；issue-002 草案待 C 完成后提醒。
+
 - 2026-08-06 kimi：**issue-002 草案（到期提醒）**——进化管线 logprobs 大响应截断 JSON 解析失败，已修（llm_client 双副本 JSONDecodeError 重试），**用户决定：先作草案存放，待 B 热库轮报告 + C campaign 报告全部交付后，提醒用户决定转正/降级/关闭**。详见 `doc/issues-snapshot/issue-002-evolution-logprobs-json-truncation.md`。
 
 - 2026-08-05 kimi：**C 阶段脚手架并行交付**（用户批准与 B 并行）。QwenClawBench v1.1 语料已 vendor 到 `eval/qcb/tasks-v1.1/`（99 任务，gitignored）；`campaign_plan.py`（分层划分 seed=42：重复集 20 + 新任务 79 七日切片）+ `campaign_metrics.py`（判据核算）+ `campaign.py`（runner，--dry-run/--metrics）+ `tests/test_campaign.py` 9 pytest 全绿。判据预注册设计文档 `doc/design/2026-08-05-agent-server-c-campaign-design.md`。**开跑前待办 4 项见该文档 §5**（escalated 标注/judge 冒烟/harness 口径/omlx 互斥）。
