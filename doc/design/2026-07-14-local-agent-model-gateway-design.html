@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>本地 Agent 模型网关 - 构建方案</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17202a;
+      --muted: #5d6d7e;
+      --line: #d7dee7;
+      --canvas: #f5f7fa;
+      --paper: #ffffff;
+      --blue: #0f5ea8;
+      --blue-soft: #e8f2fc;
+      --green: #157347;
+      --green-soft: #e6f5ed;
+      --amber: #9a5a00;
+      --amber-soft: #fff2dc;
+      --red: #a83b32;
+      --red-soft: #fcebea;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-size: 15px;
+      line-height: 1.65;
+    }
+    .page { width: min(1160px, calc(100% - 32px)); margin: 32px auto 64px; }
+    header {
+      padding: 32px;
+      background: #12314d;
+      color: #fff;
+      border-radius: 8px;
+    }
+    header p { margin: 8px 0 0; color: #d9e6f1; }
+    h1, h2, h3 { line-height: 1.25; margin: 0; }
+    h1 { font-size: 30px; font-weight: 700; }
+    h2 { font-size: 21px; margin-bottom: 16px; }
+    h3 { font-size: 16px; margin: 24px 0 8px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 18px; font-size: 13px; }
+    .meta span { padding: 2px 10px; border: 1px solid #5d7b94; border-radius: 4px; }
+    .layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 20px; margin-top: 20px; align-items: start; }
+    nav { position: sticky; top: 20px; padding: 16px; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; }
+    nav strong { display: block; margin-bottom: 8px; }
+    nav a { display: block; padding: 5px 0; color: var(--blue); text-decoration: none; }
+    main { min-width: 0; }
+    section { margin-bottom: 20px; padding: 24px; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; }
+    p { margin: 8px 0; }
+    ul, ol { margin: 8px 0; padding-left: 22px; }
+    li + li { margin-top: 5px; }
+    code { padding: 2px 5px; background: #edf1f5; border-radius: 3px; font-family: "SFMono-Regular", Consolas, monospace; font-size: 0.9em; }
+    .callout { padding: 14px 16px; border-left: 4px solid var(--blue); background: var(--blue-soft); margin: 14px 0; }
+    .warning { border-color: var(--amber); background: var(--amber-soft); }
+    .danger { border-color: var(--red); background: var(--red-soft); }
+    .tag { display: inline-block; padding: 2px 8px; font-size: 12px; line-height: 1.4; border-radius: 99px; font-weight: 600; }
+    .tag.local { background: var(--green-soft); color: var(--green); }
+    .tag.cloud { background: var(--blue-soft); color: var(--blue); }
+    .tag.review { background: var(--amber-soft); color: var(--amber); }
+    .architecture { display: grid; grid-template-columns: repeat(5, minmax(110px, 1fr)); align-items: center; gap: 8px; margin: 20px 0 4px; }
+    .node { min-height: 112px; display: flex; flex-direction: column; justify-content: center; padding: 14px; text-align: center; border: 1px solid var(--line); border-radius: 7px; background: #fff; }
+    .node strong { display: block; }
+    .node small { color: var(--muted); margin-top: 5px; line-height: 1.35; }
+    .node.gateway { background: var(--blue-soft); border-color: #9dc3e6; }
+    .node.local { background: var(--green-soft); border-color: #9fd3b5; }
+    .node.cloud { background: #eef3fb; border-color: #adbed8; }
+    .arrow { color: var(--blue); font-size: 22px; text-align: center; }
+    .branch { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+    .branch .node { min-height: 80px; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+    th, td { padding: 10px; text-align: left; vertical-align: top; border: 1px solid var(--line); }
+    th { background: #eef2f6; font-weight: 650; }
+    .decision td:first-child { width: 140px; font-weight: 650; }
+    pre { overflow: auto; padding: 14px; color: #e7edf3; background: #182431; border-radius: 6px; font-size: 13px; line-height: 1.5; }
+    .diagram-panel { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+    .diagram-panel:first-of-type { margin-top: 0; padding-top: 0; border-top: 0; }
+    .diagram-panel pre { margin: 10px 0 0; white-space: pre; }
+    .diagram-note { color: var(--muted); font-size: 13px; }
+    .phase { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 12px; padding: 14px 0; border-top: 1px solid var(--line); }
+    .phase:first-of-type { border-top: 0; }
+    .number { width: 28px; height: 28px; display: grid; place-items: center; color: #fff; background: var(--blue); border-radius: 50%; font-weight: 700; }
+    .phase h3 { margin: 2px 0 5px; }
+    .checklist { columns: 2; column-gap: 28px; }
+    .checklist li { break-inside: avoid; }
+    footer { color: var(--muted); font-size: 13px; padding: 8px 4px; }
+    @media (max-width: 820px) {
+      .page { width: min(100% - 20px, 1160px); margin-top: 10px; }
+      header, section { padding: 20px; }
+      .layout { grid-template-columns: 1fr; }
+      nav { position: static; }
+      .architecture { grid-template-columns: 1fr; }
+      .arrow { transform: rotate(90deg); }
+      .branch, .checklist { grid-template-columns: 1fr; columns: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <h1>本地 Agent 模型网关</h1>
+      <p>第一版具体构建方案：LobsterAI 本地客户端、omlx Gemma 12B 本地推理，以及 Kimi / DeepSeek 的可审计升级链路。</p>
+      <div class="meta">
+        <span>日期：2026-07-14</span>
+        <span>状态：Conditional Go</span>
+        <span>部署：单台 Mac mini</span>
+        <span>范围：第一条端到端验证通路</span>
+      </div>
+    </header>
+
+    <div class="layout">
+      <nav aria-label="目录">
+        <strong>目录</strong>
+        <a href="#review">Agent Team 审阅</a>
+        <a href="#goal">目标与边界</a>
+        <a href="#research">论文机制与落地</a>
+        <a href="#architecture">总体架构</a>
+        <a href="#diagrams">四张运行图</a>
+        <a href="#protocol">协议与接入</a>
+        <a href="#routing">路由与质量门控</a>
+        <a href="#trace">Trace 与规则学习</a>
+        <a href="#isolation">并发、隔离与安全</a>
+        <a href="#build">构建阶段</a>
+        <a href="#acceptance">验收标准</a>
+        <a href="#evolution">后续演进</a>
+      </nav>
+
+      <main>
+        <section id="review">
+          <h2>0. Agent Team 批判审阅结论</h2>
+          <div class="callout danger"><strong>原方案结论：No-Go。</strong>资深 AI 架构师与资深 Agent/后端工程师独立审阅后认为，原稿不能直接开工。完成本页 P0 修订与真实兼容探针后，项目状态转为 Conditional Go。</div>
+          <table>
+            <thead><tr><th>ID</th><th>必须修订的边界</th><th>修订决定</th></tr></thead>
+            <tbody>
+              <tr><td><code>V1-R01</code>, <code>V1-R02</code></td><td>没有稳定会话 ID，无法可靠形成任务 execution trace。</td><td>V1 只承诺 request trace；先抓取 LobsterAI 真实请求，反馈必须显式携带 trace_id。</td></tr>
+              <tr><td><code>V1-R03</code></td><td>模型置信度、上下文不足、工具授权等信号不可观测。</td><td>生产门控只用结构、tool arguments、finish reason、DLP 和独立 verification；启发式仅 shadow。</td></tr>
+              <tr><td><code>V1-R04</code>, <code>V1-R05</code></td><td>原工具结果校验和“协议无关 IR”合同不成立。</td><td>定义版本化 ChatCompletionEnvelopeV1；只校验 tool arguments，tool result 按 tool_call_id 关联。</td></tr>
+              <tr><td><code>V1-R06</code>, <code>V1-R07</code></td><td>双云 fallback、出云隐私、预算、幂等语义冲突。</td><td>默认禁云；DLP + 原子预算；单请求最多一个云 provider 一次，自动传输重试为 0。</td></tr>
+              <tr><td><code>V1-R08</code></td><td>delivered 状态和 DB 故障恢复不可证明。</td><td>改为 lease/version 状态机：received 到 response_closed，异常为 cancelled/failed/abandoned。</td></tr>
+              <tr><td><code>V1-R09</code>, <code>V1-R10</code></td><td>规则学习和分布式设计进入关键路径过早。</td><td>规则闭环移到 V1.1；V1 单 worker，不实现空写锁、Redis 或多实例分支。</td></tr>
+            </tbody>
+          </table>
+          <p>完整问题、后果、修订建议和验收方法见独立的 Agent Team 审阅报告。Markdown 设计稿是唯一规范源，本 HTML 是同步展示稿。</p>
+        </section>
+
+        <section id="goal">
+          <h2>1. 目标与边界</h2>
+          <p>Agent Gateway 是模型网关，不是新的 Agent Client。窄 V1 负责本地优先、确定性云端升级和可恢复的 request trace；自然语言反馈分类与规则学习在核心通路稳定后进入 V1.1。</p>
+          <ul>
+            <li><span class="tag local">本地优先</span> 先调用 omlx 的 <code>gemma-4-12b-it-4bit</code>。</li>
+            <li><span class="tag cloud">确定性升级</span> 本地输出命中可观测硬门时，最多转发一个已配置云 provider 一次。</li>
+            <li><span class="tag review">延期学习</span> 显式反馈、独立 verification 和规则候选保留接口，但不进入第一周。</li>
+            <li><span class="tag local">本地验证</span> Gateway、LobsterAI、omlx 先全部运行在同一台 Mac mini。</li>
+          </ul>
+          <div class="callout warning"><strong>第一版不做：</strong>不承诺任务级 trace，不按时间窗口归因满意度，不依赖模型自报置信度，不做双云 fallback、规则抽取、分布式组件、小模型微调，也不让外部 memory 绕过规则审批直接进入 system context。</div>
+        </section>
+
+        <section id="research">
+          <h2>2. 论文机制与工程落地</h2>
+          <p>本设计分别借鉴 <a href="https://arxiv.org/abs/2606.26669">SkillDisCo</a> 的“跨成功轨迹提炼可验证过程知识”和 <a href="https://arxiv.org/abs/2606.06090">MAGE</a> 的“以执行状态而非语义相似度管理记忆”。两者均是架构假设来源，不是本项目的性能承诺。</p>
+          <table>
+            <thead><tr><th>机制</th><th>论文中的做法</th><th>本系统的受控落地</th></tr></thead>
+            <tbody>
+              <tr><td>SkillDisCo：归一化与子目标</td><td>将成功 trace 表示为明确控制流，抽取多步骤子目标，并从多个成功实例中寻找共享过程。</td><td>只产生脱敏 <code>LearningPacket</code> 与受限规则候选；单条 trace 不能直接成为规则。</td></tr>
+              <tr><td>SkillDisCo：规格与验证</td><td>给技能定义输入、前后置条件、副作用，再用留出样本验证可执行实现。</td><td>使用 rule lint、冲突检测、正反 fake fixture 回放和人工审批；产物是文本 <code>RuleVersion</code>，不是可执行技能。</td></tr>
+              <tr><td>MAGE：两层状态树</td><td>底层保存 action-observation，顶层按子目标压缩摘要；当前状态来自根到当前节点的路径。</td><td>V1.2 后仅建立只读派生状态索引，用于离线诊断与候选发现，不能改变在线 trace 查询、prompt 或路由。</td></tr>
+              <tr><td>MAGE：Grow / Compress / Maintain / Revise</td><td>追加轨迹、边界压缩、验证摘要、从错误边界分支重试。</td><td>映射为离线摘要、verification/evaluator、<code>FailureCase</code> 和隔离分支；绝不自动回滚用户工作区或重跑模型请求。</td></tr>
+            </tbody>
+          </table>
+          <div class="callout warning"><strong>三层隔离：</strong>V1 在线请求层只使用已批准规则；V1.1 学习层只处理脱敏、已验证的摘要；V1.2 研究层只能提出候选，不能自动执行工具、修改权重或改变路由。</div>
+        </section>
+
+        <section id="architecture">
+          <h2>3. 总体架构</h2>
+          <div class="architecture" aria-label="系统架构">
+            <div class="node"><strong>LobsterAI</strong><small>客户端、工作区、工具授权</small></div>
+            <div class="arrow">→</div>
+            <div class="node gateway"><strong>Agent Gateway</strong><small>127.0.0.1:8787<br>认证、路由、trace</small></div>
+            <div class="arrow">→</div>
+            <div class="node local"><strong>omlx</strong><small>127.0.0.1:8000/v1<br>Gemma 12B</small></div>
+            <div class="arrow">→</div>
+            <div class="node cloud"><strong>Kimi 或 DeepSeek</strong><small>通道预先选择，单请求最多一次</small></div>
+          </div>
+          <div class="branch">
+            <div class="node"><strong>SQLite WAL</strong><small>身份、幂等、预算、request trace</small></div>
+            <div class="node"><strong>V1.1 规则审批</strong><small>显式 trace + verification 后启用</small></div>
+            <div class="node"><strong>MemoryIndexAdapter</strong><small>local / mem0<br>gbrain 默认 unsupported</small></div>
+          </div>
+          <table>
+            <thead><tr><th>组件</th><th>负责</th><th>不负责</th></tr></thead>
+            <tbody>
+              <tr><td>LobsterAI</td><td>用户交互、工作区、工具执行、权限确认</td><td>路由、trace 归档、规则生成</td></tr>
+              <tr><td>Agent Gateway</td><td>OpenAI 兼容、通道身份、排队、升级、学习闭环</td><td>直接操作客户端文件系统</td></tr>
+              <tr><td>omlx</td><td>本地模型推理</td><td>长期状态与通道隔离</td></tr>
+              <tr><td>Kimi / DeepSeek</td><td>复杂任务云端推理</td><td>客户端身份和规则发布</td></tr>
+              <tr><td>MemoryIndexAdapter</td><td>隔离 local/mem0 与未支持 provider，索引脱敏经验和已批准规则</td><td>作为规则权威源、直接生成 system context、假设未验证 provider 可用</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="diagrams">
+          <h2>4. 软件架构与运行图</h2>
+          <p>下列图展示了 V1 的实际运行边界，以及 V1.1/V1.2 学习能力如何被隔离在在线请求路径之外。完整 Mermaid 图源位于同名 Markdown 设计稿的“11. 软件架构与运行图”。</p>
+
+          <div class="diagram-panel">
+            <h3>软件架构图</h3>
+            <pre>Client
+  | OpenAI Chat Completions
+  v
+Agent Gateway
+  |- Protocol + Channel binding + queue + lease
+  |- Approved-rule injector --> local-first router --> omlx
+  |- DLP + budget guard --------------------------> Kimi / DeepSeek
+  |- Trace / audit / rule authority --------------> SQLite WAL
+  `- V1.1 learning / V1.2 MAGE index (offline, read-only)</pre>
+            <p class="diagram-note">Gateway DB 是唯一规则权威源；mem0 只能提供已脱敏的引用，不能直接写入 system context。</p>
+          </div>
+
+          <div class="diagram-panel">
+            <h3>在线请求交互图</h3>
+            <pre>LobsterAI -> Gateway: chat completion
+Gateway -> DB: trace + idempotency + lease
+Gateway -> omlx: normalized request + approved rules
+omlx -> Gateway: complete local result
+Gateway -> quality gate: structure / tool args / DLP / verification
+  pass  -> DB -> final JSON or delayed SSE -> LobsterAI
+  fail  -> DLP + budget -> one selected cloud call -> DB -> final response
+  block -> DB -> stable policy or budget error -> LobsterAI</pre>
+            <p class="diagram-note">网关先取得完整上游结果再回放 SSE，因此不会向客户端泄露后续被升级替换的本地草稿。</p>
+          </div>
+
+          <div class="diagram-panel">
+            <h3>数据流图</h3>
+            <pre>Request -> normalize + redact -> online request plane -> final response
+                              |
+                              v
+                     redacted request trace
+                              |
+            explicit satisfaction + passed verification + stable scope
+                              |
+                              v
+LearningPacket -> RuleCandidate -> lint/replay -> human approval -> RuleVersion
+                                                                  |
+                                                                  v
+                                                   scoped system-context injection
+
+Failure -> redacted fake fixture + CI only
+Stable linked traces -> MAGE derived state tree (V1.2 research-only)</pre>
+          </div>
+
+          <div class="diagram-panel">
+            <h3>V1 部署图</h3>
+            <pre>Mac mini, localhost only
+  LobsterAI --OpenAI API--> Agent Gateway :8787 --> omlx :8000/v1
+                                  |                  Gemma 12B
+                                  |--> SQLite WAL (0600)
+                                  |--> Local FTS5 index
+                                  `--> optional outbound: Kimi / DeepSeek / mem0
+
+Post-V1 only: Client -> New API -> Gateway instances -> PostgreSQL</pre>
+            <p class="diagram-note">V1 强制单 Gateway worker；多实例前必须迁移共享存储，并重新设计调度、预算与规则版本的一致性。</p>
+          </div>
+        </section>
+
+        <section id="protocol">
+          <h2>5. 协议、逻辑模型与 LobsterAI 配置</h2>
+          <p>第一版实现受限 OpenAI Chat Completions profile，内部 DTO 明确命名为 <code>ChatCompletionEnvelopeV1</code>。身份、路由、预算与 trace 是协议无关领域；Responses/Anthropic 将来使用新的 GatewayIRV2，不假装 V1 DTO 已通用。</p>
+          <table>
+            <thead><tr><th>接口</th><th>用途</th></tr></thead>
+            <tbody>
+              <tr><td><code>GET /healthz</code></td><td>服务、数据库与 omlx 健康摘要</td></tr>
+              <tr><td><code>GET /v1/models</code></td><td>返回 Gateway 逻辑模型</td></tr>
+              <tr><td><code>POST /v1/chat/completions</code></td><td>普通响应与 OpenAI SSE</td></tr>
+              <tr><td><code>POST /internal/v1/feedback</code></td><td>提交明确满意/不满意反馈</td></tr>
+              <tr><td><code>/internal/v1/traces/*</code></td><td>本机管理查询、规则批准与回滚</td></tr>
+            </tbody>
+          </table>
+          <table class="decision">
+            <thead><tr><th>逻辑模型</th><th>策略</th></tr></thead>
+            <tbody>
+              <tr><td><code>agent-auto</code></td><td>默认。本地优先，允许质量门控升级云端。</td></tr>
+              <tr><td><code>agent-local</code></td><td>只调用 omlx，禁止任何云端出站。</td></tr>
+              <tr><td><code>agent-cloud</code></td><td>显式跳过本地；仅允许配置了云端策略的通道使用。</td></tr>
+            </tbody>
+          </table>
+          <div class="callout warning"><strong>待实测：</strong>以下 LobsterAI 配置是目标合同。Task 0 必须先确认任意 Base URL/model、SSE、tool 两轮及会话字段；未验证前不能视为已支持。</div>
+          <pre>Base URL:   http://127.0.0.1:8787/v1
+API format: OpenAI
+API key:    agw_local_dev_&lt;随机高熵字符串&gt;
+Model:      agent-auto</pre>
+          <div class="callout"><strong>延迟流式：</strong>等待最终答案期间发送 SSE comment heartbeat；随后完整回放 role、content/tool deltas、finish reason、可选 usage chunk 和 [DONE]。客户端断连会传播取消并释放推理槽。</div>
+        </section>
+
+        <section id="routing">
+          <h2>6. 路由与质量门控</h2>
+          <ol>
+            <li>认证 API key，得到唯一的 <code>client_id / workspace_id / channel_id</code>。</li>
+            <li>为一次 HTTP 请求创建 request trace，进行幂等占位并进入有界公平队列。</li>
+            <li>调用 omlx，并检查响应结构、空输出、length、tool arguments、forced tool、DLP 与独立 verification。</li>
+            <li>硬门通过则接受；确定性失败且满足出云授权/DLP/预算时，调用选定云 provider 一次。</li>
+            <li>通过 lease/version 状态机记录结果，再以普通 JSON 或 heartbeat + 最终 SSE 返回。</li>
+          </ol>
+          <pre>escalation_score =
+  3 * patch_or_schema_invalid + 3 * high_risk_action
++ 2 * verification_failed     + 2 * cross_module_or_multi_file
++ 2 * context_insufficient    + 1 * local_model_low_confidence
++ 1 * recent_similar_failure  + 1 * user_negative_signal</pre>
+          <p>上述启发式分数保留为 shadow telemetry，只用于建立评测集；在证明误接受率和升级召回率之前，不改变生产答案。</p>
+          <table class="decision">
+            <thead><tr><th>条件</th><th>处理方式</th></tr></thead>
+            <tbody>
+              <tr><td>硬门通过</td><td>接受本地结果。</td></tr>
+              <tr><td>结构/tool 确定性失败</td><td>若通道允许且 DLP/预算通过，调用选定云 provider 一次。</td></tr>
+              <tr><td>DLP、安全策略或禁云</td><td>阻断出云并返回稳定错误。</td></tr>
+              <tr><td>仅启发式高分</td><td>记录 shadow decision，不改变当前结果。</td></tr>
+              <tr><td>高风险工具</td><td>返回 tool call，由 LobsterAI 自行授权；Gateway 不声称知道授权结果。</td></tr>
+            </tbody>
+          </table>
+          <div class="callout danger"><strong>调用上限：</strong>单请求最多“本地一次 + 选定云 provider 一次”，传输自动重试为 0。没有 Idempotency-Key 时明确为 at-least-once。</div>
+        </section>
+
+        <section id="trace">
+          <h2>7. Trace、反馈与规则学习</h2>
+          <h3>Trace</h3>
+          <p>每个 HTTP 请求创建 UUID <code>trace_id</code>。状态为 received、queued、leased、run_started、run_succeeded、response_started、response_closed；异常为 cancelled、failed、abandoned。默认只保存摘要与结构化元数据，正文显式开启；出云前执行独立 DLP。</p>
+          <h3>反馈判定</h3>
+          <table>
+            <thead><tr><th>来源</th><th>可信度</th><th>作用</th></tr></thead>
+            <tbody>
+              <tr><td>显式 API + trace_id</td><td>高</td><td>保存反馈；有 passed verification 后才允许创建 V1.1 抽取任务</td></tr>
+              <tr><td>对话内肯定/否定文字</td><td>不足</td><td>V1 不自动绑定最近 trace，不触发规则</td></tr>
+              <tr><td>正向或负向语气</td><td>低</td><td>仅作为离线分析数据，不驱动生产路由</td></tr>
+            </tbody>
+          </table>
+          <h3>规则闭环</h3>
+          <p>规则闭环后移到 V1.1。只有显式 trace_id、passed verification、稳定 scope_key、已脱敏且未命中敏感策略时，才可创建受限 DSL 候选。候选默认 <code>pending</code>，审批前显示冲突、证据、token 成本、影响范围和过期时间。</p>
+          <pre>{
+  "title": "修改 FastAPI 路由后运行目标测试",
+  "scope_type": "workspace",
+  "scope_key": "mac-mini/lobster/default",
+  "rule_type": "workflow",
+  "trigger": {
+    "task_intent": ["modify_api", "modify_schema"],
+    "keywords": ["FastAPI", "Pydantic", "route", "schema"]
+  },
+  "instruction": "修改 FastAPI 路由或 Pydantic schema 后，先运行相关 pytest；测试失败时不要声明完成。",
+  "negative_instruction": "不要仅凭代码看起来正确就结束任务。",
+  "evidence_trace_id": "tr_123",
+  "evidence_digest": "sha256:...",
+  "confidence": 0.82,
+  "expires_at": "2026-10-15"
+}</pre>
+          <p>规则始终保留版本，回滚是创建 disabled 新版本，不删除历史。规范化 LearningPacket 后计算 packet_digest；同一 trace 与 digest 只允许一个有效抽取作业。审批前必须完成 lint、冲突检测和脱敏 fake fixture 回放，保存 evaluator evidence digest。注入 system context 前只加载已启用规则，最多 5 条、总 token 不超过 800，并声明规则不能覆盖安全策略、用户意图或工具权限。</p>
+          <h3>MemoryIndex 兼容层</h3>
+          <p>工程中新增 <code>MemoryIndexAdapter</code> 隔离 local、mem0 与未来 provider。Gateway DB 仍是规则审批、版本和回滚的权威源；外部 memory 只做相似经验检索和候选发现。mem0 结果必须带完整通道范围、剥离 memory 正文，只返回引用、分数、ID 与 metadata digest，再回查 Gateway DB 后才能注入。</p>
+          <table>
+            <thead><tr><th>Provider</th><th>作用</th><th>限制</th></tr></thead>
+            <tbody>
+              <tr><td><code>local</code></td><td>SQLite/FTS 本地索引，默认启用</td><td>只读写脱敏摘要</td></tr>
+              <tr><td><code>mem0</code></td><td>通过 metadata 做经验检索</td><td>强制 channel filter，剥离 memory 正文并回查 Gateway DB</td></tr>
+              <tr><td><code>gbrain</code></td><td>CapabilityUnsupportedAdapter</td><td>无官方 API/repo/protocol 前默认 disabled，不发起外部调用</td></tr>
+            </tbody>
+          </table>
+          <pre>[memory_index]
+provider = "local" # disabled | local | mem0 | gbrain (unsupported)
+enabled = true
+write_async = true
+read_timeout_ms = 300
+max_hits = 5</pre>
+          <p>V1 的失败闭环仅使用脱敏 fake fixture 与 CI 回归夹具，覆盖 schema、SSE、DLP、预算、幂等、lease 和通道隔离；不得保存 production raw trace 或 provider raw response。</p>
+        </section>
+
+        <section id="isolation">
+          <h2>8. 并发、隔离与安全边界</h2>
+          <ul>
+            <li>HTTP 可并发进入；完整通道三元组使用有容量、有 deadline 的公平队列，超载返回 429 + Retry-After。</li>
+            <li>初始 <code>LOCAL_MODEL_CONCURRENCY=1</code>，保证 Mac mini 上 omlx 行为稳定；云端单独限流。</li>
+            <li>V1 强制单 Gateway worker；SQLite 启用 WAL、foreign keys、busy timeout 和短事务，网络调用期间不持有事务。</li>
+            <li>所有 trace、反馈和规则的读取都附带三元通道范围；不同 key 的查询返回 404，不泄露存在性。</li>
+            <li>服务仅监听 <code>127.0.0.1</code>，所有请求仍要 Bearer key；管理接口额外要求本地 <code>X-Admin-Key</code>。</li>
+            <li>Trace 默认保留 30 天；后台清理任务删除过期数据。</li>
+          </ul>
+          <div class="callout warning"><strong>真实边界：</strong>这只是同一台机器、同一 macOS 用户下的逻辑隔离。未来对外服务必须升级为独立 OS/容器或 VM、PostgreSQL、TLS、网络鉴权和分布式锁。</div>
+        </section>
+
+        <section id="build">
+          <h2>9. 构建阶段</h2>
+          <p>工程目录：<code>/Users/yanbin/Workspace/playground/agent-gateway</code>。实施顺序由真实兼容证据驱动。</p>
+          <div class="phase"><div class="number">0</div><div><h3>LobsterAI / omlx 能力探针</h3><p>抓取脱敏 golden fixtures，确认 Base URL、模型名、SSE、tool 两轮、会话字段和 Gemma tool capability。</p></div></div>
+          <div class="phase"><div class="number">1</div><div><h3>安全与测试底座</h3><p>Redaction、出云 DLP、FakeProvider、配置 fail-fast 和健康检查。</p></div></div>
+          <div class="phase"><div class="number">2</div><div><h3>精确协议与存储合同</h3><p>ChatCompletionEnvelopeV1、认证、models、幂等、预算、request trace 和 SQLite 恢复。</p></div></div>
+          <div class="phase"><div class="number">3</div><div><h3>本地/单云 Provider</h3><p>omlx 与 Kimi/DeepSeek adapter；每通道只选择一个云 provider。</p></div></div>
+          <div class="phase"><div class="number">4</div><div><h3>硬门控与可恢复编排</h3><p>可观测质量证据、有界公平队列、取消、deadline 和 lease/version 状态机。</p></div></div>
+          <div class="phase"><div class="number">5</div><div><h3>SSE 与真实联调</h3><p>Heartbeat、tool delta、usage、故障注入、重启恢复和 LobsterAI E2E。</p></div></div>
+          <div class="phase"><div class="number">6</div><div><h3>V1.1 学习闭环</h3><p>显式 feedback、verification、规则 DSL、packet_digest 幂等、脱敏回放、mem0 正文剥离、审批与回滚，独立 Go Gate。</p></div></div>
+        </section>
+
+        <section id="acceptance">
+          <h2>10. 第一版验收标准</h2>
+          <ol class="checklist">
+            <li><code>V1-A01</code> LobsterAI capture probe 明确所有 observed capability。</li>
+            <li><code>V1-A02</code> omlx 文本、tool 与长响应 live baseline 完成。</li>
+            <li><code>V1-A03</code> 普通请求由 omlx 完成并形成 request trace。</li>
+            <li><code>V1-A04</code> 确定性结构失败最多升级一个云 provider 一次。</li>
+            <li><code>V1-A05</code> Heartbeat 与最终 SSE 合同完整且不泄漏本地草稿。</li>
+            <li><code>V1-A06</code> 双 key 隔离且并发预算不超卖。</li>
+            <li><code>V1-A07</code> 幂等重放和冲突语义稳定。</li>
+            <li><code>V1-A08</code> 客户端断连传播取消并释放槽位。</li>
+            <li><code>V1-A09</code> 故障重启后 lease 可恢复且不重复云计费。</li>
+            <li><code>V1-A10</code> 敏感内容不出云/落盘，DB 前置故障 fail closed。</li>
+            <li><code>V1-A11</code> P0 失败类别均有脱敏 fake fixture；安全扫描不含 key、Bearer、私钥或私有正文种子。</li>
+          </ol>
+        </section>
+
+        <section id="evolution">
+          <h2>11. 后续演进：New API 与多实例</h2>
+          <p>本地通路稳定后再前置 New API：<code>Client -&gt; New API -&gt; Agent Gateway -&gt; local/cloud providers</code>。New API channel 必须关闭额外 fallback/retry，避免多层重试和重复计费；每个 Gateway channel 使用独立 token。</p>
+          <ul>
+            <li>先迁移 PostgreSQL，再运行多个 Gateway 实例。</li>
+            <li>调度、预算、规则版本改为共享存储；必要时使用 Redis 队列和分布式锁。</li>
+            <li>Gateway 经 New API 调云模型时使用内部 service token 和真实模型名，绝不回调 <code>agent-auto</code>。</li>
+            <li>增加 <code>/v1/responses</code> 与 <code>/v1/messages</code>，从而接入 Codex CLI、Claude Code、Kimi Code 等客户端。</li>
+            <li>通过配置把 <code>memory_index.provider</code> 切换为 <code>local</code> 或 <code>mem0</code>；gbrain 在有官方协议前固定为 unsupported，外部不可用时降级到本地 DB。</li>
+            <li>MAGE 仅作为 V1.2+ 只读派生索引研究项，不进入 prompt 或路由；SkillDisCo/PFSM 不进入 API、schema 或验收。</li>
+            <li>积累并人工抽检成功/失败 trace 后，再启动离线小模型微调实验。</li>
+          </ul>
+        </section>
+      </main>
+    </div>
+    <footer>唯一规范源：2026-07-14-local-agent-model-gateway-design.md；实施清单：2026-07-14-lobster-agent-gateway.md；批判审阅：2026-07-14-agent-gateway-team-review.md。</footer>
+  </div>
+</body>
+</html>

@@ -1,0 +1,1856 @@
+Unveiling the Key Factors for Distilling Chain-of-Thought Reasoning
+Xinghao Chen1,2,3, Zhijing Sun3, Wenjin Guo3, Miaoran Zhang4, Yanjun Chen1,3,
+Yirong Sun3, Hui Su5, Yijie Pan3, Dietrich Klakow4, Wenjie Li1*, Xiaoyu Shen2,3*
+1 Department of Computing, The Hong Kong Polytechnic University
+2 Ningbo Key Laboratory of Spatial Intelligence and Digital Derivative
+3Institute of Digital Twin, EIT 4 Saarland University 5 Meituan Inc.
+xing-hao.chen@connect.polyu.hk
+cswjli@comp.polyu.edu.hk xyshen@eitech.edu.cn
+Abstract
+Large Language Models (LLMs) excel in rea-
+soning tasks through Chain-of-Thought (CoT)
+prompting. However, CoT prompting greatly
+increases computational demands, which has
+prompted growing interest in distilling CoT ca-
+pabilities into Small Language Models (SLMs).
+This study systematically examines the fac-
+tors influencing CoT distillation, including the
+choice of granularity, format and teacher model.
+Through experiments involving four teacher
+models and seven student models across seven
+mathematical and commonsense reasoning
+datasets, we uncover three key findings: (1) Un-
+like LLMs, SLMs exhibit a non-monotonic re-
+lationship with granularity, with stronger mod-
+els benefiting from finer-grained reasoning and
+weaker models performing better with simpler
+CoT supervision; (2) CoT format significantly
+impacts LLMs but has minimal effect on SLMs,
+likely due to their reliance on supervised fine-
+tuning rather than pretraining preferences; (3)
+Stronger teacher models do NOT always pro-
+duce better student models, as diversity and
+complexity in CoT supervision can outweigh
+accuracy alone. These findings emphasize the
+need to tailor CoT strategies to specific stu-
+dent model, offering actionable insights for op-
+timizing CoT distillation in SLMs. The code
+and datasets are available at https://github.
+com/EIT-NLP/Distilling-CoT-Reasoning .
+1 Introduction
+Large Language Models (LLMs) have demon-
+strated exceptional capabilities through exten-
+sive pretraining on diverse human language
+data (Brown et al., 2020; Hoffmann et al., 2022;
+Team et al., 2024a; Meta, 2024a; OpenAI, 2024a,b).
+Chain-of-Thought (CoT) prompting has further en-
+hanced their abilities by guiding LLMs to generate
+intermediate reasoning tokens, which emulate hu-
+man cognitive processes and improve interpretabil-
+*Corresponding authors.
+Teacher Model
+Symbolic
+Symbolic
+Symbolic
+RaR
+rephrase
+respond
+Sub-ques
+Sub-ques
+solve
+CoT Formats
+CoT Granularity
+…
+Student Model
+Starting population: 684. 
+Increase by 25%: 684 * 1.25 = 
+855. Decrease by 40%: 855 * 
+0.60 = 513. The answer is 513
+Initial population: 684 people. 
+Population increased by 25%: 
+684 * 0.25 = 171 people. New 
+population: 684 + 171 = 855 
+people. 40% of population 
+moved away: 855 * 0.4 = 342 
+people. Remaining population: 
+855 - 342 = 513 people. The 
+answer is 513
+Simple Granularity
+Detailed Granularity
+Question
+Figure 1: Overview of CoT Distillation. Different teacher
+models generate CoT supervision with varying levels of gran-
+ularity and formats to fine-tune the student model.
+ity (Kojima et al., 2022; Wei et al., 2023). Ad-
+vances in CoT prompting have explored techniques
+like extending reasoning steps (Jin et al., 2024; Mer-
+rill and Sabharwal, 2024) and refining reasoning
+formats (Deng et al., 2024; Xu et al., 2024a). How-
+ever, CoT’s token-intensive nature significantly in-
+creases computational demands (Zhao et al., 2024),
+limiting its practicality in resource-constrained set-
+tings. This has spurred interest in distilling CoT
+capabilities into Small Language Models (SLMs)
+as a more efficient alternative (Team et al., 2024b;
+Meta, 2024b).
+Since SLMs often struggle to independently gen-
+erate effective CoT reasoning solutions (Kaplan
+et al., 2020; Stolfo et al., 2023), distilling CoT ca-
+pabilities requires fine-tuning SLMs on teacher-
+annotated CoT datasets, where the teacher can
+be either human experts or more powerful LLMs.
+While previous research has demonstrated success-
+ful distillation of CoT capabilities into SLMs (Ho
+et al., 2023; Magister et al., 2023; Xu et al., 2024b;
+DeepSeek-AI et al., 2025), the choice of teacher
+annotators and CoT generation methods has often
+arXiv:2502.18001v3  [cs.CL]  27 May 2025
+been arbitrary. A critical, yet unexplored, research
+question remains: What is the most effective CoT
+supervision for training a student model to develop
+robust reasoning capabilities? Analogous to how
+human teachers instruct students, there are three
+key factors that influence how effectively a student
+absorbs knowledge:
+• Choice of teacher: This defines who teaches
+the student. Different teachers bring vary-
+ing levels of knowledge, teaching styles, and
+problem-solving approaches. In reality a stu-
+dent’s performance can vary significantly de-
+pending on the teacher, and the most knowl-
+edgeable person is not always the best teacher.
+• Granularity of teaching: This defines what
+level of detail is provided. Teachers may pro-
+vide varying levels of explanation: some offer
+detailed, step-by-step reasoning, while others
+skip over simpler steps, assuming they are
+self-evident. The optimal level of granularity
+depends on the student’s perspective of what
+needs to be explained.
+• Format of teaching: This defines how the rea-
+soning is structured and presented. Even with
+the same teacher and granularity level, the
+way information is organized and expressed
+can significantly impact learning outcomes.
+Some students may prefer plain language ex-
+planations, while others may thrive with more
+technical, mathematical language.
+Building on this analogy of how human teaching
+impacts student performance, we conducted exten-
+sive experiments on four mathematical reasoning
+datasets of varying difficulty and three common-
+sense reasoning datasets, using four teacher models
+to distill reasoning skills to seven student models.
+We adopted a 1-shot prompting approach for gen-
+erating CoT annotations, which we found to be
+the most effective in maintaining consistency in
+teaching style while controlling granularity. Our
+key findings are: (1) While LLMs benefit mono-
+tonically from detailed steps, SLMs exhibit an non-
+monotonic relationship. Stronger student models
+benefit from finer granularity, while weaker ones
+can be overwhelmed by excessive explanations and
+prefer simpler CoT annotations; (2) CoT format
+changes influence LLMs, likely due to their pre-
+training preferences for certain structures, but this
+effect is less pronounced in SLMs, which adapt
+more readily to diverse formats during fine-tuning;
+(3) Contrary to prior research suggesting that bet-
+ter teacher models invariably lead to better student
+performance (Zong et al., 2023), in the task of dis-
+tilling CoT capabilities, we find that better teacher
+models do not always produce better student mod-
+els. Sronger student models benefit more from
+advanced teacher model. Human-annotated CoTs,
+despite their near-perfect accuracy, often underper-
+form LLM-generated CoTs. Our work presents
+the first systematic framework for optimizing CoT
+distillation, laying the groundwork for enhancing
+the reasoning capabilities of SLMs.
+2 Related Work
+CoT prompting CoT prompting (Wei et al.,
+2023) has become a pivotal technique for enhanc-
+ing reasoning capabilities in LLMs by introduc-
+ing intermediate reasoning steps. Automated ap-
+proaches like Auto-CoT (Zhang et al., 2023), Tree-
+of-Thoughts (Yao et al., 2023) and Self-play Mu-
+tual Reasoning (Qi et al., 2024) explore multiple
+reasoning paths to expand the search space and
+improve task accuracy. These methods focus on
+increasing the reasoning length or expanding the
+reasoning horizon to handle complex tasks. Recent
+studies have underscored the importance of reason-
+ing granularity and formats in enhancing LLM per-
+formance. For instance, Jin et al. (2024) identified
+that longer reasoning steps improve task success
+for complex problems, while overly concise steps
+can reduce effectiveness. Tailored reasoning for-
+mats(Khot et al., 2023; Zhou et al., 2023; Deng
+et al., 2024; Xu et al., 2024a) have demonstrated
+substantial improvements across tasks. However,
+these reasoning optimization strategies often comes
+with significant computational costs (Nayab et al.,
+2024), raising concerns about the trade-off between
+accuracy and efficiency.
+Knowledge distillation While direct prompt-
+ing enables LLMs to perform complex reasoning
+through CoT, SLMs struggle due to limited capac-
+ity (Stolfo et al., 2023). Knowledge distillation
+(KD) provides an effective framework for trans-
+ferring the reasoning capabilities of teachers to
+SLMs (Xu et al., 2024b). A simple yet effective ap-
+proach is using a teacher-student paradigm, which
+employs teacher-generated CoT steps to guide
+SLMs, addressing their limitations and enhanc-
+ing reasoning-intensive task performance (Magister
+et al., 2023; Ho et al., 2023; Shridhar et al., 2023).
+Despite these advances, a systematic exploration of
+how to balance reasoning granularity, format, and
+teaching strategies remains lacking. Addressing
+these gaps is crucial for optimizing CoT distillation
+and enabling efficient reasoning in SLMs.
+3 Problem Formulation
+Let D = {(xi, yi)}N
+1 denote a reasoning dataset
+with N (xi, yi) pairs. Chain-of-Thought distilla-
+tion aims to train a student S to generate interme-
+diate reasoning steps Ci for each input xi in order
+to generate the right yi. The optimal Ci to train the
+student model is influenced by three key pedagog-
+ical factors: Choice of Teacher, Granularity of
+Teaching, and Format of Teaching:
+Choice of Teacher The teacher model T gener-
+ates a reasoning chain CT (xi) for each input xi,
+which guides the student model in producing the
+correct answer. The teacher can either be an LLM
+or a human with varying styles and expertise.
+Granularity of Teaching Granularity refers to
+the level of detail in the CoT reasoning. A high-
+granularity annotation provides detailed, step-by-
+step reasoning, while a low-granularity annotation
+skips steps and provides a more abstract summary.
+We represent the CoT chain with granularity g
+as Cg(xi) = (cg,1, cg,2, . . . , cg,kg ) where kg is the
+number of reasoning steps. Higher kg and more
+tokens in cg,i indicates higher granularity.
+Format of Teaching Format refers to the struc-
+ture in which the CoT reasoning is presented. It
+could be in natural language, formal logic, or sym-
+bolic representation. We denote the CoT chain in
+format f as Cf (xi). The format impacts how the
+reasoning steps are conveyed.
+Given these three factors, the distillation pro-
+cess involves supervised fine-tuning of the student
+model S on generated CoT annotations:
+Ldistill =
+NX
+i=1
+L(S(xi), CT,g,f (xi) ⊕ yi)
+where S(xi) is the generation from S, CT,g,f (xi)
+denotes the CoT annotation generated under
+teacher T with granularity g and format f, ⊕ de-
+notes concatenation and L measures the discrep-
+ancy between S(xi) and the ground truth.
+4 Experimental setup
+4.1 Generation of CoT Annotation
+Teacher Models We use three teacher mod-
+els: GPT-4o (OpenAI, 2024a), Gemini-1.5-
+Flash (Team et al., 2024a), and LLaMA 3
+70B (Meta, 2024a), chosen for their diverse archi-
+tectures and reasoning capacities. Additionally, we
+include human-annotated CoTs, typically consid-
+ered the ground-truth reasoning steps (Kumar et al.,
+2024).
+Generation Method The CoT generation pro-
+cess begins with selecting a representative problem
+from the training split as a 1-shot example. This
+example is used to prompt teacher models for gen-
+erating annotations under various configurations.
+For granularity, we prompt the model to generate
+CoTs with varying levels of detail simultaneously.
+For format, we prompt the model to generate CoTs
+for each format individually. 1 Details regarding
+the workflow, prompt designs, and case studies are
+included respectively in Appendix C and D.
+4.2 Tasks and Datasets
+Mathematical Reasoning To evaluate mathemat-
+ical reasoning, we utilize four datasets with vary-
+ing complexity levels: SV AMP(Patel et al., 2021),
+GSM8K (Cobbe et al., 2021), AQuA-RAT(Ling
+et al., 2017), MATH (Hendrycks et al., 2021).
+SV AMP, GSM8K, and MATH require numeri-
+cal answers, while AQuA-RAT adopts a multiple-
+choice format. From the MATH dataset, we ran-
+domly sample problems from subcategories such as
+prealgebra, algebra, number theory, and counting
+and probability, ensuring a representative coverage
+of diverse mathematical domains.
+Commonsense Reasoning For commonsense
+reasoning, we use three datasets: Common-
+senseQA (CSQA, Talmor et al. 2019; Aggarwal
+et al. 2021), OpenBookQA (OBQA, Mihaylov
+et al. 2018), and StrategyQA (STQA, Geva et al.
+2021). These datasets test the models’ ability to
+handle everyday reasoning and general knowledge
+tasks. CSQA uses a 5-class multiple-choice format,
+OBQA has 4 classes, and STQA is binary.
+For evaluation, answers are extracted from gen-
+erated responses using predefined templates and
+1For granularity, we also investigated other data collection
+strategies, such as generating reasoning steps forward and
+backward simultaneously, but these methods did not produce
+better data, as shown in Appendix C.1.
+BLOOM 3B LLaMA 3.2 1B Gemma 2B LLaMA 3.2 3B20
+30
+40
+50
+60
+70 Level 1
+Level 2
+Level 3
+Level 4
+Level 5
+Level 6
+(a) GSM8K
+BLOOM 3B LLaMA 3.2 1B Gemma 2B LLaMA 3.2 3B45
+50
+55
+60
+65
+70
+75 (b) CommonsenseQA
+Figure 2: Performance of student models with different granularity. Most models achieve peak accuracy at
+intermediate granularity levels.
+regular expressions. We use accuracy as our eval-
+uation metric, which is calculated as the ratio of
+correctly predicted instances to the total number
+of instances: Accuracy = Ncorrect/Ntotal. The com-
+plete details can be found in the Appendix A.
+5 Effects of Granularity
+While previous research has shown that increasing
+reasoning granularity improves LLM performance
+through detailed intermediate steps (Jin et al., 2024;
+Merrill and Sabharwal, 2024), SLMs differ funda-
+mentally from LLMs in their ability to process
+complex reasoning chains. This raises a critical
+question: does increasing reasoning granularity
+still yield consistent benefits for SLMs in the task
+of CoT distillation? In this section, we investigate
+this question using GPT-4o as the teacher model.
+Non-Monotonic Scaling in Student Models As
+shown in Figure 1, our experiments reveal a non-
+monotonic relationship between CoT granularity
+and student model accuracy. Most models exhibit
+peak performance at intermediate granularity levels.
+Further increasing granularity leads to diminish-
+ing returns and even performance declines. It sug-
+gests that intermediate granularity strikes a balance
+between informativeness and efficiency in CoT,
+whereas overly detailed reasoning chains may intro-
+duce redundant information which is overwhelm-
+ing especially for weaker models.
+Table 1 presents the performance of three repre-
+sentative student models across seven evaluation
+datasets. We include a baseline calledOnly Answer,
+where student models are fine-tuned to predict an-
+swers without CoT. Similar to System 1’s auto-
+matic thinking (Yu et al., 2024), higher baseline
+score suggests that the model may have implicitly
+learned the relevant knowledge during pretraining
+(Prabhakar et al., 2024).
+Notably, stronger and more recent student mod-
+els, such as those from the Gemma and LLaMA
+family, achieve significant performance gains from
+KD at higher granularity levels . In contrast,
+smaller and weaker models like BLOOM family
+improve on simpler tasks such at the intermediate
+granularity levels but struggle on more challeng-
+ing datasets, sometimes performing no better than
+random guessing. This trend of BLOOM family
+aligns with parameter scaling laws (Kaplan et al.,
+2020) for simpler tasks but breaks down for more
+complex ones, where smaller models fail to acquire
+the reasoning abilities due to limited training data.
+Full results are provided in Appendix E.
+These findings emphasize that CoT granularity
+plays a crucial role in CoT distillation. Customiz-
+ing granularity levels to align with the student’s
+abilities is thus critical for maximizing the effi-
+ciency and effectiveness.
+Distinguishing Granularity from Length Effect
+Increasing reasoning granularity often leads to
+longer sequences as a byproduct. To isolate the
+impact of granularity from sequence length, we
+pad CoT training samples for a lower granular-
+ity level g1 with non-informative filler content to
+match the sequence length of a higher granular-
+ity g2, such that avg_len(Dg1) ≈ avg_len(Dg2).
+This modification allows us to assess whether rea-
+soning accuracy stems from granularity or simply
+sequence length. The specific padding procedure
+can be found in the Appendix F.
+As shown in Table 2, padding Level 1 reasoning
+chains to level 5 consistently failed to replicate the
+gains observed with actual higher-granularity rea-
+soning, which demonstrates that simply increasing
+Dataset Only Answer Gemma 2B Performance
+Level 1 Level 2 Level 3 Level 4 Level 5 Level 6
+SV AMP 47.70 59±4.58 64.33±0.00 65.22±0.69 65.89±0.38 67.11±1.35↑13.74% 66.89±1.02
+GSM8K 8.20 49.66±0.27 52.36±0.98 53.37±0.33 52.69±0.13 53.42±0.83 53.45±1.48↑7.63%
+AQuA-RAT 20.47 40.68±1.27 42.91±1.42 43.7±2.58 39.9±1.49 44.88±0.79↑12.48% 44.49±2.36
+MATH 9.00 23.4±1.06 21.53±2.16 24.4±0.20↑16.19% 21.93±0.42 23.0±1.22 21.0±0.69
+CSQA 69.86 67.38±0.82 67.98±0.37 68.74±1.30 66.75±0.53 67.54±0.47 66.01±1.50
+OBQA 69.60 71.53±1.94 69.93±0.90 69.93±1.36 68.33±1.27 72.00±1.64↑5.37% 70.13±1.62
+STQA 60.69 67.59±1.04↑7.11% 63.1±1.79 64.6±1.56 63.45±1.24 65.75±1.77 64.14±1.58
+Dataset Only Answer LLaMA 3.2 3B Performance
+Level 1 Level 2 Level 3 Level 4 Level 5 Level 6
+SV AMP 53.70 69±3.61 65.89±3.53 68.33±1.86 68.11±3.27 69.78±1.07 74.33±1.45↑12.81%
+GSM8K 9.30 59.59±1.59 62.29±1.41 62.57±0.80 63.48±0.16↑6.53% 62.29±1.22 60.98±0.31
+AQuA-RAT 19.60 44.36±2.31 44.88±2.19 45.01±2.37 46.19±3.94 47.24±4.77↑6.49% 46.33±3.01
+MATH 9.40 19.07±0.90 19.6±1.06 19.73±1.72 20.27±1.42↑11.37% 19.93±2.20 18.2±1.64
+CSQA 62.00 72.62±0.82 70.71±0.70 74.12±0.50↑4.82% 71.75±0.62 71.17±1.03 71.44±0.90
+OBQA 74.40 79.33±0.42 79.73±0.70 78.8±0.80 77.8±0.92 79.27±2.04 80.2±1.78↑3.08%
+STQA 55.52 66.44±1.55 62.76±2.82 67.47±1.44 66.78±1.39 63.91±2.79 68.62±1.20↑9.34%
+Dataset Only Answer BLOOM 3B Performance
+Level 1 Level 2 Level 3 Level 4 Level 5 Level 6
+SV AMP 5.00 15.44±0.51 23.67±0.00 23.11±1.26 24.00±0.67↑55.44% 22.22±0.69 22.22±1.02
+GSM8K 4.60 18.2±0.57 22.34±1.14 23.81±0.65↑30.82% 22.57±0.88 22.47±0.86 20.85±0.15
+AQuA-RAT 28.00 24.67±0.82 24.41±1.72 20.34±1.82 26.90±2.41 25.85±0.45 24.28±2.17
+MATH 4.60 3.2±1.04 2.8±0.40 2.33±0.61 2.73±0.23 3.53±0.50 2.8±0.20
+CSQA 20.56 57.44±1.12↑11.38% 55.23±1.47 55.42±0.64 53.65±0.22 52.96±0.29 51.57±1.15
+OBQA 37.80 57.2±1.59 52.33±0.61 54.87±2.02 54.6±1.04 57.47±2.64↑9.82% 52.93±1.81
+STQA 54.14 58.85±1.74 61.04±3.06↑3.72% 60.58±3.09 59.89±3.13 59.19±1.21 59.08±2.87
+Table 1: Performance of Gemma 2B, LLaMA 3.2 3B and BLOOM 3B at six granularity levels. For each dataset, the
+best performance is boldfaced, and red text shows the relative improvement (%) for highest vs. lowest performance
+in six levels. Only Answer: Student models are fine-tuned to directly predict answers without CoT.
+sequence length without introducing meaningful
+reasoning steps does not enhance model perfor-
+mance. Furthermore, adding filler content may
+introduce noise or distract the model, leading to
+degraded performance (Zhou et al., 2024; Li et al.,
+2024). This highlights the critical role of granular-
+ity, rather than sequence length alone, in driving
+reasoning efficacy.
+Granularity GSM8K AQuA-RAT
+Acc Seq. Length Acc Seq. Length
+Level 1 47.61 100.93 40.15 149.31
+Level 1 Padded 46.62 143.43 37.80 220.34
+Level 5 52.92 138.16 42.51 216.13
+Table 2: Performance and sequence length of Gemma
+2B on GSM8k and AQuA-RAT with varying granularity
+levels and padding conditions.
+Correlation between Granularity and Student
+Models Figure 3 illustrates the overall relation-
+ship between teacher and student performance
+across datasets at varying granularity levels. We
+further list the Pearson correlation coefficient ( r)
+for each student model. The results reveal a clear
+trend: as student model capacity increases, its
+performance aligns more closely with the teacher
+model’s preferences for reasoning granularity
+Stronger student models demonstrate signifi-
+cantly higher alignment with the teacher’s opti-
+mal granularity, indicating better transferability of
+reasoning structures. In contrast, weaker student
+models show a lower correlation, suggesting the
+limited ability to adapt to the teacher’s granular-
+ity preferences. This highlights the importance of
+tailoring granularity configurations to match the
+capabilities of student models, rather than relying
+solely on the teacher’s performance trends.
+Increasing CoT granularity does not lead to
+monotonic improvements in student models.
+Stronger models benefit from higher granular-
+ity, whereas weaker models peak at intermediate
+levels and struggle with complex tasks. Optimiz-
+ing granularity based on student capacity, rather
+than uniformly following the teacher model, is
+key to maximizing CoT distillation efficiency.
+Conclusion
+6 Effects of Format
+Beyond granularity, the format of reasoning has
+been believed to influence model performance in
+prior research. However, SLMs often face limita-
+tions in processing complex reasoning structures.
+This raises a research question: Do these alterna-
+tive formats improve student model performance,
+or are their benefits task-specific and limited?
+DatasetCoT FormatBLOOM 560MBLOOM 1.1BBLOOM 1.7BBLOOM 3BGemma 2BLLaMA 3.2 1BLLaMA 3.2 3B
+SV AMP
+Original CoT5.56±2.41↑ 10.67±1.00↑ 16.56±0.51↑ 22.22±0.69↑ 67.11±1.35↑ 52.44±1.71↑ 69.78±1.07↑
+Least-to-most6.11±1.07↑ 10.44±0.69↓ 14.67±1.00↓ 24.00±1.45↑ 66.56±0.69↓ 54.44±1.26↑ 75.00±0.67↑
+RaR 4.89±0.19↓ 9.00±0.58↓ 14.11±0.69↓ 24.22±1.58↑ 65.67±1.73↓ 54.56±0.69↑ 73.89±1.26↑
+Symbolic CoT5.89±0.51↑ 6.44±0.38↓ 9.00±0.67↓ 19.22±1.07↓ 64.78±0.77↓ 51.78±1.07↓ 72.89±1.50↑
+GSM8K
+Original CoT8.19±0.27↑ 13.09±0.83↑ 16.86±1.25↑ 22.47±0.86↑ 53.42±0.83↑ 39.58±1.04↑ 62.29±1.22↑
+Least-to-most7.88±0.35↓ 13.52±0.87↑ 15.54±0.72↓ 21.86±0.56↓ 51.93±0.07↓ 39.25±1.10↓ 62.07±0.70↓
+RaR 5.89±0.22↓ 10.84±0.40↓ 13.72±0.59↓ 20.02±0.27↓ 51.99±1.22↓ 38.09±0.46↓ 63.02±0.56↑
+Symbolic CoT5.94±0.62↓ 10.74±0.64↓ 13.27±0.20↓ 19.33±0.73↓ 47.12±0.39↓ 34.70±0.89↓ 58.94±0.83↓
+AQuA
+Original CoT18.64±1.98↑ 21.92±3.66↑ 22.31±1.38↑ 25.85±0.45↑ 44.88±0.79↑ 33.20±2.17↑ 47.24±4.77↑
+Least-to-most19.69±3.22↑ 20.73±0.91↓ 23.10±2.17↑ 24.41±1.42↓ 38.32±1.86↓ 28.48±2.17↓ 41.60±2.77↓
+RaR 21.26±3.94↑ 22.57±2.79↑ 24.28±2.50↑ 25.07±3.94↓ 41.86±3.16↓ 31.10±2.39↓ 45.93±4.60↓
+Symbolic CoT16.14±1.97↓ 19.16±2.41↓ 21.00±1.38↓ 20.87±2.36↓ 40.94±0.00↓ 28.08±3.06↓ 42.13±1.80↓
+OBQA
+Original CoT36.73±0.76↑ 46.07±2.23↑ 48.00±1.40↑ 54.87±2.02↑ 69.93±1.36↑ 63.60±2.12↑ 78.80±0.80↑
+Least-to-most31.40±1.74↓ 43.33±2.02↓ 45.53±2.39↓ 53.20±2.50↓ 68.27±1.03↓ 62.80±2.23↓ 78.33±1.62↓
+RaR 40.47±1.68↑ 47.47±2.23↑ 49.87±1.42↑ 56.40±1.97↑ 72.73±2.19↑ 64.40±2.75↑ 82.00±0.20↑
+Symbolic CoT31.67±1.36↓ 35.13±0.23↓ 37.73±3.25↓ 41.13±1.81↓ 61.80±0.92↓ 52.47±0.70↓ 72.13±0.64↓
+Table 3: Performance of student models with different CoT formats. For each dataset, the best performance is
+boldfaced, and arrows show that the performance is increased (↑) or decreased (↓) over original CoT.
+55 60 65 70 75 80 85 90 950
+10
+20
+30
+40
+50
+60 SVAMP
+GSM8k
+AQuA
+MATH
+CSQA
+OBQA
+STQA
+(a) BLOOM 3B (r = 0.52)
+55 60 65 70 75 80 85 90 95
+10
+20
+30
+40
+50
+60 (b) LLaMA 3.2 1B (r = 0.75)
+55 60 65 70 75 80 85 90 95
+20
+30
+40
+50
+60
+70
+(c) Gemma 2B (r = 0.82)
+55 60 65 70 75 80 85 90 95
+20
+30
+40
+50
+60
+70
+80 (d) LLaMA 3.2 3B (r = 0.89)
+Figure 3: Scatter plots of teacher model (GPT-4o, x-
+axis) vs. student accuracy (y-axis) across datasets and
+granularity levels. Each point marker represents a spe-
+cific dataset.
+Choice of Reasoning Formats In this section,
+we systematically evaluate the impact of alternative
+reasoning structures on student model performance.
+Since student models tend to perform stably at inter-
+mediate granularity levels, we let GPT-4o modify
+the format of the original CoT without changing
+the granularity (More details can be seen in Ap-
+pendix D). We compare the original CoT format
+with three alternative structures:
+• Least-to-most (Zhou et al. 2023): A reason-
+ing approach that decomposes a complex prob-
+lem into a sequence of sub problems. Least-to-
+most excels in systematically breaking down
+problems into manageable parts to facilitate
+understanding and solution synthesis.
+• Rephrase and Respond (RaR) (Deng et al.,
+2024): A method where questions are
+rephrased to reduce ambiguity before answer-
+ing, enabling iterative clarification and im-
+proving the LLM’s ability to respond accu-
+rately to nuanced queries.
+• Symbolic CoT (Xu et al., 2024a): A reason-
+ing structure that combines symbolic logic
+and CoT prompting, translating natural lan-
+guage into symbolic expressions for step-by-
+step logical deduction, enhancing faithfulness
+and flexibility in problem-solving.
+Our results, summarized in Table 3, highlight
+a clear trend: the original CoT format often out-
+performs more complex or modified structures, pri-
+marily due to its simplicity and adaptability. This
+contrasts with previous findings in LLMs, where
+these alternative formats frequently yield improve-
+ments. For SLMs, however, the added complexity
+of alternative formats generally increases cognitive
+load and hardly improve the performance.
+Task-Specific Gains While most tasks favor the
+original CoT format, certain alternative structures
+offer measurable benefits for specific scenarios. For
+example, RaR improves commonsense reasoning
+tasks by reducing ambiguity and enabling iterative
+clarification. Least-to-most sometimes excels in
+mathematical reasoning by breaking problems into
+logical steps or symbolic expressions. 2
+2A possible reason for the suboptimal performance of Sym-
+bolic CoT is analyzed with examples in the Appendix G.
+Model-Specific Trends Stronger student mod-
+els, such as LLaMA 3.2 3B, show improved per-
+formance under alternative formats, leveraging
+structural cues to refine problem-solving processes.
+However, these improvements are tied to specific
+tasks and do not generalize across all datasets.
+Overall, our findings indicate that while CoT for-
+mats can occasionally enhance performance, their
+benefits are often task-dependent and come at the
+cost of introducing additional tokens. Moreover,
+SLMs have relatively limited pretraining corpora,
+which likely contain fewer instances of these rea-
+soning formats. As a result, weaker models strug-
+gle to effectively learn and utilize them, making it
+even harder for CoT format variations to yield con-
+sistent improvements. Given these observations,
+we argue that adjusting CoT formats alone may not
+be the most effective approach for improving SLM
+performance. This contrasts with the consistent
+impact of granularity, as highlighted in Section 5,
+suggesting that focusing on granularity is a more
+effective strategy than altering CoT formats.
+While alternative CoT formats sometimes offer
+some task-specific benefits, the original CoT for-
+mat from teacher models often remains the most
+effective for general-purpose SLM training.
+Conclusion
+7 Effects of Teacher Model
+In CoT distillation, teacher models serve as the
+source of CoT reasoning annotations for training
+student models. Prior research of KD assumes that
+teacher models with better performance naturally
+lead to better student models (Zong et al., 2023).
+This assumption stems from the belief that higher-
+performing teachers generate more accurate reason-
+ing steps and answers, which, when distilled into
+student models, enhance their capabilities. How-
+ever, this assumption may not hold universally as
+SLMs might have limited capacity to replicate the
+reasoning complexity of strong teachers.
+In this section, we analyze the performance
+of student models under four teachers, GPT-4o,
+LLaMA 3 70B, Gemini-1.5-Flash and the human
+expert. We aim to determine whether the choice
+of teacher affects the ability of student models to
+effectively distill and replicate CoT reasoning.
+Is Higher Teacher Accuracy Always Better?
+We first investigate whether a higher teacher ac-
+60 65 70 75 80 85 90 950
+10
+20
+30
+40
+50
+60
+70
+80
+90 GPT
+LLaMA
+Gemini
+AQuA
+CAQA
+GSM8K
+MATH
+OBQA
+STQA
+SVAMP
+(a) BLOOM 3B (r = 0.25)
+60 65 70 75 80 85 90 950
+10
+20
+30
+40
+50
+60
+70
+80
+90 (b) LLaMA 3.2 1B (r = 0.56)
+55 60 65 70 75 80 85 90 950
+10
+20
+30
+40
+50
+60
+70
+80
+90
+(c) Gemma 2B (r = 0.55)
+60 65 70 75 80 85 90 950
+10
+20
+30
+40
+50
+60
+70
+80
+90 (d) LLaMA 3.2 3B (r = 0.64)
+Figure 4: Scatter plots of teacher (x-axis) vs. student
+model accuracy (y-axis) across datasets. GPT refers to
+GPT-4o, LLaMA refers to LLaMA 3 70B, and Gemini
+refers to Gemini-1.5-Flash.
+curacy directly translates into improved student
+performance. As shown in Figure 4, we selected
+the best-performing student model for each dataset
+under different teacher models’ CoT supervision.
+It can be observed that points closer to the right
+side of the x-axis are not always positioned near the
+top of the y-axis. This indicates that, contrary to
+intuitive expectations, while a reasonably accurate
+teacher can effectively impart essential reasoning
+patterns, excessively high teacher accuracy does
+not always yield proportional improvements in stu-
+dent accuracy. Teacher accuracy alone is not the
+determining factor for student performance, which
+aligns with our findings in Section 5.
+Moreover, we do not observe a significant pref-
+erence pattern within the same model family. How-
+ever, we find that stronger student models tend to
+benefit more significantly when trained under the
+guidance of stronger teacher models. This suggests
+that the trade-off between teacher model capabil-
+ity and computational cost should be carefully ad-
+justed based on the target student model’s capacity.
+For simpler tasks, a less advanced teacher model
+is often sufficient, producing results comparable to
+those obtained from more powerful, computation-
+ally expensive teachers.
+Human vs LLM: Task-Specific Effectiveness
+As seen in Figure 5, in mathematical reasoning
+tasks, student models achieve higher accuracy
+when fine-tuned on LLM-generated CoTs com-
+pared to human annotations, although the accu-
+racy of the teacher model itself performs poorly
+Gemma 2BLLaMA 3.2 1BLLaMA 3.2 3BBLOOM 3B
+0
+10
+20
+30
+40
+50
+60
+70
+(a) GSM8K
+Gemma 2BLLaMA 3.2 1BLLaMA 3.2 3BBLOOM 3B
+0
+5
+10
+15
+20
+25 GPT
+LLaMA
+Gemini
+Human (b) MATH
+Gemma 2BLLaMA 3.2 1BLLaMA 3.2 3BBLOOM 3B
+0
+10
+20
+30
+40
+50
+(c) AQuA-RAT
+Gemma 2BLLaMA 3.2 1BLLaMA 3.2 3BBLOOM 3B
+0
+20
+40
+60
+80 (d) StrategyQA
+Figure 5: Student model performance across different
+teacher models. Each bar represents the average accu-
+racy of a specific student model trained on CoT from
+different teacher models.
+on difficult mathematical datasets compared with
+human-labeled data. Conversely, for commonsense
+reasoning tasks like StrategyQA, human-annotated
+CoTs dramatically improve student model perfor-
+mance. This phenomenon arises because LLMs
+generate structured and detailed reasoning chains
+that closely align with the symbolic and procedural
+nature of mathematical tasks. In contrast, human-
+annotated CoTs often lack the rigorous step-by-
+step structure required for effective mathematical
+reasoning. However, Human annotations excel at
+capturing nuanced contextual understanding, cre-
+ative inferences, and interpretive reasoning, which
+are crucial for tasks involving ambiguous or open-
+ended questions. These findings underscore the
+importance of selecting CoT sources based on task
+characteristics rather than assuming a universal
+superiority of either LLMs or human annotations.
+Full results can be found in Appendix H.
+The Matthew Effect in SLMs We explore the
+relationship between student model capacity and
+the benefits gained from CoT distillation, shedding
+light on the uneven distribution of performance
+improvements across models of varying capabil-
+ities. Figure 6 presents two heatmaps compar-
+ing student model performance before and after
+CoT distillation. The results reveal a Matthew
+Effect: stronger student models achieve greater
+performance gains from CoT distillation than
+weaker models, demonstrating their potential abil-
+ity to leverage detailed reasoning steps. This phe-
+nomenon aligns with Vygotsky’s Zone of Proxi-
+mal Development (ZPD) (Vygotsky, 1978), where
+weaker student models have a narrower ZPD, limit-
+ing their ability to absorb complex CoT reasoning.
+If reasoning complexity is too high relative to a
+model’s ZPD, it may fail to extract useful patterns,
+limiting the effectiveness of CoT distillation. In
+contrast, stronger models have a wider ZPD, en-
+abling them to integrate and generalize from multi-
+step reasoning. CoT distillation provides gains on
+more challenging ones, where their capacity allows
+them to fully leverage structured reasoning. This
+highlights the need for adaptive CoT supervision,
+where reasoning depth is modulated based on the
+student’s ability to process and learn from it.
+BLOOM 560MBLOOM 1.1BBLOOM 1.7BBLOOM 3BLLaMA3 1BGemma 2BLLaMA3 3B
+STQA
+CSQA
+OBQA
+Math
+AQuA
+GSM8K
+SVAMP
+56.90 58.97 58.62 54.14 53.10 60.69 55.52
+20.15 41.69 21.38 20.56 19.57 69.86 62.00
+34.00 48.60 48.20 37.80 51.60 69.60 74.40
+4.00 3.20 3.60 4.60 7.00 9.00 9.40
+20.90 22.40 23.60 28.00 24.00 20.47 25.60
+3.90 4.20 5.10 4.60 6.70 8.20 9.30
+0.00 1.00 0.00 5.00 37.70 47.70 53.70
+Accuracy Heatmap of Only Answer
+0
+10
+20
+30
+40
+50
+60
+70
+Accuracy
+BLOOM 560MBLOOM 1.1BBLOOM 1.7BBLOOM 3BLLaMA3 1BGemma 2BLLaMA3 3B
+STQA
+CSQA
+OBQA
+Math
+AQuA
+GSM8K
+SVAMP
+52.87 57.76 55.46 58.62 62.47 66.21 66.72
+35.82 46.20 49.70 54.99 63.38 67.22 71.95
+37.27 47.50 48.73 55.33 63.10 69.87 79.40
+2.03 2.07 2.53 2.80 8.43 22.30 18.37
+22.24 23.03 22.83 24.48 32.48 42.78 46.19
+8.01 13.03 15.83 22.23 38.86 52.31 61.40
+5.50 9.67 13.56 22.22 52.72 64.67 68.17
+Accuracy Heatmap of Average Performance
+10
+20
+30
+40
+50
+60
+70
+Accuracy
+Figure 6: The Only Answer heatmap represents the
+baseline accuracy of student models without reasoning
+supervision, while the Average Performance heatmap
+shows the average accuracy of student models trained
+on CoT from ChatGPT-4o.
+The assumption that a better teacher always pro-
+duces a better student does not universally hold
+for SLMs. Stronger student models benefit more
+from advanced teacher models. Teacher choice
+should be task-specific: LLM-generated CoTs
+improve mathematical reasoning, while human
+annotations excel in commonsense reasoning.
+Conclusion
+8 Conclusion
+This study systematically examined key factors
+influencing CoT distillation in SLMs, including
+teacher selection, granularity, and format. First,
+We found that finer-grained CoT benefits stronger
+SLMs, and weaker models perform better with sim-
+pler annotations. Then, while CoT format signifi-
+cantly impacts LLMs, its effect on SLMs is more
+subtle. Importantly, better teacher models do not
+always yield better students, as the effectiveness of
+CoT distillation depends on a model’s ability to ab-
+sorb reasoning complexity within its ZPD. Notably,
+human-annotated CoTs underperform on mathe-
+matical tasks but can surpass LLM-generated CoTs
+in certain commonsense reasoning tasks. Overall,
+CoT distillation proves more effective for stronger
+SLMs and complex tasks, emphasizing the need
+for tailored granularity and teacher selection strate-
+gies to optimize reasoning performance in resource-
+constrained settings.
+Limitations
+Despite the promising results of our study, several
+limitations must be acknowledged. First, during
+data generation and testing, some tasks triggered
+safety concerns in the models, causing them to
+refuse to generate CoTs. In these cases, we re-
+sorted to directly using the provided answers for
+fine-tuning, which may have constrained the diver-
+sity and quality of the reasoning chains, potentially
+affecting the distillation outcomes. Second, the
+ability of teacher models to generate CoTs is inher-
+ently tied to their reasoning capabilities. For cer-
+tain tasks, teacher models were unable to reverse-
+engineer plausible CoTs from the given answers
+due to their limited capabilities, resulting in incom-
+plete or suboptimal reasoning chains. Lastly, this
+study did not focus on exploring novel KD tech-
+niques but instead aimed to systematically analyze
+the effects of existing approaches on CoT granu-
+larity, format, and teacher selection. We recognize
+that alternative training strategies may influence
+distillation outcomes. These limitations highlight
+the need for further exploration of CoT genera-
+tion methods and distillation techniques tailored
+to task complexity and student capabilities. Fu-
+ture work may benefit from integrating curriculum-
+based strategies or lightweight multi-stage distilla-
+tion protocols to enhance the fidelity and generaliz-
+ability of SLMs.
+Ethics Statement
+The datasets used in our experiment are publicly
+released and labeled through interaction with hu-
+mans in English. In this process, user privacy is
+protected, and no personal information is contained
+in the dataset. The scientific artifacts that we used
+are available for research with permissive licenses.
+And the use of these artifacts in this paper is consis-
+tent with their intended use. Therefore, we believe
+that our research work meets the ethics of ACL.
+Acknowledgement
+We thank EIT and IDT High Performance Com-
+puting Center for providing computational re-
+sources for this project. This work was supported
+by the Research Grants Council of Hong Kong
+(PolyU/15209724), Innovation Consortium Pro-
+gram for Green and Efficient Intelligent Appliance
+of Ningbo City (No.2022H002), Young Tech In-
+novation Leading Talent Program of Ningbo City
+(No.2023QL008) and 2035 Key Research and De-
+velopment Program of Ningbo City under Grant
+No.2024Z127.
+References
+Shourya Aggarwal, Divyanshu Mandowara, Vishwa-
+jeet Agrawal, Dinesh Khandelwal, Parag Singla, and
+Dinesh Garg. 2021. Explanations for Common-
+senseQA: New Dataset and Models. In Proceedings
+of the 59th Annual Meeting of the Association for
+Computational Linguistics and the 11th International
+Joint Conference on Natural Language Processing
+(Volume 1: Long Papers), pages 3050–3065, Online.
+Association for Computational Linguistics.
+Tom Brown, Benjamin Mann, Nick Ryder, Melanie
+Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind
+Neelakantan, Pranav Shyam, Girish Sastry, Amanda
+Askell, et al. 2020. Language models are few-shot
+learners. Advances in neural information processing
+systems, 33:1877–1901.
+Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian,
+Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias
+Plappert, Jerry Tworek, Jacob Hilton, Reiichiro
+Nakano, Christopher Hesse, and John Schulman.
+2021. Training verifiers to solve math word prob-
+lems. Preprint, arXiv:2110.14168.
+DeepSeek-AI, Daya Guo, Dejian Yang, Haowei Zhang,
+Junxiao Song, Ruoyu Zhang, Runxin Xu, Qihao Zhu,
+Shirong Ma, Peiyi Wang, Xiao Bi, Xiaokang Zhang,
+Xingkai Yu, Yu Wu, Z. F. Wu, Zhibin Gou, Zhihong
+Shao, Zhuoshu Li, Ziyi Gao, Aixin Liu, Bing Xue,
+Bingxuan Wang, Bochao Wu, Bei Feng, Chengda Lu,
+Chenggang Zhao, Chengqi Deng, Chenyu Zhang,
+Chong Ruan, Damai Dai, Deli Chen, Dongjie Ji,
+Erhang Li, Fangyun Lin, Fucong Dai, Fuli Luo,
+Guangbo Hao, Guanting Chen, Guowei Li, H. Zhang,
+Han Bao, Hanwei Xu, Haocheng Wang, Honghui
+Ding, Huajian Xin, Huazuo Gao, Hui Qu, Hui Li,
+Jianzhong Guo, Jiashi Li, Jiawei Wang, Jingchang
+Chen, Jingyang Yuan, Junjie Qiu, Junlong Li, J. L.
+Cai, Jiaqi Ni, Jian Liang, Jin Chen, Kai Dong, Kai
+Hu, Kaige Gao, Kang Guan, Kexin Huang, Kuai
+Yu, Lean Wang, Lecong Zhang, Liang Zhao, Litong
+Wang, Liyue Zhang, Lei Xu, Leyi Xia, Mingchuan
+Zhang, Minghua Zhang, Minghui Tang, Meng Li,
+Miaojun Wang, Mingming Li, Ning Tian, Panpan
+Huang, Peng Zhang, Qiancheng Wang, Qinyu Chen,
+Qiushi Du, Ruiqi Ge, Ruisong Zhang, Ruizhe Pan,
+Runji Wang, R. J. Chen, R. L. Jin, Ruyi Chen,
+Shanghao Lu, Shangyan Zhou, Shanhuang Chen,
+Shengfeng Ye, Shiyu Wang, Shuiping Yu, Shunfeng
+Zhou, Shuting Pan, S. S. Li, Shuang Zhou, Shaoqing
+Wu, Shengfeng Ye, Tao Yun, Tian Pei, Tianyu Sun,
+T. Wang, Wangding Zeng, Wanjia Zhao, Wen Liu,
+Wenfeng Liang, Wenjun Gao, Wenqin Yu, Wentao
+Zhang, W. L. Xiao, Wei An, Xiaodong Liu, Xiaohan
+Wang, Xiaokang Chen, Xiaotao Nie, Xin Cheng, Xin
+Liu, Xin Xie, Xingchao Liu, Xinyu Yang, Xinyuan Li,
+Xuecheng Su, Xuheng Lin, X. Q. Li, Xiangyue Jin,
+Xiaojin Shen, Xiaosha Chen, Xiaowen Sun, Xiaoxi-
+ang Wang, Xinnan Song, Xinyi Zhou, Xianzu Wang,
+Xinxia Shan, Y . K. Li, Y . Q. Wang, Y . X. Wei, Yang
+Zhang, Yanhong Xu, Yao Li, Yao Zhao, Yaofeng
+Sun, Yaohui Wang, Yi Yu, Yichao Zhang, Yifan Shi,
+Yiliang Xiong, Ying He, Yishi Piao, Yisong Wang,
+Yixuan Tan, Yiyang Ma, Yiyuan Liu, Yongqiang Guo,
+Yuan Ou, Yuduan Wang, Yue Gong, Yuheng Zou, Yu-
+jia He, Yunfan Xiong, Yuxiang Luo, Yuxiang You,
+Yuxuan Liu, Yuyang Zhou, Y . X. Zhu, Yanhong Xu,
+Yanping Huang, Yaohui Li, Yi Zheng, Yuchen Zhu,
+Yunxian Ma, Ying Tang, Yukun Zha, Yuting Yan,
+Z. Z. Ren, Zehui Ren, Zhangli Sha, Zhe Fu, Zhean
+Xu, Zhenda Xie, Zhengyan Zhang, Zhewen Hao,
+Zhicheng Ma, Zhigang Yan, Zhiyu Wu, Zihui Gu, Zi-
+jia Zhu, Zijun Liu, Zilin Li, Ziwei Xie, Ziyang Song,
+Zizheng Pan, Zhen Huang, Zhipeng Xu, Zhongyu
+Zhang, and Zhen Zhang. 2025. Deepseek-r1: Incen-
+tivizing reasoning capability in llms via reinforce-
+ment learning. Preprint, arXiv:2501.12948.
+Yihe Deng, Weitong Zhang, Zixiang Chen, and Quan-
+quan Gu. 2024. Rephrase and respond: Let large
+language models ask better questions for themselves.
+Preprint, arXiv:2311.04205.
+Mor Geva, Daniel Khashabi, Elad Segal, Tushar Khot,
+Dan Roth, and Jonathan Berant. 2021. Did aris-
+totle use a laptop? a question answering bench-
+mark with implicit reasoning strategies. Preprint,
+arXiv:2101.02235.
+Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul
+Arora, Steven Basart, Eric Tang, Dawn Song, and
+Jacob Steinhardt. 2021. Measuring mathematical
+problem solving with the math dataset. NeurIPS.
+Namgyu Ho, Laura Schmid, and Se-Young Yun. 2023.
+Large language models are reasoning teachers. In
+Proceedings of the 61st Annual Meeting of the As-
+sociation for Computational Linguistics (Volume 1:
+Long Papers), pages 14852–14882, Toronto, Canada.
+Association for Computational Linguistics.
+Jordan Hoffmann, Sebastian Borgeaud, Arthur Men-
+sch, Elena Buchatskaya, Trevor Cai, Eliza Ruther-
+ford, Diego de Las Casas, Lisa Anne Hendricks,
+Johannes Welbl, Aidan Clark, et al. 2022. Train-
+ing compute-optimal large language models. arXiv
+preprint arXiv:2203.15556.
+Mingyu Jin, Qinkai Yu, Dong Shu, Haiyan Zhao,
+Wenyue Hua, Yanda Meng, Yongfeng Zhang, and
+Mengnan Du. 2024. The impact of reasoning step
+length on large language models. In Findings of
+the Association for Computational Linguistics: ACL
+2024, pages 1830–1842, Bangkok, Thailand. Associ-
+ation for Computational Linguistics.
+Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B.
+Brown, Benjamin Chess, Rewon Child, Scott Gray,
+Alec Radford, Jeffrey Wu, and Dario Amodei. 2020.
+Scaling laws for neural language models. Preprint,
+arXiv:2001.08361.
+Tushar Khot, Harsh Trivedi, Matthew Finlayson, Yao
+Fu, Kyle Richardson, Peter Clark, and Ashish Sab-
+harwal. 2023. Decomposed prompting: A modular
+approach for solving complex tasks. In The Eleventh
+International Conference on Learning Representa-
+tions, ICLR 2023, Kigali, Rwanda, May 1-5, 2023 .
+OpenReview.net.
+Takeshi Kojima, Shixiang Shane Gu, Machel Reid, Yu-
+taka Matsuo, and Yusuke Iwasawa. 2022. Large lan-
+guage models are zero-shot reasoners. Advances in
+neural information processing systems , 35:22199–
+22213.
+Shanu Kumar, Saish Mendke, Karody Lubna Abdul
+Rahman, Santosh Kurasa, Parag Agrawal, and Sandi-
+pan Dandapat. 2024. Enhancing zero-shot chain of
+thought prompting via uncertainty-guided strategy
+selection. arXiv preprint arXiv:2412.00353.
+Ming Li, Yanhong Li, and Tianyi Zhou. 2024. What
+happened in llms layers when trained for fast vs.
+slow thinking: A gradient perspective. Preprint,
+arXiv:2410.23743.
+Wang Ling, Dani Yogatama, Chris Dyer, and Phil Blun-
+som. 2017. Program induction by rationale genera-
+tion: Learning to solve and explain algebraic word
+problems. In Proceedings of the 55th Annual Meet-
+ing of the Association for Computational Linguistics
+(Volume 1: Long Papers), pages 158–167, Vancouver,
+Canada. Association for Computational Linguistics.
+Lucie Charlotte Magister, Jonathan Mallinson, Jakub
+Adamek, Eric Malmi, and Aliaksei Severyn. 2023.
+Teaching small language models to reason. In Pro-
+ceedings of the 61st Annual Meeting of the Associa-
+tion for Computational Linguistics (Volume 2: Short
+Papers), pages 1773–1781, Toronto, Canada. Associ-
+ation for Computational Linguistics.
+William Merrill and Ashish Sabharwal. 2024. The ex-
+pressive power of transformers with chain of thought.
+In The Twelfth International Conference on Learning
+Representations.
+Meta. 2024a. Introducing meta Llama 3: The most
+capable openly available llm to date. https://ai.
+meta.com/blog/meta-llama-3/.
+Meta. 2024b. Llama 3.2: Revolutionizing edge ai and
+vision with open, customizable models.
+Todor Mihaylov, Peter Clark, Tushar Khot, and Ashish
+Sabharwal. 2018. Can a suit of armor conduct elec-
+tricity? a new dataset for open book question answer-
+ing. Preprint, arXiv:1809.02789.
+Sania Nayab, Giulio Rossolini, Giorgio Buttazzo, Nico-
+lamaria Manes, and Fabrizio Giacomelli. 2024. Con-
+cise thoughts: Impact of output length on llm reason-
+ing and cost. Preprint, arXiv:2407.19825.
+OpenAI. 2024a. Hello GPT-4o. https://openai.
+com/index/hello-gpt-4o/.
+OpenAI. 2024b. Learning to reason with
+llms. https://openai.com/index/
+learning-to-reason-with-llms/ .
+Arkil Patel, Satwik Bhattamishra, and Navin Goyal.
+2021. Are nlp models really able to solve simple
+math word problems? Preprint, arXiv:2103.07191.
+Akshara Prabhakar, Thomas L. Griffiths, and R. Thomas
+McCoy. 2024. Deciphering the factors influencing
+the efficacy of chain-of-thought: Probability, mem-
+orization, and noisy reasoning. In Findings of the
+Association for Computational Linguistics: EMNLP
+2024, pages 3710–3724, Miami, Florida, USA. Asso-
+ciation for Computational Linguistics.
+Zhenting Qi, Mingyuan Ma, Jiahang Xu, Li Lyna Zhang,
+Fan Yang, and Mao Yang. 2024. Mutual reason-
+ing makes smaller llms stronger problem-solvers.
+Preprint, arXiv:2408.06195.
+Kumar Shridhar, Alessandro Stolfo, and Mrinmaya
+Sachan. 2023. Distilling reasoning capabilities into
+smaller language models. In Findings of the Asso-
+ciation for Computational Linguistics: ACL 2023 ,
+pages 7059–7073, Toronto, Canada. Association for
+Computational Linguistics.
+Alessandro Stolfo, Zhijing Jin, Kumar Shridhar, Bern-
+hard Schoelkopf, and Mrinmaya Sachan. 2023. A
+causal framework to quantify the robustness of mathe-
+matical reasoning with language models. In Proceed-
+ings of the 61st Annual Meeting of the Association
+for Computational Linguistics (Volume 1: Long Pa-
+pers), pages 545–561, Toronto, Canada. Association
+for Computational Linguistics.
+Alon Talmor, Jonathan Herzig, Nicholas Lourie, and
+Jonathan Berant. 2019. CommonsenseQA: A ques-
+tion answering challenge targeting commonsense
+knowledge. In Proceedings of the 2019 Conference
+of the North American Chapter of the Association for
+Computational Linguistics: Human Language Tech-
+nologies, Volume 1 (Long and Short Papers), pages
+4149–4158, Minneapolis, Minnesota. Association for
+Computational Linguistics.
+Gemini Team, Petko Georgiev, Ving Ian Lei, Ryan
+Burnell, Libin Bai, Anmol Gulati, Garrett Tanzer,
+Damien Vincent, Zhufeng Pan, Shibo Wang, et al.
+2024a. Gemini 1.5: Unlocking multimodal under-
+standing across millions of tokens of context. arXiv
+preprint arXiv:2403.05530.
+Gemma Team, Thomas Mesnard, Cassidy Hardin,
+Robert Dadashi, Surya Bhupatiraju, Shreya Pathak,
+Laurent Sifre, Morgane Rivière, Mihir Sanjay Kale,
+Juliette Love, et al. 2024b. Gemma: Open models
+based on gemini research and technology. arXiv
+preprint arXiv:2403.08295.
+Lev S Vygotsky. 1978. Mind in society: The develop-
+ment of higher psychological processes, volume 86.
+Harvard university press.
+Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten
+Bosma, Brian Ichter, Fei Xia, Ed Chi, Quoc Le, and
+Denny Zhou. 2023. Chain-of-thought prompting elic-
+its reasoning in large language models. Preprint,
+arXiv:2201.11903.
+Jundong Xu, Hao Fei, Liangming Pan, Qian Liu, Mong-
+Li Lee, and Wynne Hsu. 2024a. Faithful logical
+reasoning via symbolic chain-of-thought. Preprint,
+arXiv:2405.18357.
+Xiaohan Xu, Ming Li, Chongyang Tao, Tao Shen,
+Reynold Cheng, Jinyang Li, Can Xu, Dacheng Tao,
+and Tianyi Zhou. 2024b. A survey on knowledge
+distillation of large language models. Preprint,
+arXiv:2402.13116.
+Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran,
+Thomas L. Griffiths, Yuan Cao, and Karthik R
+Narasimhan. 2023. Tree of thoughts: Deliberate
+problem solving with large language models. In
+Thirty-seventh Conference on Neural Information
+Processing Systems.
+Ping Yu, Jing Xu, Jason Weston, and Ilia Kulikov.
+2024. Distilling system 2 into system 1. Preprint,
+arXiv:2407.06023.
+Xiang Yue, Xingwei Qu, Ge Zhang, Yao Fu, Wen-
+hao Huang, Huan Sun, Yu Su, and Wenhu Chen.
+2024. MAmmoTH: Building math generalist models
+through hybrid instruction tuning. In The Twelfth In-
+ternational Conference on Learning Representations.
+Zhuosheng Zhang, Aston Zhang, Mu Li, and Alex
+Smola. 2023. Automatic chain of thought prompting
+in large language models. In The Eleventh Interna-
+tional Conference on Learning Representations.
+Wayne Xin Zhao, Kun Zhou, Junyi Li, Tianyi Tang,
+Xiaolei Wang, Yupeng Hou, Yingqian Min, Be-
+ichen Zhang, Junjie Zhang, Zican Dong, Yifan Du,
+Chen Yang, Yushuo Chen, Zhipeng Chen, Jinhao
+Jiang, Ruiyang Ren, Yifan Li, Xinyu Tang, Zikang
+Liu, Peiyu Liu, Jian-Yun Nie, and Ji-Rong Wen.
+2024. A survey of large language models. Preprint,
+arXiv:2303.18223.
+Yaowei Zheng, Richong Zhang, Junhao Zhang, Yanhan
+Ye, Zheyan Luo, Zhangchi Feng, and Yongqiang Ma.
+2024. Llamafactory: Unified efficient fine-tuning
+of 100+ language models. In Proceedings of the
+62nd Annual Meeting of the Association for Compu-
+tational Linguistics (Volume 3: System Demonstra-
+tions), Bangkok, Thailand. Association for Computa-
+tional Linguistics.
+Denny Zhou, Nathanael Schärli, Le Hou, Jason Wei,
+Nathan Scales, Xuezhi Wang, Dale Schuurmans,
+Claire Cui, Olivier Bousquet, Quoc V Le, and Ed H.
+Chi. 2023. Least-to-most prompting enables com-
+plex reasoning in large language models. In The
+Eleventh International Conference on Learning Rep-
+resentations.
+Zhanke Zhou, Rong Tao, Jianing Zhu, Yiwen Luo, Zeng-
+mao Wang, and Bo Han. 2024. Can language models
+perform robust reasoning in chain-of-thought prompt-
+ing with noisy rationales? In The Thirty-eighth An-
+nual Conference on Neural Information Processing
+Systems.
+Martin Zong, Zengyu Qiu, Xinzhu Ma, Kunlin Yang,
+Chunya Liu, Jun Hou, Shuai Yi, and Wanli Ouyang.
+2023. Better teacher better student: Dynamic
+prior knowledge for knowledge distillation. In The
+Eleventh International Conference on Learning Rep-
+resentations.
+Appendix
+A Overview of Training and Test Datasets
+For our experiments, we used three models (Llama3 70B, Gemini-1.5-Flash, GPT-4o) on multiple
+existing datasets, including mathematical reasoning datasets (SV AMP, GSM8K, AQuA-RAT, MATH) and
+commonsense reasoning datasets (OpenBookQA, CommonsenseQA, and StrategyQA) to generate CoT
+outputs. Table 4 shows the overview of the training and test datasets (Yue et al., 2024). Table 5 shows
+some examples of our datasets.
+Training Dataset Samples Fields Human AnnotationTraining Testing
+SV AMP 700 300 Arithmetic problems Yes
+GSM8K 7.4k 1.3k Grade-school math Yes
+AQuA-RAT 6.1k 254 Algebraic reasoning, multi-step Yes
+Math 1.3k 500 Pre-Algebra, Algebra, Counting & Probability, Number TheoryYes
+CommonsenseQA9.7k 1.2k Commonsense knowledge Yes
+OpenBookQA 4.9k 500 Domain-specific knowledge No
+StrategyQA 2k 290 Multi-step reasoning Yes
+Table 4: Overview of Training and Test Datasets.
+Dataset Problem Characteristics
+SV AMP There are 87 oranges and 290 bananas in Philip’s
+collection. If the bananas are organized into 2 groups
+and oranges are organized into 93 groups How big
+is each group of bananas?
+290.0 / 2.0 = 145.0. The answer is 145.0.
+GSM8K Natalia sold clips to 48 of her friends in April, and
+then she sold half as many clips in May. How many
+clips did Natalia sell altogether in April and May?
+Natalia sold 48/2 = «48/2=24»24 clips in May. Na-
+talia sold 48+24 = «48+24=72»72 clips altogether
+in April and May. 72
+AQuA-RAT A man can swim in still water at 7.5 km/h, but takes
+twice as long to swim upstream than downstream.
+The speed of the stream is? Answer Choices: (A) 3
+(B) 2.5 (C) 2.25 (D) 1.5 (E) 4
+M = 7.5 S = x DS = 7.5 + x US = 7.5 + x 7.5 + x =
+(7.5 - x)2 7.5 + x = 15-2x 3x = 7.5 x = 2.5 Answer:
+C
+Math Find the sum of all positive divisors of 50 that are
+also divisors of 15.
+The positive factors of 50 are 1, 2,5, 10, 25, 50. Of
+these, only 1 and 5 divide 15. Their sum is 1+5 = 6.
+CommonsenseQA Bill did not abandon the fight, but did what to the
+enemy? Answer choices: A: arrogate, B: retain, C:
+embrace, D: smile, E: engage
+Bill engaged in a fight with enemy. Other options
+are not a type of fights one takes with enemy. The
+answer is E.
+StrategyQA Are more people today related to Genghis Khan than
+Julius Caesar?
+Julius Caesar had three children. Genghis Khan
+had sixteen children. Modern geneticists have de-
+termined that out of every 200 men today has DNA
+that can be traced to Genghis Khan. The answer is
+True.
+Table 5: Examples of Human Annotation for All Datasets.
+B Training setup
+Our experiment uses the LLaMA-Factory framework (Zheng et al., 2024) to fine-tune models, and the
+training parameters are as follows:
+Parameter Value
+Learning Rate 3e-5
+Num Train Epochs 3
+LR Scheduler Cosine
+Max Grad Norm 1.0
+Optimizer AdamW
+Template gemma/alpaca/llama3
+Table 6: Configuration for training parameters.
+C Different CoT Granularity Dataset Collection
+C.1 Workflow
+The granularity dataset processing steps are detailed below:
+1. 0-Shot Example Generation: The same question is first provided to the three models using a 0-shot
+prompt. The models generate a single 1-shot example (including both a question and a corresponding
+output) as the output. This step ensures that the models first generate a baseline example. The generated
+example serves as a guide for subsequent responses.
+2. Input Construction: Each question is provided to the models, along with its corresponding ground-
+truth answer from the original dataset and the generated 1-shot example (from Step 1). Including the
+1-shot example in the input establishes a reference point for the model, enhancing coherence and quality
+of generated outputs.
+3. Generation with Multi-Granularity Outputs: Using the constructed input (original question +
+ground truth + 1-shot example), all three teacher models are prompted to generate answers at multiple
+granularity levels (G = {g1, g2, . . . , g6}). These levels range from concise summaries to highly detailed,
+step-by-step reasoning. By solving each question across six levels of granularity, this step systematically
+evaluates the models’ ability to adapt their reasoning to different levels of abstraction.
+4. Ranking and Alignment: The generated outputs are sorted to align with the original dataset’s order,
+ensuring consistency and enabling a systematic evaluation of the results. Sorting the generated outputs
+ensures that the evaluation is systematic and comparable against the original dataset.
+Why do we use 1-shot example in the prompt:
+We have decided to incorporate a 1-shot example into the prompt instead of using a 0-shot prompt,
+based on our trial-and-error findings.
+Our initial attempt used a forward-generation approach, where we prompted the model to produce the
+most succinct response and then enrich it level by level. However, we encountered significant challenges
+with this approach. The model struggled to demonstrate consistent incremental increases in granularity, as
+the initial requirement for conciseness often constrained its reasoning and led to inaccuracies or incomplete
+answers. The model’s inability to build upon a succinct base made this method unsuitable for achieving
+the desired level of granularity.
+To address this, we reversed the approach by asking the model to provide the most elaborate response,
+intending to progressively reduce the level of detail in subsequent steps. While this method initially
+produced more detailed outputs, the responses often lacked sufficient depth and structure to support
+multiple rounds of granularity reduction. As a result, achieving consistent decreases in detail also proved
+to be a challenge.
+These findings highlighted the need for a more structured and balanced approach. We identified that
+including a 1-shot example in the prompt could effectively guide the model to produce outputs with
+consistent and balanced granularity across levels. A well-designed 1-shot example helps the model
+demonstrate high-quality reasoning even in concise answers, ensuring alignment with task requirements
+regardless of the level of detail. It also provides a clear reference for maintaining consistency when
+transitioning between levels of granularity.
+In summary, 1-shot prompts strike an effective balance between flexibility and structure, enabling the
+model to generalize across tasks while maintaining coherence and consistency. This approach significantly
+enhances the model’s ability to generate high-quality training samples with varying levels of reasoning
+granularity.
+As a result, we have decided to generate a 1-shot example to include in the prompt. The first prompt
+will be used to create the 1-shot example, and the second prompt will leverage it for data generation.
+C.2 Prompts
+CoT Prompt Template
+You are a math teacher. Please think step by step for the following question.
+Output the result strictly in the following format. DO NOT generate any other explanations.
+The generated answer must be consistent with the given answer.
+Question: "<your question>" Answer: "<original answer>"
+The output format should be as follows:
+"instruction": "<your question>", "output": "<Solution Path> The answer is
+<answer>"
+Here is the example:
+<example>
+Figure 7: Prompt for generating CoT dataset.
+Synthetic 1-shot CoT Example Based on Granularity Prompt Template
+You are a math teacher. Please think step by step for the following questions in six different
+Granularity levels.
+Ensure that the explanations become progressively more detailed as the Granularity increases. The
+difference in the number of words between each Granularity should be as large as possible.
+The generated answer must be consistent with the given answer. DO NOT generate any other
+explanations. Output the result strictly in the following format:
+"instruction": "<your question>", "output": "<Solution Path>\n The answer is
+<answer>"
+Granularity definitions:
+- Level 1: Provide the most essential steps to reach the answer, minimizing explanations and
+focusing on the direct path to the solution.
+- Level 2: Provide the essential steps required to reach the answer, including some intermediate
+calculations. It should be more detailed than level 1 but shorter than level 3.
+- Level 3: Provide a detailed breakdown that includes all necessary calculations and explanations
+but shorter and less detailed than level 4. Ensure it is more detailed than level 2.
+- Level 4: Provide a very detailed breakdown that includes all necessary calculations and explana-
+tions but avoids extra clarifications that would belong to level 5. It should be more detailed than
+level 3.
+- Level 5: Provide an extremely detailed breakdown, covering almost all aspects and sub-steps, but
+shorter and less detailed than level 6. It should include additional clarifications and checks beyond
+level 4.
+- Level 6: Provide the most detailed and comprehensive breakdown, covering all possible aspects
+and sub-steps. Ensure this explanation is significantly longer and more detailed than level 5.
+The output format should be as follows:
+{ "Granularity": "level 1", "instruction": "<your question>", "output":
+"Explanation: <Explanation>\n The answer is <answer>" }
+{ "Granularity": "level 2", "instruction": "<your question>", "output":
+"Explanation: <Explanation>\n The answer is <answer>" }
+{ "Granularity": "level 3", "instruction": "<your question>", "output":
+"Explanation: <Explanation>\n The answer is <answer>" }
+{ "Granularity": "level 4", "instruction": "<your question>", "output":
+"Explanation: <Explanation>\n The answer is <answer>" }
+{ "Granularity": "level 5", "instruction": "<your question>", "output":
+"Explanation: <Explanation>\n The answer is <answer>" }
+{ "Granularity": "level 6", "instruction": "<your question>", "output":
+"Explanation: <Explanation>\n The answer is <answer>" }
+Figure 8: Synthetic 1-shot CoT prompt example based on granularity levels, demonstrating progressively detailed
+reasoning steps from Level 1 to Level 6 explanations.
+C.3 Granularity case study
+Question: At the beginning of every period of British Literature, Mrs. Crabapple picks a random student
+to receive a crabapple as a gift. Given that there are 11 students in her class and her class meets four times
+a week, how many different sequences of crabapple recipients are possible in a week?
+C.3.1 GPT-4o
+Granularity Generated Output
+Level 1 1. Number of students = 11
+2. Class meets per week = 4 times
+3. Each day, 1 student can receive a crabapple
+4. Choices per day = 11
+5. Total choices = 114 = 14641
+The answer is 14,641
+Level 2 1. Each period is an independent random event where 1 of 11 students is chosen.
+2. There are 4 periods per week.
+3. Each of the 4 periods has 11 possible choices.
+4. The total number of sequences is 114.
+5. Calculate 114: 11 × 11 = 121, 121 × 11 = 1331, 1331 × 11 = 14641
+The answer is 14,641
+Level 3 1. Each time Mrs. Crabapple picks a student, she has 11 choices.
+2. Since the class meets four times a week, there are four independent selections, each with 11 choices.
+3. The number of different sequences of crabapple recipients is calculated by raising the number of choices
+to the power corresponding to the number of selections: 114.
+4. Calculate this value: 11 × 11 × 11 × 11 = 14, 641.
+The answer is 14,641
+Level 4 1. Each class session, Mrs. Crabapple picks one of the 11 students.
+2. Multiply the number of choices per session: 11 choices per session.
+3. Since the class meets four times a week, we need to raise the number of choices to the power of the
+number of sessions: 114.
+4. Calculate 114: 11 × 11 × 11 × 11.
+5. Perform the multiplication step-by-step: 11 × 11 = 121, 121 × 11 = 1331, 1331 × 11 = 14, 641.
+6. Review all steps for consistency: 11 choices per session, 4 sessions total, 114 computation confirms
+14,641 possibilities.
+The answer is 14,641
+Level 5 1. Identify key variables: 11 students, 4 class meetings.
+2. Recognize the problem’s nature: finding the number of different sequences (order matters) of recipients
+over 4 periods.
+3. Analyze each period’s choice: Each of the 4 periods can be filled by any one of the 11 students.
+4. Calculate total sequences using the multiplication principle: Each of 4 periods has 11 possible choices.
+5. Compute total different sequences: 11 × 11 × 11 × 11 = 114.
+6. Evaluate numerical result: 114 = 11× 11 × 11 × 11 = 14, 641.
+The answer is 14,641
+Level 6 1. Determine possible choices per class: Mrs. Crabapple can choose one out of 11 students each time.
+2. Confirm weekly meetings: The class has four periods a week.
+3. Establish sequence combination formula: For each period, there are 11 choices, resulting in 11 choices for
+the first period, 11 for the second, 11 for the third, and 11 for the fourth.
+4. Calculate total sequences: Multiply available choices for each period to find total combinations: 11 ×
+11 × 11 × 11 = 114.
+5. Compute final result: Raising 11 to the power of 4, we get 114 = 14, 641 sequences.
+The answer is 14,641
+Table 7: Comparison of Different CoT granularity for the same problem generated by GPT-4o.
+C.3.2 LLaMA 3 70B
+Granularity Generated Output
+Level 1 The number of possible recipients for each class is 11.
+Since class meets 4 times a week, the total number of sequences is 11*11*11*11 = 114 = 14641.
+The answer is 14,641
+Level 2 First, we need to find the number of possible recipients for each class period, which is 11.
+Then, we need to find the number of possible sequences for the week, which is the number of possible recipients
+for each class period raised to the power of the number of class periods in a week: 114 = 14641.
+The answer is 14,641
+Level 3 Step 1: Determine the number of students in the class. There are 11 students in Mrs. Crabapple´s British Literature
+class.
+Step 2: Determine the number of times the class meets in a week. The class meets 4 times a week.
+Step 3: Calculate the number of different sequences of crabapple recipients possible in a week. Since there are 11
+students and the class meets 4 times a week, we can calculate the number of different sequences by raising 11 to
+the power of 4, which represents the number of choices for each of the 4 days. 114 = 14641
+The answer is 14,641
+Level 4 Step 1: Determine the number of students in the class. There are 11 students in Mrs. Crabapple´s British Literature
+class.
+Step 2: Determine the number of times the class meets in a week. The class meets 4 times a week.
+Step 3: Calculate the number of different sequences of crabapple recipients possible in a week. Since Mrs.
+Crabapple picks a random student each time, the number of sequences is equal to the number of permutations of
+11 students taken 4 at a time, allowing for repetition (since the same student can be picked more than once). This
+is calculated as 114.
+Step 4: Calculate 114. 114 = 11 * 11 * 11 * 11 = 14641.
+The answer is 14,641
+Level 5 To solve this problem, we need to use the concept of permutations.
+Since Mrs. Crabapple picks a random student each time, the order of selection matters. We have 11 students to
+choose from for each of the 4 periods in a week.
+For the first period, there are 11 possible choices. For the second period, there are again 11 possible choices, and
+so on. Since the choices are independent of each other, we can multiply the number of choices for each period to
+get the total number of different sequences. This gives us (11 times 11 times 11 times 11 = 114 = 14641).
+Therefore, there are 14641 different sequences of crabapple recipients possible in a week.
+The answer is 14,641
+Level 6 To solve this problem, we need to use the concept of permutations.
+Since Mrs. Crabapple picks a random student to receive a crabapple as a gift in each class, and there are 11
+students in her class, there are 11 possible choices for the first class.For the second class, there are also 11
+possible choices, and so on.
+Since her class meets four times a week, we need to find the total number of different sequences of crabapple
+recipients for four classes. This can be calculated by multiplying the number of choices for each class together.
+So, the total number of different sequences is (11 times 11 times 11 times 11 = 114). To calculate (114), we can
+multiply 11 by itself four times.
+This gives us 11 times 11 = 121, 121 times 11 = 1331, and 1331 times 11 = 14641. Therefore, the total number
+of different sequences of crabapple recipients possible in a week is 14641.
+The answer is 14,641
+Table 8: Comparison of Different CoT granularity for the same problem generated by LLaMA 3 70B.
+C.3.3 Gemini-1.5-Flash
+Granularity Generated Output
+Level 1 There are 11 choices for the recipient of the crabapple in each of the four class periods.
+The number of possible sequences is therefore 11 * 11 * 11 * 11 = 114. 114 = 14641.
+The answer is 14,641
+Level 2 There are 11 students in the class.
+Mrs. Crabapple picks a student each of the four class periods. The number of choices for the first period is 11.
+The number of choices for the second period is 11. The number of choices for the third period is 11. The number
+of choices for the fourth period is 11.
+To find the total number of different sequences, we multiply the number of choices for each period together: 11 *
+11 * 11 * 11 = 114 = 14641.
+The answer is 14,641
+Level 3 There are 11 students in the class.
+Mrs. Crabapple picks a student each of the four class periods. The number of choices for the first period is 11.
+The number of choices for the second period is also 11 (since the same student can receive a crabapple multiple
+times). Similarly, there are 11 choices for the third period and 11 choices for the fourth period.
+To find the total number of different sequences, we multiply the number of choices for each period together. This
+is 11 times 11 times 11 times 11 = 114. Calculating 114 gives us 14641.
+The answer is 14,641
+Level 4 There are 11 students in the class, and the class meets 4 times a week.
+Each time Mrs. Crabapple picks a student, there are 11 choices.
+Since there are four periods, we multiply the number of choices for each period together to find the total number
+of different sequences. This is 11 * 11 * 11 * 11 = 114. Calculating 114: 11 * 11 = 121; 121 * 11 = 1331; 1331
+* 11 = 14641.
+The answer is 14,641
+Level 5 There are 11 students in the class, and the class meets four times a week.
+Each time the class meets, Mrs. Crabapple picks one student to receive a crabapple. The number of choices for
+the first period is 11. The number of choices for the second period is also 11 (since the same student can receive
+a crabapple again). Similarly, there are 11 choices for the third period and 11 choices for the fourth period.
+To find the total number of different sequences of crabapple recipients, we multiply the number of choices for
+each period together. This is because each choice is independent of the others. Therefore, the total number of
+sequences is 11 * 11 * 11 * 11 = 114.
+Calculating 114: 11 * 11 = 121; 121 * 11 = 1331; 1331 * 11 = 14641.
+The answer is 14,641
+Level 6 There are 11 students in the class, and the class meets four times a week.
+Each time the class meets, Mrs. Crabapple picks one student to receive a crabapple. The number of ways to
+choose a student for the first period is 11. The number of ways to choose a student for the second period is also
+11. Similarly, there are 11 ways to choose a student for the third period and 11 ways to choose a student for the
+fourth period.
+Since these choices are independent, we multiply the number of choices for each period together to find the total
+number of different sequences of crabapple recipients in a week. This is 11 * 11 * 11 * 11 = 114.
+Calculating 114, we get 14641. Therefore, there are 14,641 different sequences of crabapple recipients possible
+in a week.
+The answer is 14,641
+Table 9: Comparison of Different CoT granularity for the same problem generated by Gemini-1.5-Flash.
+D Different CoT Format Dataset Collection
+D.1 Workflow
+The dataset with format processing steps are detailed below:
+1. 0-Shot Example Generation: The same question is first provided to ChatGPT using a 0-shot prompt
+in three formats. ChatGPT generates a single 1-shot example for each format (including both the question
+and a corresponding output in the specific format). This step ensures that ChatGPT establishes a baseline
+example for each format. These generated examples serve as templates for subsequent responses, ensuring
+consistency in style and logic.
+2. Input Construction: Each question is then re-input into ChatGPT, along with: - Its corresponding
+original ChatGPT-generated outputs. - The 1-shot examples generated in Step 1 for all three reasoning
+formats.
+Including the 1-shot examples in the input serves as explicit format demonstrations, guiding ChatGPT
+to generate outputs that align with the desired styles. This process improves the coherence and quality of
+the resulting outputs.
+3. Multi-Format Output Generation: Using the constructed input (original question + original outputs
++ 1-shot examples), ChatGPT generates reformatted outputs for each question across three reasoning
+formats while preserving the original logic: Least-to-most, RaR and SymbolicCoT.
+4. Ranking and Alignment: The reformatted outputs are then sorted to align with the original dataset’s
+order. This step ensures consistency and enables systematic evaluation. Sorting the outputs guarantees
+that the evaluation is both structured and comparable across different reasoning formats and the original
+dataset.
+D.2 Prompt
+Symbolic CoT Prompt Template
+Please rewrite the output by following the Symbolic CoT (SymbCoT) reasoning to solve the given question step-by-step.
+You can ONLY change the format but not the original steps. In your rewrite, translate the question’s context into
+symbolic logic format, identifying key variables and relationships. Ensure to use logical symbols such as ∃ (exists), ∀
+(for all), ∧ (and), ∨ (or) and =⇒ (implies), etc., to represent relationships between variables.
+You should use symbolic thinking steps in the output. The generated output must follow this specific structure and
+include logical symbols. Output the result strictly in the following format. DO NOT generate any other explanations.
+The generated answer must be consistent with the given answer. After modification, you must add The answer is
+<answer> at the end.
+Here is the original output:
+{instruction: <question> , output: <solution_path> }
+The output format should be as follows:
+{instruction: <question> , output: <SymbCoT Solution Path> The answer is <answer> }
+Here is the example: <example>
+Figure 9: Prompt for generating Symbolic Chain-of-Thought (SymbCoT) reasoning, requiring the transformation of
+problem contexts into symbolic logic representations using logical operators (∃, ∀, ∧, ∨ and =⇒ ).
+Rephrase and Respond (RaR) CoT Prompt Template
+Please rewrite the output and answer them individually. You can ONLY change the format but not the original steps.
+The generated answer must be consistent with the given answer. Output the result strictly in the following format. DO
+NOT generate any other explanations.
+After modification, you must add The answer is <answer> at the end.
+Here is the original output:
+{instruction: <question> , output: <solution_path> }
+Rephrase and expand the given question, and then respond carefully.
+The output format should be as follows:
+{instruction: <question> ,
+output: <Rephrase and expand the given question>
+<solution path> The answer is <answer> }
+Here is the example: <example>
+Figure 10: Prompt for Rephrase and Respond (RaR), which restructures the question while maintaining the original
+reasoning steps.
+Least-to-Most CoT Prompt Template
+Please rewrite the output by generating sub-questions and answer them individually. You can ONLY change the format
+but not the original steps.
+The generated answer must be consistent with the given answer. Output the result strictly in the following format. DO
+NOT generate any other explanations.
+After modification, you must add The answer is <answer> at the end.
+Here is the original output:
+{instruction: <question> , output: <solution_path> }
+The output format should be as follows:
+{instruction: <question> ,
+output: <Subquestion_1><Explanation_1>
+<Subquestion_2><Explanation_2>... The answer is <answer> }
+Here is the example: <example>
+Figure 11: Prompt for Least-to-Most CoT, which restructures the solution by generating and answering sub-questions
+step-by-step while preserving the original reasoning process.
+D.3 Format Case Study
+Different CoT Format Examples
+Original CoT:
+Bert currently has 20 kangaroos. Kameron has 100 kan-
+garoos. The difference in the number of kangaroos is
+100 - 20 = 80 kangaroos. Bert buys kangaroos at a rate
+of 2 kangaroos per day. Therefore, the number of days
+required for Bert to have the same number of kangaroos
+as Kameron currently has is 80 / 2 = 40 days. The answer
+is 40.
+Symbolic CoT:
+1. Let K0 = 100∃K0. (Kameron has 100 kangaroos).
+2. Let B0 = 20∃B0. (Bert has 20 kangaroos).
+3. The difference in kangaroos, D = K0 − B0 ∃D:
+D = 100− 20 = 80
+4. Rate of buying kangaroos per day, r = 2∀r:
+r = 2
+5. Number of days required, N = D
+r ∃N:
+N = 80
+2 = 40
+The answer is 40.
+Rephrase and Respond:
+On Kameron’s large farm, there are currently 100 kanga-
+roos, whereas Bert’s farm has only 20 kangaroos. Bert
+aims to increase his kangaroo population, purchasing 2
+new kangaroos each day, until he reaches the current num-
+ber of kangaroos on Kameron’s farm.
+Calculate the number of days Bert will need to achieve
+this goal. Bert currently has 20 kangaroos. Kameron has
+100 kangaroos. The difference in the number of kangaroos
+is 100 - 20 = 80 kangaroos. Bert buys kangaroos at a rate
+of 2 kangaroos per day. Therefore, the number of days
+required for Bert to have the same number of kangaroos
+as Kameron currently has is 80 / 2 = 40 days. The answer
+is 40.
+LEAST-TO-MOST :
+How many kangaroos does Bert currently have? Bert
+currently has 20 kangaroos. How many kangaroos does
+Kameron currently have? Kameron has 100 kangaroos.
+What is the difference in the number of kangaroos be-
+tween Bert and Kameron? The difference in the number
+of kangaroos is 100 - 20 = 80 kangaroos. What is the rate
+at which Bert buys kangaroos per day? Bert buys kanga-
+roos at a rate of 2 kangaroos per day. How many days will
+it take for Bert to have the same number of kangaroos as
+Kameron? The number of days required for Bert to have
+the same number of kangaroos as Kameron currently has
+is 80 / 2 = 40 days.
+The answer is 40.
+Figure 12: Comparison of Different CoT Formats for the same problem: Kameron has 100 kangaroos on his
+large farm; Bert has 20 kangaroos on his farm. In how many more days will Bert have the same number of
+kangaroos as Kameron does now if he buys kangaroos at the same rate of 2 new kangaroos per day?
+E Whole Results of Granularity Experiments
+Dataset Only Answer Gemma 2B Performance
+Level 1 Level 2 Level 3 Level 4 Level 5 Level 6
+SV AMP 47.70 59±4.58 64.33±0.00 65.22±0.69 65.89±0.38 67.11±1.35↑13.74% 66.89±1.02
+GSM8K 8.20 49.66±0.27 52.36±0.98 53.37±0.33 52.69±0.13 53.42±0.83 53.45±1.48↑7.63%
+AQuA-RAT 20.47 40.68±1.27 42.91±1.42 43.7±2.58 39.9±1.49 44.88±0.79↑12.48% 44.49±2.36
+MATH 9.00 23.4±1.06 21.53±2.16 24.4±0.20↑16.19% 21.93±0.42 23.0±1.22 21.0±0.69
+CSQA 69.86 67.38±0.82 67.98±0.37 68.74±1.30 66.75±0.53 67.54±0.47 66.01±1.50
+OBQA 69.60 71.53±1.94 69.93±0.90 69.93±1.36 68.33±1.27 72.00±1.64↑5.37% 70.13±1.62
+STQA 60.69 67.59±1.04↑7.11% 63.1±1.79 64.6±1.56 63.45±1.24 65.75±1.77 64.14±1.58
+Dataset Only Answer LLaMA 3.2 1B Performance
+Level 1 Level 2 Level 3 Level 4 Level 5 Level 6
+SV AMP 37.70 52.67±2.52 52.11±2.27 52.78±0.84 53.44±1.17↑2.55% 52.44±1.71 52.78±3.5
+GSM8K 6.70 36.8±0.77 39.73±0.67 40.08±0.98↑8.91% 39.32±1.33 39.58±1.04 38.54±0.96
+AQuA-RAT 24.00 34.12±1.82↑12.57% 30.31±1.42 30.58±1.2 31.23±2.02 33.2±2.17 30.45±0.91
+MATH 7.00 8.87±0.92↑11.85% 8.07±1.10 8.4±0.35 8.27±0.12 7.93±1.14 8.33±0.12
+CSQA 19.57 64.48±1.20↑5.39% 63.25±0.34 62.9±1.21 61.94±1.58 62.68±1.18 61.18±0.41
+OBQA 51.60 64.4±1.25↑2.01% 63.73±1.36 63.6±2.12 63.6±1.25 63.27±1.36 63.13±0.70
+STQA 53.10 63.33±1.59 60.11±1.30 63.56±1.59 64.14±1.50↑6.70% 61.84±1.44 63.33±2.30
+Dataset Only Answer LLaMA 3.2 3B Performance
+Level 1 Level 2 Level 3 Level 4 Level 5 Level 6
+SV AMP 53.70 69±3.61 65.89±3.53 68.33±1.86 68.11±3.27 69.78±1.07 74.33±1.45↑12.81%
+GSM8K 9.30 59.59±1.59 62.29±1.41 62.57±0.80 63.48±0.16↑6.53% 62.29±1.22 60.98±0.31
+AQuA-RAT 19.60 44.36±2.31 44.88±2.19 45.01±2.37 46.19±3.94 47.24±4.77↑6.49% 46.33±3.01
+MATH 9.40 19.07±0.90 19.6±1.06 19.73±1.72 20.27±1.42↑11.37% 19.93±2.20 18.2±1.64
+CSQA 62.00 72.62±0.82 70.71±0.70 74.12±0.50↑4.82% 71.75±0.62 71.17±1.03 71.44±0.90
+OBQA 74.40 79.33±0.42 79.73±0.70 78.8±0.80 77.8±0.92 79.27±2.04 80.2±1.78↑3.08%
+STQA 55.52 66.44±1.55 62.76±2.82 67.47±1.44 66.78±1.39 63.91±2.79 68.62±1.20↑9.34%
+Dataset Only Answer BLOOM 560M Performance
+Level 1 Level 2 Level 3 Level 4 Level 5 Level 6
+SV AMP 0.00 5.11±0.19 4.56±0.77 6.67±1.33↑46.27% 6.56±1.90 5.56±2.41 5.11±0.69
+GSM8K 3.90 7.25±0.77 8.11±0.08 8.47±0.12↑16.83% 7.73±0.82 8.19±0.27 8.11±0.77
+AQuA-RAT 20.90 22.05±3.43↑18.29% 20.6±2.56 21.13±4.55 21.52±1.59 18.64±1.98 19.69±1.04
+MATH 4.00 2.6±0.53 2.33±1.01 2.13±0.61 2.13±1.15 1.67±0.42 1.87±0.50
+CSQA 20.15 37.76±1.29 37.95±0.29↑18.02% 37.84±0.74 33.99±0.83 33.96±1.57 31.89±1.23
+OBQA 34.00 41.07±0.95↑18.04% 38.27±0.42 36.73±0.76 35.73±1.40 34.8±3.64 36.27±2.04
+STQA 56.90 53.1±1.25 52.18±1.30 52.07±0.35 52.99±0.40 53.45±1.58 54.83±1.73
+Dataset Only Answer BLOOM 1.1B Performance
+Level 1 Level 2 Level 3 Level 4 Level 5 Level 6
+SV AMP 1.00 7.22±0.69 9.11±0.51 13.00±1.86↑80.06% 11.33±1.20 10.67±1.00 9.89±1.64
+GSM8K 4.20 11.32±0.16 14.3±0.37 14.33±0.79↑26.59% 14.28±0.66 13.09±0.83 11.78±0.77
+AQuA-RAT 22.40 21.39±2.27 21.78±1.20 21.92±1.94 21.78±1.27 21.92±3.66 23.36±3.16↑9.21%
+MATH 3.20 2.33±0.31 2.73±0.31 2.4±0.40 2.07±0.58 2.2±1.22 2.87±0.76
+CSQA 41.69 49.14±2.21↑18.35% 48.21±2.35 48.57±0.36 43.87±0.82 45.37±0.79 41.52±0.91
+OBQA 48.60 48.4±3.30 47.27±1.81 46.07±2.23 46.00±2.09 46.2±2.62 46.4±2.96
+STQA 58.97 57.93±2.39 59.65±2.48↑6.35% 58.05±2.08 58.97±2.41 56.09±2.22 57.36±1.21
+Dataset Only Answer BLOOM 1.7B Performance
+Level 1 Level 2 Level 3 Level 4 Level 5 Level 6
+SV AMP 0.00 10±1.67 9.44±1.02 17.11±1.17↑71.1% 16.44±1.39 16.56±0.51 11.33±2.91
+GSM8K 5.10 13.12±0.33 17.11±0.62 16.68±0.46 17.89±1.25↑36.36% 16.86±1.25 15.21±0.12
+AQuA-RAT 23.60 25.07±0.91↑14.37% 23.88±0.45 22.05±5.46 22.7±0.82 22.31±1.38 21.92±2.17
+MATH 3.60 2.87±0.50 1.9±0.14 2.8±0.53 1.87±0.12 2.0±0.60 2.6±0.53
+CSQA 21.38 53.37±2.21↑15.12% 51.24±0.90 51.52±0.62 49.06±0.59 46.79±0.68 46.36±0.59
+OBQA 48.20 49.93±3.00 50.93±0.99↑8.99% 48.0±1.40 47.6±1.00 47.67±2.50 46.73±2.37
+STQA 58.62 54.94±1.55 56.44±2.49 58.28±0.91 57.24±2.69 56.89±5.10 56.44±1.90
+Dataset Only Answer BLOOM 3B Performance
+Level 1 Level 2 Level 3 Level 4 Level 5 Level 6
+SV AMP 5.00 15.44±0.51 23.67±0.00 23.11±1.26 24.00±0.67↑55.44% 22.22±0.69 22.22±1.02
+GSM8K 4.60 18.2±0.57 22.34±1.14 23.81±0.65↑30.82% 22.57±0.88 22.47±0.86 20.85±0.15
+AQuA-RAT 28.00 24.67±0.82 24.41±1.72 20.34±1.82 26.90±2.41 25.85±0.45 24.28±2.17
+MATH 4.60 3.2±1.04 2.8±0.40 2.33±0.61 2.73±0.23 3.53±0.50 2.8±0.20
+CSQA 20.56 57.44±1.12↑11.38% 55.23±1.47 55.42±0.64 53.65±0.22 52.96±0.29 51.57±1.15
+OBQA 37.80 57.2±1.59 52.33±0.61 54.87±2.02 54.6±1.04 57.47±2.64↑9.82% 52.93±1.81
+STQA 54.14 58.85±1.74 61.04±3.06↑3.72% 60.58±3.09 59.89±3.13 59.19±1.21 59.08±2.87
+Table 10: Performance of various models at six granularity levels, including standard deviation (±std). The best
+performance is boldfaced, and red text shows the relative improvement (%) for the highest vs. lowest performance
+in six levels. Only Answer: Student models are fine-tuned to directly predict answers without CoT.
+F Padding Procedure for Matched-Length CoT Variants
+The following algorithm outlines the process of constructing matched-length CoT variants D′
+g, ensuring
+that sequences from lower granularity levels are padded to match the length of higher granularity sequences.
+This process is designed to isolate the impact of granularity from sequence length during evaluation.
+Algorithm 1: Dynamic Padding for Matched-Length CoT Variants
+Input: D1, D5 (CoT outputs for levels 1, 5)
+Output: D′
+1: Padded D1 matching D5
+Load D1, D5, ensure lengths match;
+foreach (x1, x5) ∈ (D1, D5) do
+Tokenize x1, x5 to get lengths len(T1) and len(T5);
+if len(T1) < len(T5) then
+Compute repeat_factor = len(T5)/len(T1);
+Repeat and truncate T1 to match len(T5), decode to xtmp
+1 ;
+if "The answer is" in x1 then
+Split x1 as [prefix, suffix] at "The answer is";
+x′
+1 = prefix + xtmp
+1 + "The answer is" + suffix;
+else
+x′
+1 = xtmp
+1 ;
+Append x′
+1 to D′
+1;
+Save D′
+1 and log statistics;
+G Analysis of Symbolic CoT Performance in CoT distillation
+To investigate the suboptimal performance of Symbolic CoT, we conducted a case study.
+Question: janet’s ducks lay 16 eggs per day. she eats three for breakfast every morning and bakes
+muffins for her friends every day with four. she sells the remainder at the farmers’ market daily for $2 per
+fresh duck egg. How much in dollars does she make every day at the farmers’ market?
+BLOOM 3B Output
+Let:
+D = 16 (eggs laid per day)
+E = 3 (eggs eaten per day)
+B = 3 (breakfasts per day)
+M = 4 (muffins per day)
+S = D − E = 16− 3 = 13 (sold eggs per day)
+R = remaining eggs after breakfasts and muffins
+T = total daily earnings
+1. ∀E : E = 3(Janet eats 3 eggs per day)
+2. ∀B : B = 3(Janet bakes muffins for her friends every day)
+3. ∀M : M = 4(Janet sells the remaining eggs at the farmers’ market daily for $2 per fresh duck egg)
+4. ∀R : R = D − E − M = 16− 3 − 4 = 9(remaining eggs after breakfasts and muffins)
+5. ∀T : T = R × 2 ⇒ T = 13× 2 = 26(total daily earnings)
+The answer is 26.
+Gemma 2B Output
+Let:
+E = 16 (total eggs laid per day by ducks)
+B = 3 (eggs eaten for breakfast per day)
+M = 4 (eggs baked into muffins per day)
+R = remaining eggs after breakfast and muffins
+S = eggs sold at farmers’ market per day
+P = 2 ($ per egg at farmers’ market)
+T = total earnings per day at farmers’ market
+1. ∀E : E = 16(total eggs laid per day)
+2. ∀B : B = 3(Janet eats 3 eggs for breakfast)
+3. ∀M : M = 4(Janet bakes 4 muffins daily)
+4. Remaining eggs after breakfast and muffins:
+R = E − B − M ⇒ R = 16− 3 − 4 = 9
+5. ∀S : S = R ⇒ S = 9(Janet sells the remaining eggs)
+6. Total earnings:
+T = S × P ⇒ T = 9× 2 = 18
+The answer is 18.
+The error in BLOOM 3B arises from unnecessary variable assignments and mismanagement of
+numerical values. While it correctly defines and calculates R = 9(the remaining eggs), it later incorrectly
+substitutes R = 13into the final computation, leading to an incorrect total earnings prediction of $26
+instead of $18. The symbolic expressions themselves are structurally correct, but the model fails to
+maintain numerical consistency throughout the reasoning process. This suggests that Symbolic CoT lacks
+a robust mechanism for tracking variable dependencies and verifying intermediate values, especially for
+weaker SLMs. We identified and summarized several possible reasons for its poor performance:
+1. Task Relevance and Reasoning Depth: According to the original paper, Symbolic CoT is primarily
+designed for logical reasoning tasks (Xu et al., 2024a). However, our datasets focus on mathemat-
+ical and commonsense reasoning, where the advantages of symbolic reasoning—particularly its
+effectiveness in handling deeper reasoning—do not manifest as clearly.
+2. Implementation Differences: The original study employed multiple stages and corresponding
+special tokens to enhance symbolic reasoning. In contrast, our implementation only adopted the
+symbolic reasoning format without these additional mechanisms, which might have impacted its
+effectiveness.
+3. Pretraining Data Constraints: SLMs have relatively limited pretraining corpora, which likely
+contain fewer instances of symbolic reasoning formats. As a result, weaker models struggle to
+acquire symbolic reasoning capabilities with only a small number of training samples.
+H Student Performance across Different Teacher Models
+Gemma 2BLLaMA 3.2 1BLLaMA 3.2 3BBLOOM 3B
+0
+10
+20
+30
+40
+50
+60
+70
+(a) SV AMP
+Gemma 2BLLaMA 3.2 1BLLaMA 3.2 3BBLOOM 3B
+0
+10
+20
+30
+40
+50
+60
+70 (b) GSM8K
+Gemma 2BLLaMA 3.2 1BLLaMA 3.2 3BBLOOM 3B
+0
+5
+10
+15
+20
+25 GPT
+LLaMA
+Gemini
+Human (c) MATH
+Gemma 2BLLaMA 3.2 1BLLaMA 3.2 3BBLOOM 3B
+0
+10
+20
+30
+40
+50
+(d) AQuA-RAT
+Gemma 2BLLaMA 3.2 1BLLaMA 3.2 3BBLOOM 3B
+0
+10
+20
+30
+40
+50
+60
+70 (e) CommonsenseQA
+Gemma 2BLLaMA 3.2 1BLLaMA 3.2 3BBLOOM 3B
+0
+20
+40
+60
+80 (f) StrategyQA
+Figure 13: Student model performance across different teacher models. Each bar represents the average accuracy of
+a specific student model trained on CoT from different teacher models.

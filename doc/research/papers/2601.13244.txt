@@ -1,0 +1,972 @@
+Do Instruction-Tuned Models Always Perform Better Than Base Models?
+Evidence from Math and Domain-Shifted Benchmarks
+Prateek Munjal, Clement Christophe, Ronnie Rajan, Praveenkumar Kanithi
+M42, Abu Dhabi, UAE,
+Abstract
+Instruction finetuning is standard practice for
+improving LLM performance, yet it remains
+unclear whether it enhances reasoning or
+merely induces surface-level pattern match-
+ing. We investigate this by evaluating base
+and instruction-tuned models on standard math
+benchmarks, structurally perturbed variants,
+and domain-shifted tasks. Our analysis high-
+lights two key (often overlooked) limitations
+of instruction tuning. First, the performance
+advantage is unstable and depends heavily on
+evaluation settings. In zero-shot CoT settings
+on GSM8K, base models consistently outper-
+form instruction-tuned variants, with drops
+as high as 32.67% (Llama3-70B). Instruction-
+tuned models only match or exceed this perfor-
+mance when provided with few-shot exemplars,
+suggesting a reliance on specific prompting
+patterns rather than intrinsic reasoning. Sec-
+ond, tuning gains are brittle under distribution
+shift. Our results show that base models sur-
+pass instruction-tuned variants on the domain-
+specific MedCalc benchmark. Additionally,
+instruction-tuned models show sharp declines
+on perturbed datasets, indicating sensitivity to
+prompt structure over robust reasoning.
+1 Introduction
+Large language models (LLMs) have recently
+demonstrated impressive performance on a wide
+range of reasoning benchmarks (Grattafiori et al.,
+2024; Yang et al., 2025a; Liu et al., 2024a; Team
+et al., 2025). While assessing genuine reasoning
+capabilities remains challenging, the field primar-
+ily relies on solution accuracy across mathematical
+datasets (Cobbe et al., 2021; Huang et al., 2025;
+Lightman et al., 2023) as a proxy. Evaluations
+on these standard benchmarks consistently suggest
+that instruction-tuned models significantly outper-
+form their base counterparts (Yang et al., 2024),
+creating an implicit assumption that instruction tun-
+ing universally enhances capability. Consequently,
+base models are often excluded from comparative
+analyses or evaluated under restrictive inference
+settings.
+However, this assumption overlooks critical re-
+source trade-offs. While instruction tuning im-
+proves format adherence and user interaction, it
+necessitates massive curated datasets (Zhang et al.,
+2024; Toshniwal et al., 2024; Cobbe et al., 2021;
+Liu et al., 2024b; Wei et al., 2023; Wang et al.,
+2023b; Mitra et al., 2024; Albalak et al., 2025) and
+substantial training resources (Liu et al., 2024a).
+Simultaneously, test-time strategies such as self-
+consistency (Wang et al., 2022a), CoT decoding
+(Wang and Zhou, 2024), ESC (Li et al., 2024) and
+Pass@k evaluation incur significant computational
+costs, particularly when sampling multiple trajec-
+tories is required to optimize the performance. De-
+spite these costs (Snell et al., 2024; Chen et al.,
+2025b; Dang et al., 2025), the relative benefits of
+instruction tuning versus applying test-time reason-
+ing to base models remain underexplored.
+In this work, we address this gap by conduct-
+ing a controlled empirical comparison between
+base and instruction-tuned models under compa-
+rable inference-time scaling. We evaluate models
+using the Pass@20 metric across a diverse suite
+of benchmarks: standard mathematical reasoning
+tasks (GSM8K (Cobbe et al., 2021), Math-500
+(Lightman et al., 2023)), perturbed variants de-
+signed to disrupt solution templates (Math-Perturb
+Hard (Huang et al., 2025)), and a domain-specific
+clinical benchmark, MedCalc (Khandekar et al.,
+2024). Motivated by recent advances in sampling
+methods, the base models utilize CoT decoding
+(Wang and Zhou, 2024) while instruction-tuned
+models employ repeated stochastic sampling.
+Our contributions are summarized as follows:
+• Base models dominate in zero-shot:Despite
+superior few-shot CoT results on GSM8K,
+instruction-tuned models significantly under-
+1
+arXiv:2601.13244v1  [cs.LG]  19 Jan 2026
+perform their base counterparts in zero-shot
+settings, exhibiting performance drops of
+32.7% (LLaMA3-70B) and 31.2% (Kimi-K2).
+• Poor transferability under distribution
+shift:Performance gains from instruction tun-
+ing do not reliably transfer to the domain-
+specific MedCalc benchmark. Base models
+outperform instruction-tuned counterparts in
+zero-shot CoT, with observed drops of 6.78%
+(LLaMA3-70B) and6.11% (Kimi-K2).
+• Sensitivity to perturbation and evaluation
+noise:Instruction-tuned models show lim-
+ited robustness, suffering sharp declines from
+Math-500 to Math-Perturb Hard (e.g., Kimi-
+K2 drops from 94.20% to 76.34%). Addition-
+ally, we identify reliability issues in standard
+rule-based regex evaluation for latex math
+benchmarks, which lead to scoring discrep-
+ancies of up to10.8%.
+2 Related Work
+Instruction following in LLMs is primarily estab-
+lished via supervised fine-tuning (SFT) or rein-
+forcement learning (RL). Ouyang et al. (2022)
+demonstrated that aligning base models with hu-
+man feedback enhances both user intent follow-
+ing and task performance. Subsequent research
+has scaled this approach through improved training
+methodologies and the curation of diverse natural
+(Mishra et al., 2022; Wang et al., 2022b; Wei et al.,
+2021) and synthetic datasets (Wang et al., 2023a;
+Taori et al., 2023; Han et al., 2023). Consequently,
+instruction-tuned models are often assumed to be
+strictly superior to their base counterparts. How-
+ever, with the emergence of massive-scale base
+models (up to 1 trillion parameters (Team et al.,
+2025)), we revisit this assumption to determine if
+it holds at scale.
+Parallel to instruct-tuning, prompting strategies
+have significantly improved reasoning capabili-
+ties. Wei et al. (2022) observed that fewshot CoT
+prompting with intermediate reasoning steps sub-
+stantially improves performance on mathemati-
+cal tasks (Cobbe et al., 2021). Similarly, self-
+consistency (Wang et al., 2022a) exploits LLM
+stochasticity to sample multiple trajectories and ag-
+gregate results via majority voting. Distinct from
+repeated sampling, CoT decoding (Wang and Zhou,
+2024) explicitly branches at the first token by se-
+lecting top-K candidates, followed by greedy de-
+coding. Notably, this method demonstrates that
+base models possess substantial latent reasoning
+ability. Accordingly, we adopt CoT decoding as
+the default strategy for base models in this work.
+The reliance on open-source benchmarks intro-
+duces risks of data contamination, where models
+may memorize evaluation data during training. Re-
+cent studies (Deng et al., 2024; Xu et al., 2025; Wu
+et al., 2025) question whether high performance
+on standard datasets reflects genuine reasoning. To
+address this, we extend our evaluation beyond stan-
+dard benchmarks to include Math Perturb (Huang
+et al., 2025), designed to disrupt solution templates,
+and the clinical benchmark MedCalc (Khandekar
+et al., 2024). We hypothesize: if instruction-tuned
+models possess superior reasoning, their advan-
+tages must persist under these distribution shifts.
+3 Experiments
+We evaluate the comparative performance of
+instruction-tuned models and their base coun-
+terparts under scalable test-time inference using
+Pass@kmetric (k= 20).
+Models:We examine a suite of 16 models span-
+ning 0.6B to 1T parameters across five promi-
+nent families: Qwen (Yang et al., 2025a), LLaMA
+(Grattafiori et al., 2024), SmolLM (Bakouch et al.,
+2025), DeepSeek (Liu et al., 2024a), and Kimi
+(Team et al., 2025). We focus exclusively on open-
+weights models to ensure access to corresponding
+base checkpoints. Additional implementation de-
+tails are provided in the section E.
+Datasets:To test the hypothesis that instruction
+tuning gains generalize beyond standard evalua-
+tions, we select four diverse datasets. We employ
+GSM8K (Cobbe et al., 2021) and Math-500 (Light-
+man et al., 2023) as baselines. To assess robustness
+against structural perturbations, we utilize Math
+Perturb Hard (Huang et al., 2025), which modifies
+Math-500 problems specifically to disrupt solution
+templates and expose reliance on memorized pat-
+terns. Finally, we evaluate domain transfer using
+MedCalc (Khandekar et al., 2024), a clinical calcu-
+lation benchmark comprising over 1,000 manually
+curated calculation tasks across 55 distinct types.
+4 Results
+4.1 Comparison on standard benchmarks
+On GSM8K (8-shot CoT), base and instruction-
+tuned models perform similarly (Fig. 2), while
+most mid/large base models outperform their in-
+struction counterparts, including LLaMA3-70B
+2
+Figure 1: Pass@20 on Math-500. Gap between instruc-
+tion and base models reducing with parameter scale.
+Figure 2: Pass@20 on GSM8K. Instruction tuning
+yields marginal gains here, with mid-to-large base mod-
+els often surpassing their instruction-tuned counterparts.
+(95.4% vs. 91.5%), DS-V3.1 (97.1% vs. 95.8%),
+and Kimi-K2 (97.9% vs. 95.8%). Notably,
+instruction-tuned models provide marginal bene-
+fit on GSM8K (especially in SLMs), with gains
+diminishing as model size increases (Fig. S4). In
+contrast, instruction tuning has a larger effect on
+Math-500 for SLMs, but this trend weakens for
+LLMs (Fig. 1), where base models often match or
+exceed instruction-tuned performance. For exam-
+ple, LLaMA3-3B improves from 29.0% to 67.2%
+and SmollM-3B from 72.0% to 86.2% (Fig. S2).
+This suggests that large base models already cap-
+ture much of the reasoning required for both bench-
+marks.
+Finding 1:At >70 B scale, base models per-
+form competitively (Math-500) and superior
+(GSM8K) relative to instruction-tuned models.
+4.2 Robustness under distribution shift
+To assess whether instruction tuning gains per-
+sist under domain shift, we evaluate models on
+MedCalc (Tab 1). In zero-shot CoT, base models
+outperform instruction-tuned models across most
+categories and model sizes, with the largest gaps
+observed for SLMs (LLaMA3-3B, SmollM-3B).
+Model / Setting Lab Risk Physical Severity Diagnosis Date Dosage Overall
+Qwen3-0.6B 15.60 39.17 40.00 25.00 60.00 28.33 10.00 30.37Base 30.28 65.83 36.67 48.75 93.33 5.00 10.00 42.69∆ -14.68-26.663.33 -23.75-33.3323.330.00-12.32
+SmollM-3B 25.99 40.83 57.08 37.50 70.00 20.00 17.50 39.26Base 54.74 62.50 85.42 46.25 81.67 28.33 27.50 61.89∆ -28.75-21.67-28.34-8.75 -11.67-8.33-10.00-22.63
+Llama3-3B 26.30 35.83 27.50 27.50 53.33 8.33 15.00 28.94Base 54.74 62.50 86.25 46.25 81.67 28.33 27.50 62.08∆ -28.44-26.67-58.75-18.75-28.34-20.00-12.50-33.14
+Qwen3-8B 57.49 50.83 76.25 28.75 55.00 60.00 25.00 56.83Base 34.86 64.17 75.83 37.50 88.33 10.00 15.00 52.05∆ 22.63-13.340.42 -8.75 -33.3350.0010.004.78
+Qwen3-14B 61.47 53.75 83.33 31.25 65.00 41.67 27.50 60.17Base 62.69 65.00 93.33 51.25 90.00 60.00 45.00 70.11∆ -1.22-11.25-10.00-20.00-25.00-18.33-17.50-9.94
+Llama3-70B 38.53 35.00 69.17 23.75 66.67 35.00 35.00 44.89Base 43.12 49.17 76.67 40.00 83.33 5.00 32.50 51.67∆ -4.59-14.17-7.50-16.25-16.6630.002.50 -6.78
+DS-V3.1 69.42 55.00 81.67 58.75 66.67 41.67 55.00 65.81Base 55.68 56.89 83.27 40.00 68.33 71.67 60.00 62.99∆ 13.74-1.89-1.6018.75 -1.66-30.00-5.002.82
+Kimi-K2 72.17 64.58 88.75 48.75 68.33 46.67 55.00 70.11Base 61.47 77.92 94.58 65.00 96.67 68.33 80.00 76.22∆ 10.70-13.34-5.83-16.25-28.34-21.66-25.00-6.11
+Table 1: Pass@20 on MedCalc (zero-shot CoT). Base
+models outperform instruction-tuned variants across
+most categories ∆ shows (Instruct–Base); red indicates
+base superiority.
+These results indicate that the benefits of instruc-
+tion tuning do not always transfer under distribu-
+tion shift, underscoring the importance of evaluat-
+ing beyond one domain and reporting base models.
+We further revisit the GSM8K benchmark under
+zero-shot CoT to assess if the base vs. instruction
+performance gap persists in the absence of few-shot
+exemplars, refer Fig. 3). Consistent with MedCalc,
+Figure 3: Pass@20 on GSM8K (0-shot CoT). Base mod-
+els significantly outperform instruction-tuned models
+base models outperform instruction-tuned models,
+which requires few-shot CoT (n=8; Fig 2) to reach
+comparable accuracy. This suggests that instruc-
+tion tuning may change how reasoning is elicited,
+increasing sensitivity to CoT exemplars, contrary
+to common assumption it consistently improves
+performance over base models. Also while few-
+shot CoT largely narrows this gap, base models
+seem to benefit relatively lesser from additional
+examples, indicating that their reasoning ability is
+already active in the zero-shot setting.
+3
+Finding 2:Under distribution shift, base models
+outperform instruction-tuned models in zero-
+shot, while instruction-tuned performance relies
+on few-shot examples.
+4.3 Few-shot effects on base models
+While instruction-tuned models benefit from few-
+shot exemplars, our results in Table 2 shows that on
+both GSM8K and MedCalc, the base models also
+improves with few-shot CoT. This aligns with our
+Base Model GSM8K MedCalc
+Zero-shot Few-shotZero-shot Few-shot
+Qwen3-0.6B86.50 83.25 42.69 52.05
+Smollm-3B86.50 93.25 61.89 44.79
+Llama-3B 56.71 73.92 62.08 46.42
+Qwen3-8B 97.65 92.95 52.05 72.40
+Qwen3-14B97.72 96.21 70.11 79.08
+Llama3-70B90.82 95.37 51.67 61.60
+DS-V3.1 96.59 97.12 62.99 78.99
+Kimi-K2 98.86 97.88 76.22 89.40
+Table 2: Pass@20 comparing zero-shot vs. few-shot
+CoT on base models, showcasing they too (akin to
+instruction-tuned) improve with few-shot exemplars.
+earlier observations (Sec 4.2) that larger base mod-
+els already possess enough knowledge in zero-shot
+settings. Empirically, on GSM8K benchmark, the
+base models show higher zero-shot performance,
+and perhaps, therefore exhibit a weaker reliance on
+exemplars compared to instruction-tuned models.
+Also, on the MedCalc benchmark, under 1 shot
+CoT (Tab 1), all base models (except Qwen3-0.6B)
+outperform their instruction counterparts, reinforc-
+ing our hypothesis that instruction tuning does not
+always lead to improved performance.
+Finding 3:Few-shot learning benefits both
+instruction-tuned and base models; however,
+base models rely less on few-shot exemplars
+due to their stronger zero-shot performance
+4.4 Evaluator Sensitivity: Revisit Math-500
+Although Math-500 is a widely cited benchmark,
+we found evaluating it remains complicated as
+LLMs need to not only predict correct answer but
+also format it in valid latex. Therefore, prior work
+relies on heuristic, regex based answer extraction
+rules, making evaluations sensitive to formatting
+rather than solving skill, which is also reflected in
+substantial discrepancies across evaluators (Tab 3
+and Tab S2). For example, on Qwen3-14B, the stan-
+dard grader reports a gap of 10.8%, whereas Math
+Verify reduces this difference to 0.8%. Similarly,
+Model Variant Grader MathV erify
+Qwen3-14B
+Instruct 78.00 84.40
+Base 88.80 85.20
+∆ -10.80 -0.80
+LLaMA3-70B
+Instruct 59.80 56.80
+Base 52.60 53.20
+∆ 7.20 3.60
+DS-V3.1
+Instruct 95.20 89.40
+Base 89.80 86.00
+∆ 5.40 3.40
+Kimi-K2
+Instruct 94.20 88.60
+Base 93.80 89.00
+∆ 0.40 -0.40
+Table 3: Evaluator sensitivity on Math-500 (Pass@20).
+Performance gaps vary significantly. Due to space con-
+straints, we show manually audited cases demonstrating
+grader outputs in Sec B for interested readers.
+for Kimi-K2, the reported gap is 0.4%, but with
+opposite directions under the standard grader and
+MathVerify. Moreover, under the standard Math
+grader, strong Math-500 performance does not reli-
+ably transfer to Math Perturb Hard, with large drops
+observed for LLMs (e.g., LLaMA3-70B: 59.80%
+vs. 22.22%; full results in TabS1). Together, these
+results raise concerns about the reliability of Math-
+500 reported results.
+Finding 4:Gains of instruction-tuned models
+over base models are found to be highly evalua-
+tor dependent on LaTeX based benchmarks and
+primarily benefit SLMs, with mixed and often
+marginal effects for LLMs.
+5 Conclusion
+In this work, we revisit the assumption that instruc-
+tion tuning uniformly improves LLMs performance.
+With systematic evaluation on standard (GSM8K,
+Math-500) and domain-shifted and robustness fo-
+cused benchmarks (MedCalc, Math Perturb), we
+show that its benefits over base models depend
+strongly on number of parameters and evaluation
+setting (zero-shot vs few-shot). We also observe
+that instruction tuning provides substantial gains
+for SLMs, while its impact on LLMs is mixed and
+often marginal. Our analysis also support concerns
+about benchmark contamination/memorization, as
+instruction-tuned models perform noticeably worse
+on Math Perturb Hard than on Math-500. This high-
+lights the need to interpret instruction tuning gains
+with caution and to rely on robust, benchmarks
+when assessing true reasoning ability in LLMs.
+4
+Limitations
+Our study focuses on comparing base and
+instruction-tuned variants across a set of widely
+used math and domain-shifted benchmarks. This
+scope leaves several limitations.
+Benchmark coverageWe evaluate a finite set of
+tasks (e.g., GSM8K, Math-500, and perturbation-
+based variants). While these benchmarks are
+standard, they may not fully represent real-world
+reasoning, and our results may hold true for
+benchmark-specific artifacts.
+Evaluator dependenceA central finding is that
+reported gaps can vary across graders, especially
+on latex heavy outputs. Although we include multi-
+ple evaluators and manual audits, we do not claim
+to exhaust the space of possible evaluators or for-
+matting behaviors. Further, our manual audits are
+necessarily limited in size and may miss rare failure
+modes.
+Decoding and prompting choices.Results
+depend on generation settings (e.g., max tokens,
+temperature) and prompt templates (zero-shot/few-
+shot, CoT formatting). While we keep settings
+consistent within comparisons, different choices
+may shift some of our findings.
+Model and data availability constraints.We
+evaluate a selected set of model families and sizes
+based on access and compute constraints. Conse-
+quently, our conclusions should not be interpreted
+as universal across all instruction-tuning recipes.
+No causal claims about instruction tuningOur
+analysis is empirical and comparative; it does not
+isolate which components of instruction tuning
+(data mixture, loss function, RLHF/DPO variants,
+formatting conventions) drive the observed effects.
+Enabling a closer inspection on training-time inter-
+ventions is beyond the scope of this work. More-
+over, instruction-tuned models are commonly as-
+sumed to outperform base models due to extensive
+fine-tuning, here our goal was to examine whether
+this assumption holds when base models, without
+instruction tuning, are paired with stronger sam-
+pling strategies. We leave the study of applying
+identical sampling methods to instruction-tuned
+models to future work, as our focus is not on opti-
+mizing performance but on testing the robustness
+of this widely held assumption.
+Ethical considerations
+This work empirically studies the performance
+comparisons between base and instruction-tuned
+models on established and standard benchmarks.
+Risk of overgeneralization.A potential harm is
+that readers may overinterpret benchmark results
+as evidence about real-world reliability or safety.
+We explicitly emphasize evaluator dependence, de-
+coding sensitivity, and benchmark limitations, and
+we recommend cautious interpretation of apparent
+gains.
+Responsible reporting.Our findings could be
+misused to selectively choose evaluators that favor
+a preferred model. To counter this, we encourage
+reporting results across multiple graders (or robust
+verification-based evaluation) and documenting de-
+coding settings, extraction rules, and error analy-
+ses.
+Environmental impact.Running large-scale
+evaluations and multiple sampling runs can con-
+sume substantial compute. We reduce unnecessary
+overhead by reusing cached generations where fea-
+sible and prioritizing targeted analyses (e.g., per-
+turbation) to answer specific methodological ques-
+tions.
+References
+Alon Albalak, Duy Phung, Nathan Lile, Rafael Rafailov,
+Kanishk Gandhi, Louis Castricato, Anikait Singh,
+Chase Blagden, Violet Xiang, Dakota Mahan, and 1
+others. 2025. Big-math: A large-scale, high-quality
+math dataset for reinforcement learning in language
+models.arXiv preprint arXiv:2502.17387.
+Elie Bakouch, Loubna Ben Allal, Anton Lozhkov, Noua-
+mane Tazi, Lewis Tunstall, Carlos Miguel Patiño,
+Edward Beeching, Aymeric Roucher, Aksel Joonas
+Reedi, Quentin Gallouédec, Kashif Rasul, Nathan
+Habib, Clémentine Fourrier, Hynek Kydlicek, Guil-
+herme Penedo, Hugo Larcher, Mathieu Morlon, Vaib-
+hav Srivastav, Joshua Lochner, and 4 others. 2025.
+SmolLM3: smol, multilingual, long-context reasoner.
+https://huggingface.co/blog/smollm3.
+Ding Chen, Qingchen Yu, Pengyuan Wang, Wentao
+Zhang, Bo Tang, Feiyu Xiong, Xinchi Li, Minchuan
+Yang, and Zhiyu Li. 2025a. xverify: Efficient an-
+swer verifier for reasoning model evaluations.arXiv
+preprint arXiv:2504.10481.
+Feng Chen, Allan Raventos, Nan Cheng, Surya Gan-
+guli, and Shaul Druckmann. 2025b. Rethinking fine-
+tuning when scaling test-time compute: Limiting
+confidence improves mathematical reasoning.arXiv
+preprint arXiv:2502.07154.
+Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian,
+Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias
+Plappert, Jerry Tworek, Jacob Hilton, Reiichiro
+Nakano, and 1 others. 2021. Training verifiers
+5
+to solve math word problems.arXiv preprint
+arXiv:2110.14168.
+Xingyu Dang, Christina Baek, Kaiyue Wen, Zico Kolter,
+and Aditi Raghunathan. 2025. Weight ensembling
+improves reasoning in language models.arXiv
+preprint arXiv:2504.10478.
+Chunyuan Deng, Yilun Zhao, Xiangru Tang, Mark Ger-
+stein, and Arman Cohan. 2024. Investigating data
+contamination in modern benchmarks for large lan-
+guage models. InProceedings of the 2024 Confer-
+ence of the North American Chapter of the Associ-
+ation for Computational Linguistics: Human Lan-
+guage Technologies (V olume 1: Long Papers), pages
+8706–8719, Mexico City, Mexico. Association for
+Computational Linguistics.
+Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri,
+Abhinav Pandey, Abhishek Kadian, Ahmad Al-
+Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten,
+Alex Vaughan, and 1 others. 2024. The llama 3 herd
+of models.arXiv preprint arXiv:2407.21783.
+Tianyu Han, Lisa C Adams, Jens-Michalis Papaioan-
+nou, Paul Grundmann, Tom Oberhauser, Alexander
+Löser, Daniel Truhn, and Keno K Bressem. 2023.
+Medalpaca–an open-source collection of medical
+conversational ai models and training data.arXiv
+preprint arXiv:2304.08247.
+Kaixuan Huang, Jiacheng Guo, Zihao Li, Xiang Ji, Ji-
+awei Ge, Wenzhe Li, Yingqing Guo, Tianle Cai, Hui
+Yuan, Runzhe Wang, and 1 others. 2025. Math-
+perturb: Benchmarking llms’ math reasoning abil-
+ities against hard perturbations.arXiv preprint
+arXiv:2502.06453.
+Hwiyeol Jo, Joosung Lee, Jaehone Lee, Sang-Woo Lee,
+Joonsuk Park, and Kang Min Yoo. 2025. Finding
+answers in thought matters: Revisiting evaluation on
+large language models with reasoning.arXiv preprint
+arXiv:2510.14773.
+Nikhil Khandekar, Qiao Jin, Guangzhi Xiong, Soren
+Dunn, Serina Applebaum, Zain Anwar, Maame Sarfo-
+Gyamfi, Conrad Safranek, Abid Anwar, Andrew
+Zhang, and 1 others. 2024. Medcalc-bench: Evaluat-
+ing large language models for medical calculations.
+Advances in Neural Information Processing Systems,
+37:84730–84745.
+Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying
+Sheng, Lianmin Zheng, Cody Hao Yu, Joseph Gon-
+zalez, Hao Zhang, and Ion Stoica. 2023. Efficient
+memory management for large language model serv-
+ing with pagedattention. InProceedings of the 29th
+symposium on operating systems principles, pages
+611–626.
+Yiwei Li, Peiwen Yuan, Shaoxiong Feng, Boyuan Pan,
+Xinglin Wang, Bin Sun, Heda Wang, and Kan Li.
+2024. Escape sky-high cost: Early-stopping self-
+consistency for multi-step reasoning.arXiv preprint
+arXiv:2401.10480.
+Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri
+Edwards, Bowen Baker, Teddy Lee, Jan Leike,
+John Schulman, Ilya Sutskever, and Karl Cobbe.
+2023. Let’s verify step by step.arXiv preprint
+arXiv:2305.20050.
+Aixin Liu, Bei Feng, Bing Xue, Bingxuan Wang,
+Bochao Wu, Chengda Lu, Chenggang Zhao, Chengqi
+Deng, Chenyu Zhang, Chong Ruan, and 1 others.
+2024a. Deepseek-v3 technical report.arXiv preprint
+arXiv:2412.19437.
+Yan Liu, Renren Jin, Ling Shi, Zheng Yao, and Deyi
+Xiong. 2024b. Finemath: A fine-grained mathe-
+matical evaluation benchmark for chinese large lan-
+guage models.ACM Transactions on Asian and Low-
+Resource Language Information Processing.
+Swaroop Mishra, Daniel Khashabi, Chitta Baral, and
+Hannaneh Hajishirzi. 2022. Cross-task generaliza-
+tion via natural language crowdsourcing instructions.
+InACL.
+Arindam Mitra, Hamed Khanpour, Corby Rosset, and
+Ahmed Awadallah. 2024. Orca-math: Unlocking
+the potential of slms in grade school math.arXiv
+preprint arXiv:2402.14830.
+Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida,
+Carroll Wainwright, Pamela Mishkin, Chong Zhang,
+Sandhini Agarwal, Katarina Slama, Alex Ray, and 1
+others. 2022. Training language models to follow in-
+structions with human feedback.Advances in neural
+information processing systems, 35:27730–27744.
+Charlie Snell, Jaehoon Lee, Kelvin Xu, and Aviral Ku-
+mar. 2024. Scaling llm test-time compute optimally
+can be more effective than scaling model parameters.
+arXiv preprint arXiv:2408.03314.
+Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann
+Dubois, Xuechen Li, Carlos Guestrin, Percy Liang,
+and Tatsunori B. Hashimoto. 2023. Stanford alpaca:
+An instruction-following llama model. https://
+github.com/tatsu-lab/stanford_alpaca.
+Kimi Team, Yifan Bai, Yiping Bao, Guanduo Chen,
+Jiahao Chen, Ningxin Chen, Ruijue Chen, Yanru
+Chen, Yuankun Chen, Yutian Chen, and 1 others.
+2025. Kimi k2: Open agentic intelligence.arXiv
+preprint arXiv:2507.20534.
+Shubham Toshniwal, Ivan Moshkov, Sean Narenthi-
+ran, Daria Gitman, Fei Jia, and Igor Gitman. 2024.
+Openmathinstruct-1: A 1.8 million math instruction
+tuning dataset.Advances in Neural Information Pro-
+cessing Systems, 37:34737–34774.
+Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc
+Le, Ed Chi, Sharan Narang, Aakanksha Chowdhery,
+and Denny Zhou. 2022a. Self-consistency improves
+chain of thought reasoning in language models.arXiv
+preprint arXiv:2203.11171.
+Xuezhi Wang and Denny Zhou. 2024. Chain-of-thought
+reasoning without prompting.Advances in Neural
+Information Processing Systems, 37:66383–66409.
+6
+Yizhong Wang, Yeganeh Kordi, Swaroop Mishra, Alisa
+Liu, Noah A Smith, Daniel Khashabi, and Hannaneh
+Hajishirzi. 2023a. Self-instruct: Aligning language
+models with self-generated instructions. InProceed-
+ings of the 61st annual meeting of the association for
+computational linguistics (volume 1: long papers),
+pages 13484–13508.
+Yizhong Wang, Swaroop Mishra, Pegah Alipoor-
+molabashi, Yeganeh Kordi, Amirreza Mirzaei,
+Anjana Arunkumar, Arjun Ashok, Arut Selvan
+Dhanasekaran, Atharva Naik, David Stap, and 1 oth-
+ers. 2022b. Super-naturalinstructions:generalization
+via declarative instructions on 1600+ tasks. In
+EMNLP.
+Zengzhi Wang, Rui Xia, and Pengfei Liu. 2023b. Gen-
+erative ai for math: Part i–mathpile: A billion-token-
+scale pretraining corpus for math.arXiv preprint
+arXiv:2312.17120.
+Jason Wei, Maarten Bosma, Vincent Y Zhao, Kelvin
+Guu, Adams Wei Yu, Brian Lester, Nan Du, An-
+drew M Dai, and Quoc V Le. 2021. Finetuned lan-
+guage models are zero-shot learners.arXiv preprint
+arXiv:2109.01652.
+Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten
+Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny Zhou,
+and 1 others. 2022. Chain-of-thought prompting elic-
+its reasoning in large language models.Advances
+in neural information processing systems, 35:24824–
+24837.
+Tianwen Wei, Jian Luan, Wei Liu, Shuang Dong, and
+Bin Wang. 2023. Cmath: Can your language model
+pass chinese elementary school math test?arXiv
+preprint arXiv:2306.16636.
+Mingqi Wu, Zhihao Zhang, Qiaole Dong, Zhiheng Xi,
+Jun Zhao, Senjie Jin, Xiaoran Fan, Yuhao Zhou, Hui-
+jie Lv, Ming Zhang, and 1 others. 2025. Reasoning
+or memorization? unreliable results of reinforcement
+learning due to data contamination.arXiv preprint
+arXiv:2507.10532.
+Cheng Xu, Nan Yan, Shuhao Guan, Changhong Jin,
+Yuke Mei, Yibing Guo, and Tahar Kechadi. 2025.
+DCR: Quantifying data contamination in LLMs eval-
+uation. InProceedings of the 2025 Conference on
+Empirical Methods in Natural Language Processing,
+pages 23013–23031, Suzhou, China. Association for
+Computational Linguistics.
+An Yang, Anfeng Li, Baosong Yang, Beichen Zhang,
+Binyuan Hui, Bo Zheng, Bowen Yu, Chang
+Gao, Chengen Huang, Chenxu Lv, and 1 others.
+2025a. Qwen3 technical report.arXiv preprint
+arXiv:2505.09388.
+An Yang, Beichen Zhang, Binyuan Hui, Bofei Gao,
+Bowen Yu, Chengpeng Li, Dayiheng Liu, Jianhong
+Tu, Jingren Zhou, Junyang Lin, and 1 others. 2024.
+Qwen2. 5-math technical report: Toward mathe-
+matical expert model via self-improvement.arXiv
+preprint arXiv:2409.12122.
+Wenkai Yang, Shuming Ma, Yankai Lin, and Furu
+Wei. 2025b. Towards thinking-optimal scaling of
+test-time compute for llm reasoning.arXiv preprint
+arXiv:2502.18080.
+Qingchen Yu, Zifan Zheng, Shichao Song, Zhiyu
+Li, Feiyu Xiong, Bo Tang, and Ding Chen. 2024.
+xfinder: Large language models as automated eval-
+uators for reliable evaluation.arXiv preprint
+arXiv:2405.11874.
+Bo-Wen Zhang, Yan Yan, Lin Li, and Guang Liu. 2024.
+Infinitymath: A scalable instruction tuning dataset
+in programmatic mathematical reasoning. InPro-
+ceedings of the 33rd ACM International Conference
+on Information and Knowledge Management, pages
+5405–5409.
+7
+A Performance on GSM8K & Math-500
+In this section, we report results for additional mod-
+els not included in the main paper due to space con-
+straints. FigS4, Tab S1 and FigS3 further support
+our observation that, under zero-shot evaluation,
+base models often outperform instruction-tuned
+models.
+ModelMath-500 Math Perturb Hard
+Grader Math V erify Grader Math V erify
+Qwen3-14B 78.00 84.40 39.78 68.10
+Llama3-70B 59.80 56.80 22.22 26.16
+DS-V3.1 95.20 89.40 77.78 77.42
+Kimi-K2 94.20 88.60 76.34 64.87
+Table S1: Pass@20 on Math-500 vs. Math Perturb Hard
+For Math-500 (refer Fig S2), we find that in-
+struction tuning substantially benefits SLMs. How-
+ever, these gains are not uniform with increasing
+model scale and diminish for LLMs such as Kimi-
+K2: 94.2% vs. 93.8%. We also observe substan-
+tial evaluator dependent variance on the Math-500
+benchmark, as shown in Tab S2, raising reliability
+concerns over Math-500 reported results.
+B Manually Audited Examples on
+Math-500
+We manually audit a subset of examples to inves-
+tigate both the evaluators: Math Verify and the
+standard grader. In Figure S1, we show the sensi-
+tivity of both graders to output variations of LLM.
+We note that while some of these errors can be mit-
+igated through simple normalization (e.g., replac-
+ing \dfrac to \frac) of LLM outputs, however,
+rule-based fixes for corner cases will be inherently
+limited and cannot exhaustively cover all possible
+formats in which LLM outputs may be expressed.
+Refer to Figure S1, in the first case, the
+’Math Verify’ grader fails to recognize the equiv-
+alence between the display style latex fraction
+\dfrac{1}{4} and the ground truth \frac{1}{4},
+whereas the ’Grader’ method successfully handles
+this syntactic variation. In the second case, both
+evaluation methods fail when the LLM provides
+the raw answer ’C’ instead of the strictly formatted
+\text{(C)}. This highlights a significant limita-
+tion in current automated benchmarks: they fre-
+quently prioritize exact string or template matching
+over mathematical or logical equivalence, leading
+to an inflation of false negative results and an un-
+derestimation of the model’s actual reasoning capa-
+bilities.
+C Dataset Statistics
+We evaluate models on four publicly available
+benchmarks: GSM8K (Cobbe et al., 2021), Math-
+500 (Lightman et al., 2023), MedCalc (Khandekar
+et al., 2024), and Math Perturb Hard (Huang et al.,
+2025). For all datasets, we follow the standard
+evaluation protocols and use the officially released
+test splits. No additional training, fine-tuning, or
+validation-based model selection is performed.
+Dataset Domain Split Used # Examples
+GSM8K Math (Grade-school) Test 1,319
+Math-500 Math (Advanced) Test 500
+MedCalc Medical Reasoning Test 1,000
+Math Perturb Hard Math (Robustness) Test 279
+Table S1: Dataset statistics and evaluation splits
+All results reported in the paper are computed on
+the test sets only. Performance is measured using
+Pass@K with K= 20 , following prior work. For
+benchmarks with structured or latex heavy outputs,
+we adopt robust answer extraction strategies as de-
+scribed in the implementation details (Sec E) to
+ensure consistent evaluation.
+D Performance on Distribution Shift:
+MedCalc and Math Perturb
+In addition to the zero-shot results on MedCalc
+reported in the main paper, we evaluate models un-
+der the other two official settings(Khandekar et al.,
+2024): direct-shot and one-shot CoT settings, and
+report their results in Tab S3 and Tab S5 respec-
+tively. Under direct-shot, base models are found
+in Tab S4 to again outperform instruction-tuned
+models across most categories and almost consis-
+tenly in overall performance (except Qwen3-8B).
+We also observe that instruction-tuned models ben-
+efit substantially from zero-shot CoT prompting
+(i.e., appending“Let’s think step-by-step”) com-
+pared to direct-shot, whereas base models already
+achieve strong zero-shot performance. This implies
+that the knowledge required for solving the Med-
+Calc benchmark is largely present in base models,
+while instruction-tuned models rely more heavily
+on prompt structure (direct-shot vs zero-shot) and
+few-shot exemplars.
+Math-500 reports strong performance (refer
+Tab S2) across models, especially for large
+instruction-tuned models, implying near saturated
+performance on this benchmark. However, when
+8
+evaluated on Math-Perturb (Hard set), which is
+designed to break solution templates while pre-
+serving surface level similarity, all models show
+substantial performance drop (refer Tab S1). For
+example, Qwen3-14B drops from 78 to 39.78, and
+LLaMA3-70B drops from 59.8 to 22.2. These re-
+sults reinforce our findings that strong performance
+achieved by instruction-tuned models on standard
+benchmarks is not robust and reflects limited gen-
+eralization under distribution shifts. We note that
+even for top performing instruction-tuned models
+such as DS-V3.1 (95.2 vs 77.8) and Kimi-K2 (94.2
+vs 76.3), high Math-500 accuracy does not reliably
+transfer to Math-Perturb.
+E Implementation Details
+In this section, we describe the implementation
+details. For base models, we employ CoT decoding
+(Wang and Zhou, 2024) and generate K(= 20)
+samples to compute Pass@ K metric. Given the
+two limitations for base models: (i) they are not
+trained explicitly to follow user instructions and
+adhere to output formatting, and (ii) recent works
+in literature has shown that evaluation outcomes
+can be sensitive to how we extract answers (Jo et al.,
+2025; Chen et al., 2025a; Yu et al., 2024).
+To address this, we employ a lightweight aux-
+iliary LLM to extract the final answer from each
+generated output. We deliberately choose a SLM
+(Qwen3-0.6B was used in this study) to keep com-
+putational overhead low. This auxiliary LLM acts
+solely as an information extraction tool and is
+tasked only with extracting the answer (refer below
+Auxiliarly LLM prompt). Notably, we do not pro-
+vide the original question to the auxiliary LLM to
+avoid biasing the base model’s response.
+Finally, for all experiments, we deployed the
+models locally using the vLLM (Kwon et al., 2023)
+framework on a single compute node equipped with
+8x NVIDIA H200 GPUs.
+Auxiliarly LLM Prompt
+You are an information extraction system.
+Your task is to read the following text and extract
+**only the first final answer found**.
+Rules:
+1. Output only the first answer in JSON format:
+"answer": "<the answer>"
+2. If no answer is present, output:
+"answer": "none"
+3. Ignore everything else in the text, including other
+questions, answers, or examples.
+4. Do not include explanations, quotes, or extra text.
+Output must be valid JSON.
+For instruction-tuned models, we use repeated
+sampling with K= 20 generations under stan-
+dard sampling settings, including a maximum token
+length of 8192 and a temperature of 0.05 (vs 0.0
+used by (Yang et al., 2025b)) to introduce stochas-
+ticity. Unlike base models, we explicitly prompt
+instruction-tuned models to produce outputs in a
+structured JSON format. To handle occasional mal-
+formed JSON outputs (such as missing closing
+braces } or extra opening/closing brace), we apply
+a JSON repair library1. In practice, we found this
+step helpful for reliably recovering valid outputs in
+non-trivial cases.
+Instruction-tuned models Prompt
+You are a helpful assistant for solving math problems.
+Please think step-by-step to solve the question and
+then generate the required score.
+Your output should only contain a JSON dict
+formatted as
+{
+“step_by_step_thinking”:
+str(your_thinking_procress_to_solve_the_question),
+“answer”:
+str(short_and_direct_answer_of_the_question)
+}
+1https://github.com/mangiucugna/json_repair
+9
+F Figures and Tabular Results on
+GSM8K, Math-500 and Math-Perturb
+Benchmark
+ModelGSM8K
+zero-shot CoT 8-shot CoT
+Qwen3-0.6B 84.84 85.82
+Base 86.50 83.25
+∆ -1.66 2.57
+Smollm-3B 72.02 90.07
+Base 86.50 93.25
+∆ -14.48 -3.18
+Llama-3B 61.86 81.27
+Base 56.71 73.92
+∆ 5.15 7.35
+Qwen3-8B 67.93 96.06
+Base 97.65 92.95
+∆ -29.72 3.11
+Qwen3-14B 67.02 97.42
+Base 97.72 96.21
+∆ -30.70 1.21
+Llama3-70B 58.15 91.51
+Base 90.82 95.37
+∆ -32.67 -3.86
+DS-V3.1 69.90 95.83
+Base 96.59 97.12
+∆ -26.69 -1.29
+Kimi-K2 67.63 95.83
+Base 98.86 97.88
+∆ -31.23 -2.05
+Table S1: Pass@20 results for benchmark GSM8K:
+Zero-shot and 8-shot CoT
+ModelEvaluation Method
+Grader Math V erify
+Qwen3-0.6B 78.00 79.00
+Base 75.00 73.80
+∆ 3.00 5.20
+Smollm-3B 86.20 81.80
+Base 72.00 70.20
+∆ 14.20 11.60
+Llama-3B 67.20 64.20
+Base 29.00 33.60
+∆ 38.20 30.60
+Qwen3-8B 73.40 83.00
+Base 85.80 83.00
+∆ -12.40 0.00
+Qwen3-14B 78.00 84.40
+Base 88.80 85.20
+∆ -10.80 -0.80
+Llama3-70B 59.80 56.80
+Base 52.60 53.20
+∆ 7.20 3.60
+DS-V3.1 95.20 89.40
+Base 89.80 86.00
+∆ 5.40 3.40
+Kimi-K2 94.20 88.60
+Base 93.80 89.00
+∆ 0.40 -0.40
+Table S2: Pass@20 on Math-500 using different evalua-
+tors: Math grader, Math Verify.
+10
+Figure S1: Manually verified examples for Math-500 test set, showing how inconsistent both the grader and math
+verify are.
+Figure S2: Base models versus Instruct models on Math-500 benchmark.
+Model / SettingLab Risk Physical Severity Diagnosis Date Dosage Overall
+Qwen3-0.6B 11.93 37.08 30.00 18.75 73.33 16.67 7.50 25.98
+Base 30.28 65.83 36.67 48.75 93.33 5.00 10.00 42.69
+∆ -18.35-28.75 -6.67 -30.00 -20.00 11.67 -2.50 -16.71
+SmollM-3B 22.02 45.83 48.75 37.50 73.33 6.67 25.00 36.96
+Base 54.74 62.50 85.42 46.25 81.67 28.33 27.50 61.89
+∆ -32.72-16.67 -36.67 -8.75 -8.34 -21.66 -2.50 -24.93
+Llama3-3B 18.65 13.75 19.58 17.50 13.33 3.33 10.00 16.14
+Base 54.74 62.50 86.25 46.25 81.67 28.33 27.50 62.08
+∆ -36.09-48.75 -66.67 -28.75 -68.34 -25.00 -17.50 -45.94
+Qwen3-8B 56.57 46.67 77.92 25.00 51.67 61.67 22.50 55.49
+Base 34.86 64.17 75.83 37.50 88.33 10.00 15.00 52.05
+∆ 21.71 -17.50 2.09 -12.50 -36.66 51.67 7.50 3.44
+Qwen3-14B 57.80 53.33 83.33 33.75 76.67 41.67 37.50 60.17
+Base 62.69 65.00 93.33 51.25 90.00 60.00 45.00 70.11
+∆ -4.89 -11.67 -10.00 -17.50 -13.33 -18.33 -7.50 -9.94
+Llama3-70B 19.27 16.67 33.33 13.75 36.67 13.33 10.00 21.78
+Base 43.12 49.17 76.67 40.00 83.33 5.00 32.50 51.67
+∆ -23.85-32.50 -43.34 -26.25 -46.66 8.33 -22.50 -29.89
+DS-V3.1 38.53 25.83 60.42 25.00 40.00 56.67 42.50 40.88
+Base 55.68 56.89 83.27 40.00 68.33 71.67 60.00 62.99
+∆ -17.15-31.06 -22.85 -15.0 -28.33 -15.0 -17.50 -22.11
+Kimi-K2 34.25 25.42 61.67 18.75 41.67 26.67 52.50 38.01
+Base 61.47 77.92 94.58 65.00 96.67 68.33 80.00 76.22
+∆ -27.22-52.50 -32.91 -46.25 -55.00 -41.66 -27.50 -38.21
+Table S3: Pass@20 on MedCalc (direct-shot CoT).∆ shows the improvement of instruction-tuned over base models;
+red indicates higher base-model performance, while green indicates higher instruction-tuned performance. The base
+models outperform instruction-tuned variants across most categories.
+11
+Model / Setting Lab Risk Physical Severity Diagnosis Date Dosage Overall
+Qwen3-0.6B 15.60 39.17 40.00 25.00 60.00 28.33 10.00 30.37
+Base 30.28 65.83 36.67 48.75 93.33 5.00 10.00 42.69
+∆ -14.68-26.66 3.33 -23.75 -33.33 23.33 0.00 -12.32
+SmollM-3B 25.99 40.83 57.08 37.50 70.00 20.00 17.50 39.26
+Base 54.74 62.50 85.42 46.25 81.67 28.33 27.50 61.89
+∆ -28.75-21.67 -28.34 -8.75 -11.67 -8.33 -10.00 -22.63
+Llama3-3B 26.30 35.83 27.50 27.50 53.33 8.33 15.00 28.94
+Base 54.74 62.50 86.25 46.25 81.67 28.33 27.50 62.08
+∆ -28.44-26.67 -58.75 -18.75 -28.34 -20.00 -12.50 -33.14
+Qwen3-8B 57.49 50.83 76.25 28.75 55.00 60.00 25.00 56.83
+Base 34.86 64.17 75.83 37.50 88.33 10.00 15.00 52.05
+∆ 22.63 -13.34 0.42 -8.75 -33.33 50.00 10.00 4.78
+Qwen3-14B 61.47 53.75 83.33 31.25 65.00 41.67 27.50 60.17
+Base 62.69 65.00 93.33 51.25 90.00 60.00 45.00 70.11
+∆ -1.22 -11.25 -10.00 -20.00 -25.00 -18.33 -17.50 -9.94
+Llama3-70B 38.53 35.00 69.17 23.75 66.67 35.00 35.00 44.89
+Base 43.12 49.17 76.67 40.00 83.33 5.00 32.50 51.67
+∆ -4.59 -14.17 -7.50 -16.25 -16.66 30.00 2.50 -6.78
+DS-V3.1 69.42 55.00 81.67 58.75 66.67 41.67 55.00 65.81
+Base 55.68 56.89 83.27 40.00 68.33 71.67 60.00 62.99
+∆ 13.74 -1.89 -1.60 18.75 -1.66 -30.00 -5.00 2.82
+Kimi-K2 72.17 64.58 88.75 48.75 68.33 46.67 55.00 70.11
+Base 61.47 77.92 94.58 65.00 96.67 68.33 80.00 76.22
+∆ 10.70 -13.34 -5.83 -16.25 -28.34 -21.66 -25.00 -6.11
+Table S4: Pass@20 on MedCalc (zero-shot CoT). ∆ shows the improvement of instruction-tuned over base models;
+red indicates higher base-model performance, while green indicates higher instruction-tuned performance. The base
+models outperform instruction-tuned variants across most categories.
+Model / Setting Lab Risk Physical Severity Diagnosis Date Dosage Overall
+Qwen3-0.6B 50.46 47.92 88.33 27.50 80.00 53.33 7.50 57.02
+Base 34.86 64.17 75.83 37.50 88.33 10.00 15.00 52.05
+∆ 15.60-16.25 12.50 -10.00 -8.33 43.33 -7.50 4.97
+SmollM-3B 52.60 32.92 54.58 26.25 56.67 30.00 7.50 43.74
+Base 30.28 57.08 52.92 46.25 83.33 20.00 17.50 44.79
+∆ 22.32-24.16 1.66 -20.00 -26.66 10.00 -10.00 -1.05
+Llama3-3B 46.48 22.92 37.08 25.00 46.67 20.00 15.00 34.57
+Base 42.20 51.67 52.92 37.50 81.67 20.00 15.00 46.42
+∆ 4.28 -28.75 -15.84 -12.50 -35.00 0.00 0.00 -11.85
+Qwen3-8B 70.34 52.92 97.92 27.50 68.33 76.67 22.50 67.81
+Base 76.15 67.08 90.83 52.50 91.67 40.00 22.50 72.40
+∆ -5.81 -14.16 7.09 -25.00 -23.34 36.67 0.00 -4.59
+Qwen3-14B 83.79 60.42 97.92 45.00 76.67 75.00 42.50 76.22
+Base 85.32 68.33 96.25 61.25 90.00 60.00 37.50 79.08
+∆ -1.53 -7.91 1.67 -16.25 -13.33 15.00 5.00 -2.86
+Llama3-70B 47.71 27.08 61.25 25.00 48.33 31.67 22.50 42.50
+Base 54.74 66.25 73.33 52.50 90.00 41.67 25.00 61.60
+∆ -7.03 -39.17 -12.08 -27.50 -41.67 -10.00 -2.50 -19.10
+DS-V3.1 82.57 60.83 95.42 50.00 73.33 51.67 57.50 74.79
+Base 82.87 71.25 96.25 62.50 91.67 60.00 32.50 78.99
+∆ -0.30 -10.42 -0.83 -12.50 -18.34 -8.33 25.00 -4.20
+Kimi-K2 80.12 59.58 97.08 51.25 65.00 73.33 52.50 74.79
+Base 88.69 87.92 98.75 85.00 100.00 75.00 62.50 89.40
+∆ -8.57 -28.34 -1.67 -33.75 -35.00 -1.67 -10.00 -14.61
+Table S5: Pass@20 on MedCalc (one-shot CoT). ∆ shows the improvement of instruction-tuned over base models;
+red indicates higher base-model performance, while green indicates higher instruction-tuned performance. The base
+models outperform instruction-tuned variants across most categories.
+12
+Figure S3: Base models versus Instruct models on GSM8K benchmark under zero-shot CoT setting
+Figure S4: Base models versus Instruct models on GSM8K benchmark under 8-shot CoT setting
+13

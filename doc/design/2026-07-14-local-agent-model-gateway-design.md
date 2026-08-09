@@ -84,6 +84,30 @@ flowchart LR
 | MemoryIndexAdapter | 隔离 local/mem0 与未支持 provider 的差异，索引已脱敏经验和已批准规则 | 作为规则权威源、直接生成 system context、假设未验证 provider 可用 |
 | New API（后续） | 外部 token、限额、统一入口、渠道管理 | 智能路由及学习闭环 |
 
+### 2.2 论文机制与工程映射
+
+本设计吸收两篇论文的机制，但不把论文原型直接等同于生产功能。它们解决的是不同问题：SkillDisCo 提炼跨任务可复用的过程知识；MAGE 保持单个长程任务的连续执行状态。
+
+| 论文机制 | 论文中的工作方式 | Gateway 中的落地方式 | 明确不做 |
+| --- | --- | --- | --- |
+| SkillDisCo：trace 归一化 | 将成功轨迹转成显式控制流表示 | 将脱敏成功 request trace 压缩为 `LearningPacket`，保留任务意图、验证证据、失败原因和成功行为摘要 | 不保存推理正文，不把原始 trace 转成可运行代码 |
+| SkillDisCo：子目标抽取与跨 trace 聚类 | 提取多步骤子目标，按共享控制结构聚类，选择高覆盖模式 | V1.1 生成受限 `RuleCandidate`；V1.2 才可对同 scope 的多个 `LearningPacket` 做离线模式聚类 | 不把单条成功 trace 直接发布成规则；不跨 channel 聚类 |
+| SkillDisCo：规格化和验证 | 为 skill 定义参数、前后置条件、副作用，并在留出样本验证 | rule lint、冲突检测、最小 fake fixture 正反例回放、人工审批和不可变 `RuleVersion` | 不生成 `CompiledSkill`、Python 程序或客户端工具调用 |
+| MAGE：两层状态树 | 底层记录 action-observation，顶层按子目标压缩 summary | V1.2 可从稳定关联的脱敏 request trace 建立只读派生状态索引：事件节点、摘要节点、分支和诊断摘要 | 不以语义检索拼接当前状态；不改变 request trace 的权威查询结果 |
+| MAGE：Grow / Compress / Maintain / Revise | 追加轨迹、压缩子目标、验证摘要、从边界分支重试 | `Grow`/`Compress` 是离线派生；`Maintain` 映射为 verification/evaluator；失败只产生 `FailureCase` 和隔离分支 | 不自动回滚客户端工作区，不自动重新执行云端或本地请求，不写入 prompt/路由 |
+
+这形成三个彼此隔离的层：
+
+1. **在线请求层（V1）**：协议兼容、本地优先路由、确定性质量门、可恢复 request trace 和最终响应。它只能使用已批准规则，不能依赖论文研究层。
+2. **受控规则学习层（V1.1）**：从验证过的、脱敏的成功 trace 提炼受限文本规则；所有候选必须经回放和人工审批后才可注入 system context。
+3. **离线研究层（V1.2+）**：MAGE 派生状态树与 SkillDisCo 式跨 trace 聚类，用来评估规则候选、定位失败边界和发现重复流程。输出只能进入人工复核队列，不能直接调用工具、更新模型权重或改变在线路由。
+
+### 2.3 系统概要设计
+
+系统以 Gateway 为唯一的控制平面和策略执行点。所有客户端请求先被规范化到 `ChatCompletionEnvelopeV1`，再绑定不可伪造的 channel tuple。在线编排器调用本地模型、执行硬质量门，并仅在出云授权、DLP、预算预留都通过时调用选定的单一云 provider。最终内容在确定后才以 JSON 或 SSE 回放，避免本地草稿泄露给客户端。
+
+持久化层把 request trace、模型运行、预算、反馈、规则版本和审计事件分开建模；Gateway DB 是唯一权威源。学习层只能消费脱敏摘要，外部 memory 只能返回引用和 metadata digest，必须回查已批准规则后才允许注入。这样，云端模型向本地模型迁移的是经过验证的**过程约束**，而非原始回答、隐式推理或未经审查的工具动作。
+
 ## 3. 对外接口与客户端配置
 
 ### 3.1 第一版 API
@@ -522,3 +546,168 @@ flowchart LR
 11. `V1-A11`：schema invalid、SSE heartbeat、DLP block、budget race、idempotency conflict、lease recovery 和 cross-channel isolation 均有脱敏 fake fixture；fixture、DB/WAL/log 对 `Bearer `、`sk-`、`PRIVATE KEY` 和私有正文种子扫描为零命中。
 
 规则候选、自然语言反馈分类、repository/session scope 和双云 fallback 不属于上述 V1 验收，进入后续独立 Go Gate。
+
+## 11. 软件架构与运行图
+
+### 11.1 软件架构图
+
+```mermaid
+flowchart TB
+    Client["LobsterAI / OpenAI-compatible client"] --> API["API Edge\n/v1/chat/completions"]
+
+    subgraph Gateway["Agent Gateway: control plane and policy boundary"]
+        API --> Normalize["Protocol normalizer\nChatCompletionEnvelopeV1"]
+        Normalize --> Identity["API-key authentication\nChannelContext binding"]
+        Identity --> Orchestrator["Request orchestrator\nqueue, lease, cancellation"]
+        Orchestrator --> RuleInjector["Approved rule injector\nmax 5 rules / 800 tokens"]
+        RuleInjector --> Router["Local-first router\nand deterministic quality gate"]
+        Router --> SSE["Final response recorder\nJSON or delayed SSE replay"]
+        Router --> CloudGuard["Cloud egress guard\nDLP + budget reservation"]
+
+        TraceService["Trace and audit service"]
+        RuleService["Rule service\ncandidate, approval, rollback"]
+        Learning["V1.1 learning pipeline\nredacted packets only"]
+        MemoryAdapter["MemoryIndexAdapter\nlocal / mem0 reference lookup"]
+        StateIndex["V1.2 research-only\nMAGE derived state index"]
+
+        Orchestrator --> TraceService
+        TraceService --> Learning
+        Learning --> RuleService
+        RuleService --> MemoryAdapter
+        TraceService -. "stable correlation only" .-> StateIndex
+        RuleService --> RuleInjector
+    end
+
+    Router --> Local["omlx\nGemma 12B"]
+    CloudGuard --> Cloud["Selected cloud provider\nKimi or DeepSeek"]
+    Local --> Router
+    Cloud --> Router
+    SSE --> Client
+
+    TraceService --> DB[("Gateway DB\nSQLite WAL in V1")]
+    RuleService --> DB
+    MemoryAdapter -. "approved refs only" .-> ExternalMemory["Optional mem0\nnever a rule authority"]
+
+    classDef research fill:#f7f2e7,stroke:#9a5a00,color:#5f3a00;
+    class Learning,StateIndex research;
+```
+
+### 11.2 在线请求交互图
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as LobsterAI Client
+    participant G as Agent Gateway
+    participant DB as Gateway DB
+    participant L as omlx Local Model
+    participant Q as Quality Gate
+    participant P as Cloud Provider
+
+    C->>G: POST /v1/chat/completions (agent-auto)
+    G->>G: Authenticate key and bind ChannelContext
+    G->>DB: Create request trace, idempotency record and lease
+    G->>DB: Load approved rules in this channel only
+    G->>L: Complete normalized request with approved context
+    L-->>G: Complete local result
+    G->>Q: Validate structure, tool args, finish reason and verification evidence
+
+    alt deterministic quality gate passes
+        Q-->>G: accept local result
+        G->>DB: Persist local result and route reason
+    else deterministic failure and cloud is allowed
+        Q-->>G: escalation reason
+        G->>G: DLP scan and atomically reserve budget
+        alt egress checks pass
+            G->>P: One cloud completion request
+            P-->>G: Complete cloud result
+            G->>DB: Persist escalation and final result
+        else egress checks fail
+            G->>DB: Persist blocked reason
+            G-->>C: Stable policy or budget error
+        end
+    else local-only or safety block
+        G->>DB: Persist failure without cloud call
+        G-->>C: Stable failure response
+    end
+
+    G-->>C: Delayed SSE replay or JSON final response
+    G->>DB: Mark response_closed or response_aborted
+```
+
+### 11.3 数据流图
+
+```mermaid
+flowchart LR
+    Request["Client request\nmessages, tools, model"] --> Normalize["Normalize + channel binding"]
+    Normalize --> Redact["Redact, digest, DLP boundary"]
+    Redact --> Online["Online request plane\nlocal result, quality gate, optional cloud"]
+    Online --> Response["Final response\nJSON / SSE"]
+    Online --> Trace[("RequestExecution / ModelRun / TraceEvent\nredacted Gateway DB")]
+
+    Trace --> Verified{"Explicit satisfaction\n+ passed verification\n+ stable scope?"}
+    Verified -- no --> Failure["FailureCase\nredacted fake fixture + CI only"]
+    Verified -- yes --> Packet["LearningPacket\nsummary + evidence digest\npacket_digest"]
+    Packet --> Candidate["RuleCandidate\nrestricted DSL"]
+    Candidate --> Checks["Lint + conflict + security\npositive/negative fixture replay"]
+    Checks --> Review{"Human approval"}
+    Review -- reject or expire --> Archive["Candidate audit record\nno context injection"]
+    Review -- approve --> Rule[("Immutable RuleVersion\nGateway DB authority")]
+    Rule --> Inject["Scoped system-context injection"]
+    Inject --> Online
+
+    Packet -. "summary and references only" .-> Index["MemoryIndexAdapter\nlocal or mem0"]
+    Index -. "rule_id / trace_id only" .-> Rule
+    Trace -. "V1.2 stable relation only" .-> Mage["MAGE derived state tree\nread-only research index"]
+
+    classDef blocked fill:#fcebea,stroke:#a83b32,color:#742b25;
+    classDef research fill:#f7f2e7,stroke:#9a5a00,color:#5f3a00;
+    class Failure blocked;
+    class Mage research;
+```
+
+### 11.4 V1 单机部署图
+
+```mermaid
+flowchart TB
+    subgraph Mac["Mac mini: V1 localhost-only validation"]
+        Client["LobsterAI\n127.0.0.1 client"]
+        Gateway["Agent Gateway\n127.0.0.1:8787\nsingle worker"]
+        Omlx["omlx\n127.0.0.1:8000/v1\nGemma 12B"]
+        DB[("SQLite WAL\n0600 permissions")]
+        Lock["Process lock\nagent-gateway.lock"]
+        LocalIndex["Local FTS5 index\noptional"]
+
+        Client -->|"OpenAI API + workspace key"| Gateway
+        Gateway -->|"OpenAI-compatible API"| Omlx
+        Gateway --> DB
+        Gateway --> Lock
+        Gateway --> LocalIndex
+    end
+
+    Gateway -->|"only when channel allows\nDLP + budget passed"| Kimi["Kimi API"]
+    Gateway -->|"only when channel allows\nDLP + budget passed"| DeepSeek["DeepSeek API"]
+    Gateway -. "optional, V1.1+\nredacted refs only" .-> Mem0["mem0 service"]
+
+    subgraph Later["Post-V1: do not enable in V1"]
+        NewAPI["New API\nper-user token"]
+        Cluster["Gateway instances"]
+        Postgres[("PostgreSQL\nshared state")]
+        NewAPI --> Cluster
+        Cluster --> Postgres
+    end
+
+    classDef later fill:#eef2f6,stroke:#7b8794,color:#334155;
+    class NewAPI,Cluster,Postgres later;
+```
+
+### 11.5 论文采用边界与阶段门
+
+| 阶段 | 采用机制 | 生产权限 | 进入条件 |
+| --- | --- | --- | --- |
+| V1 | 可恢复 request trace、确定性门控、失败 fake fixture | 在线请求层 | 通过 `V1-A01` 至 `V1-A11` |
+| V1.1 | SkillDisCo 的“归一化 -> 可复用模式 -> 验证”思想，产物为文本规则 | 仅人工批准的 `RuleVersion` 可注入上下文 | 规则正反例回放、审计和回滚可用 |
+| V1.2+ | MAGE 状态树、SkillDisCo 式跨 trace 聚类 | 只读研究索引和候选发现 | 稳定任务关联字段、脱敏策略与离线评测成立 |
+| 后续实验 | 可执行 PFSM、微调、自动化 evaluator | 默认禁止 | 单独 ADR、沙箱、留出集和人工风险评审 |
+
+论文出处：SkillDisCo，[arXiv:2606.26669](https://arxiv.org/abs/2606.26669)；MAGE，[arXiv:2606.06090](https://arxiv.org/abs/2606.06090)。两篇论文的实验结论只用于指导架构假设，不能视为本项目的性能承诺；本项目须以自身的脱敏 fixture、LobsterAI/omlx live baseline 和验收标准验证。
