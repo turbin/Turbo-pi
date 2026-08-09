@@ -11,7 +11,3 @@
 | [issue-005](issue-005-gate-script-no-time-window.md) | 升级率门控脚本无时间窗（共享 DB 永远 FAIL，实测 0.298） | fixed（2026-08-09，待观察） | 2026-08-09（Kimi 审查） | 2026-08-09（`--since`/`--last-hours` JOIN request_executions 窗口过滤） | `test_campaign.py::test_gate_length_escalation_since_window/last_hours` |
 | [issue-006](issue-006-snapshot-write-dedup-frozen-read.md) | 快照模式 getByContentHash 读冻结库（写侧去重漏重） | fixed（2026-08-09，待观察） | 2026-08-09（Kimi 审查） | 2026-08-09（写路径查询 getById/getByContentHash 改回 live 库） | `test/regressions/issue-006-snapshot-write-dedup.test.ts` |
 | [issue-007](issue-007-alfworld-max-tokens-default.md) | alfworld --max-tokens 默认仍 200（缺陷原值） | fixed（2026-08-09，待观察） | 2026-08-09（Kimi 审查） | 2026-08-09（必传 required，哨兵测试防回退） | `test_alfworld_agent.py::test_max_tokens_is_required_argument` |
-| [issue-004](issue-004-x-gateway-marker-nonstream-break.md) | 非流式路径升级标记双层断裂（alfworld escalations 恒 0 假绿） | open | 2026-08-09 | — | 待写（gateway body 标记 pytest + agent-server 非流式透传 + eval 真实 pydantic 对象防 mock 鸿沟） |
-| [issue-005](issue-005-gate-script-no-time-window.md) | 升级率门控脚本无时间窗（共享 DB 永远 FAIL，实测 0.298） | open | 2026-08-09 | — | 待写（`--since` 窗口过滤 pytest） |
-| [issue-006](issue-006-snapshot-write-dedup-frozen-read.md) | 快照模式 getByContentHash 读冻结库（写侧去重漏重） | open | 2026-08-09 | — | 待写（`test/regressions/issue-006-snapshot-write-dedup.test.ts`） |
-| [issue-007](issue-007-alfworld-max-tokens-default.md) | alfworld --max-tokens 默认仍 200（缺陷原值） | open | 2026-08-09 | —（pilot 定值后） | 待写（默认值/必传哨兵断言） |

@@ -1,6 +1,6 @@
 # issue-005: 升级率门控脚本无时间窗（共享 DB 上永远 FAIL，pilot→全量流程不可用）
 
-- 状态：fixed（2026-08-09 修复，commit 待补）
+- 状态：fixed（2026-08-09 修复，commit 899745d6）
 - 报告：2026-08-09（P0 批次修复校验发现，实测复现）
 - 修复：2026-08-09——新增 `--since <ISO>` / `--last-hours N`（JOIN request_executions.created_at 窗口过滤），共享 DB 历史脏数据不再钉死门控
 - 影响面：`packages/agent-server/eval/gate_length_escalation.py`（issue-003 回归门控）

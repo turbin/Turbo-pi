@@ -1,6 +1,6 @@
 # issue-004: 非流式路径升级标记链路双层断裂（alfworld 结果 escalations 恒 0 假绿）
 
-- 状态：fixed（2026-08-09 修复，commit 待补）
+- 状态：fixed（2026-08-09 修复，commit 899745d6）
 - 报告：2026-08-09（P0 批次修复校验发现，commit a7f7a618 验证）
 - 修复：2026-08-09——gateway body 内嵌 x_gateway 字段（openai extra="allow" 穿透）+ agent-server 非流式分支透传（toolcall-validator done 事件携带）+ alfworld 改读 body 字段并补记 trace_id
 - 影响面：`packages/agent-gateway`（响应 body）、`packages/agent-server/src/server.ts` + `gateway-client.ts`（非流式透传）、`packages/agent-server/eval/alfworld_agent.py`（标记消费 + trace_id 记录）

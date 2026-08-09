@@ -1,6 +1,6 @@
 # issue-007: alfworld_agent --max-tokens 默认值仍为 200（issue-003 缺陷原值，忘传参即复发）
 
-- 状态：fixed（2026-08-09 修复，commit 待补）
+- 状态：fixed（2026-08-09 修复，commit 899745d6）
 - 报告：2026-08-09（P0 批次修复校验 diff 复查发现）
 - 修复：2026-08-09——`--max-tokens` 改为必传（required=True，无默认值），哨兵测试防默认值被改回；pilot 定值后按校准值传参
 - 影响面：`packages/agent-server/eval/alfworld_agent.py`（`--max-tokens` 参数默认值）

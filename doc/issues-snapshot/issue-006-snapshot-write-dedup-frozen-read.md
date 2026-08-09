@@ -1,6 +1,6 @@
 # issue-006: 经验库快照模式下 getByContentHash 读冻结库（写侧去重可能漏重 → 重复晋升）
 
-- 状态：fixed（2026-08-09 修复，commit 待补）
+- 状态：fixed（2026-08-09 修复，commit 899745d6）
 - 报告：2026-08-09（P0 批次修复校验 diff 复查发现）
 - 修复：2026-08-09——`getById`/`getByContentHash` 改回 live 库（写路径服务查询；检索路径 search/listActive 仍读快照），注释固化原则
 - 影响面：`packages/agent-server/src/experience-store.ts`（快照读路径）、`src/offline/verifier.ts:69`（写侧去重调用点）
