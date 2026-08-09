@@ -39,11 +39,23 @@ export interface OpenAIChatRequest {
  */
 export function toOpenAIRequest(payload: InjectionPayload, model: Model<"openai-completions">): OpenAIChatRequest {
 	const messages: OpenAIRequestMessage[] = [];
-	if (payload.systemPrompt) {
-		messages.push({ role: "system", content: payload.systemPrompt });
-	}
 	for (const msg of payload.messages) {
 		messages.push(toOpenAIMessage(msg));
+	}
+	if (payload.systemPrompt) {
+		// M5 (adversarial review 2026-08-09): merge the injected systemPrompt
+		// (skill catalog) into the caller's existing system message instead of
+		// prepending a second one. Control arms are [system(harness), user]; a
+		// separate catalog system message would make experiment arms
+		// [system(catalog), system(harness), ...] — an arm-asymmetric skeleton
+		// that also grows with the catalog. Only when the caller has no system
+		// message at all does the systemPrompt stand alone.
+		const firstSystem = messages.find((m) => m.role === "system");
+		if (firstSystem) {
+			firstSystem.content = `${firstSystem.content}\n\n${payload.systemPrompt}`;
+		} else {
+			messages.unshift({ role: "system", content: payload.systemPrompt });
+		}
 	}
 
 	const request: OpenAIChatRequest = { model: model.id, messages };

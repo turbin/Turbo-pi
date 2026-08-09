@@ -52,11 +52,11 @@ def text_result(finish_reason: str = "stop") -> ModelResult:
     )
 
 
-def cloud_result() -> ModelResult:
+def cloud_result(finish_reason: str = "stop") -> ModelResult:
     return ModelResult(
         content="云端回复",
         tool_calls=None,
-        finish_reason="stop",
+        finish_reason=finish_reason,
         prompt_tokens=20,
         completion_tokens=9,
         total_tokens=29,
@@ -170,6 +170,103 @@ async def test_accepted_result_does_not_escalate(
     runs = await fetch_all(app.state.engine, ModelRun)
     assert len(runs) == 1
     assert await fetch_all(app.state.engine, BudgetReservation) == []
+
+
+# ── issue-003 回归测试 1：升级可观测标记（M1）──────────────────────────────
+# 升级后的响应必须携带可观测标记，使 harness 无需查库即可感知升级；
+# 未升级的响应也带 escalated:false 标记（对抗审查 M1）。
+
+
+async def test_escalated_response_carries_x_gateway_marker(
+    client: httpx.AsyncClient, app: FastAPI, fake_provider: FakeProvider, fake_cloud: FakeProvider
+) -> None:
+    fake_provider.push(text_result("length"))
+    fake_cloud.push(cloud_result())
+
+    resp = await client.post("/v1/chat/completions", json=cloud_payload(), headers=auth(KEY_2))
+    assert resp.status_code == 200
+    marker = json.loads(resp.headers["x-gateway"])
+    assert marker["escalated"] is True
+    assert marker["reason"] == "finish_reason_length"
+    assert marker["provider"] == "kimi"
+    assert marker["local_provider"] == "omlx"
+
+
+async def test_accepted_response_carries_x_gateway_marker(
+    client: httpx.AsyncClient, app: FastAPI, fake_provider: FakeProvider, fake_cloud: FakeProvider
+) -> None:
+    fake_provider.push(text_result())
+    resp = await client.post("/v1/chat/completions", json=cloud_payload(), headers=auth(KEY_2))
+    assert resp.status_code == 200
+    marker = json.loads(resp.headers["x-gateway"])
+    assert marker == {"escalated": False, "reason": None, "provider": "omlx", "local_provider": "omlx"}
+
+
+async def test_sse_escalation_emits_x_gateway_comment(
+    client: httpx.AsyncClient, app: FastAPI, fake_provider: FakeProvider, fake_cloud: FakeProvider
+) -> None:
+    """SSE 路径的升级标记以注释行下发（对 OpenAI 客户端透明，agent-server 可读）。"""
+    fake_provider.push(text_result("length"))
+    fake_cloud.push(cloud_result())
+    resp = await client.post(
+        "/v1/chat/completions",
+        json=cloud_payload(stream=True),
+        headers=auth(KEY_2),
+    )
+    assert resp.status_code == 200
+    lines = resp.text.splitlines()
+    marker_lines = [l for l in lines if l.startswith(": x-gateway ")]
+    assert len(marker_lines) == 1
+    marker = json.loads(marker_lines[0].split(": x-gateway ", 1)[1])
+    assert marker["escalated"] is True
+    assert marker["reason"] == "finish_reason_length"
+    assert marker["provider"] == "kimi"
+    assert "data: [DONE]" in lines
+
+
+async def test_sse_accepted_emits_x_gateway_comment(
+    client: httpx.AsyncClient, app: FastAPI, fake_provider: FakeProvider, fake_cloud: FakeProvider
+) -> None:
+    fake_provider.push(text_result())
+    resp = await client.post(
+        "/v1/chat/completions",
+        json=cloud_payload(stream=True),
+        headers=auth(KEY_2),
+    )
+    assert resp.status_code == 200
+    lines = resp.text.splitlines()
+    marker_lines = [l for l in lines if l.startswith(": x-gateway ")]
+    assert len(marker_lines) == 1
+    marker = json.loads(marker_lines[0].split(": x-gateway ", 1)[1])
+    assert marker == {"escalated": False, "reason": None, "provider": "omlx", "local_provider": "omlx"}
+
+
+# ── C4：升级结果不过闸的观测——云端仍 length 时必须显式标记/告警 ──────────
+
+
+async def test_cloud_length_result_is_marked_and_warned(
+    client: httpx.AsyncClient,
+    app: FastAPI,
+    fake_provider: FakeProvider,
+    fake_cloud: FakeProvider,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """同一缺陷不能在云端隐形复发：云端仍截断时响应标记 + 日志告警 + 落库。"""
+    fake_provider.push(text_result("length"))
+    fake_cloud.push(cloud_result(finish_reason="length"))
+
+    with caplog.at_level("WARNING", logger="agent_gateway.api.chat"):
+        resp = await client.post("/v1/chat/completions", json=cloud_payload(), headers=auth(KEY_2))
+    assert resp.status_code == 200
+    marker = json.loads(resp.headers["x-gateway"])
+    assert marker["escalated"] is True
+    assert marker["cloud_finish_reason"] == "length"
+
+    runs = await fetch_all(app.state.engine, ModelRun)
+    escalation = next(r for r in runs if r.purpose == "escalation")
+    signals = json.loads(escalation.quality_signals_json)
+    assert signals["cloud_finish_reason"] == "length"
+    assert any("still truncated" in record.message for record in caplog.records)
 
 
 async def test_escalation_denied_when_channel_forbids_egress(

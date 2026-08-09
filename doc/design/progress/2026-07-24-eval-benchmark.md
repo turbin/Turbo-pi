@@ -2,7 +2,7 @@
 
 状态：进行中
 任务书：`doc/design/2026-07-24-agent-server-eval-benchmark-tasks.md`
-最近更新：2026-08-04T10:15+08:00 by kimi（A 阶段 27B 换型验收通过：bisect 升级率 0/147=0%，局耗时 10.5min；B 阶段 27B 冷库 134 局启动）
+最近更新：2026-08-09T15:10+08:00 by kimi（对抗性审查交付：issue-003 登记 + 39 项发现报告；B 阶段重跑方案与 P0-P2 修复分批均待用户拍板）
 
 ## 1. 子任务状态表
 
@@ -21,6 +21,8 @@
 依赖：E0 → E1 → {E2, E3 可并行} → E4。
 
 ## 2. 交接信息（跨 agent 共享事实）
+
+- 2026-08-09 kimi：**对抗性审查交付（第二轮 08-09）**——issue-003 登记（门控 length 缺陷，`doc/issues-snapshot/issue-003-gate-length-misescalation.md`，open）；全链路对抗审查报告 `doc/design/2026-08-09-adversarial-review-experiment-validity.md`：39 项发现（4 critical/21 major/14 minor），全部代码行级验证。**critical 四项**：C1 campaign.py run_agent 缺 injection 参数（committed 代码从未跑通）；C2 判据结构性永绿（escalated 硬编码 False，标注脚本不存在）；C3 alfworld 134 硬编码→`alfworld-20260730` 控制臂 17/134 局为重放（A/B 错位 12.7%，历史结论引用需注明口径）；C4 升级结果不过闸 + max_tokens 原样上云。**方案 A 修正**：agent-local 绕门控不成立（routing.py:31 忽略 model 名）；max_tokens 需 5 局 pilot 校准 + 验收门槛 length 升级率 <5%。**修复分 P0/P1/P2 待用户拍板，与重跑方案 A/B/C 一并决策**。
 
 - 2026-08-09 kimi：**B 阶段收官+重大修正**（`doc/design/2026-08-09-agent-server-27b-b-round-findings-and-gate-length-flaw.md`）。冷/热均 21/134（Δ=0）。**门控 length 缺陷：两臂 84-87% 请求被升级到 DeepSeek（max_tokens=200 × 27B 叙述截断误杀，quality.py:90），纯 27B 从未被测过**；“27B 升级率 0%/本地独立/云端归零”结论已撤回。重跑方案 A（双臂 max_tokens=800，~4 天）/B（混合口径）/C（仅冷库，~2 天）**待用户拍板，跑批暂停**。进化管线修复已入库（llm_client 重试+打分形态）；issue-002 草案待 C 完成后提醒。
 
@@ -59,3 +61,4 @@
 - 启动命令同 E0（`PORT=8789 HOST=0.0.0.0 ... scripts/with-node25.sh npx tsx src/start.ts`，注意 HOST=0.0.0.0——Docker 容器需此配置）。运行 harness 前需 `unset HTTPS_PROXY HTTP_PROXY... && NO_PROXY='*'`（避免 macOS PAC 代理污染）。
 - 2026-07-25 claude：E2 可达性验证通过。主结论——litellm Linux 容器内正常（E1 bug 仅限 macOS host）；容器经代理链可达 Docker Hub（需 colima 配代理）与 8789（需 HOST=0.0.0.0）。E2.3 全量未展开（pip 安装经代理链太慢，约 2-4min/容器）。
 - 2026-07-25 claude：E2.3 前置条件——(a) 预构建含 mini-swe-agent 的 Docker 镜像，或 (b) 用户关闭 macOS PAC 代理，或 (c) 用 E1 openai 直连替代 mini-swe-agent 写 BaseAgent。
+- 2026-08-09 pi：**P0 修复批次落地（issue-003 + 对抗审查）**，详见 `doc/design/2026-08-09-p0-fixes-changes-and-decisions.md`。全部测试绿：gateway 178 / agent-server vitest 267 / eval pytest 42 / python 32；`npm run check` 0。新增工具：`eval/gate_length_escalation.py`（跑批前 length 升级率 <5% 门控）、`eval/snapshot_store.py`（经验库快照）、`eval/tests/test_preflight.py`、`test_alfworld_agent.py`、`python/tests/test_issue002_pipeline_resilience.py`。**待用户拍板**：①issue-003 重跑方案 A/B/C + pilot 校准 max_tokens（800/1024）②issue-002 断点持久化立项/降级 ③P1 批次（M4/M6/M7/M12/M13/M17/M19/M20/M21 等）。

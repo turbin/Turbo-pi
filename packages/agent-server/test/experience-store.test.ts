@@ -1,3 +1,6 @@
+import { copyFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ExperienceStore, tokenizeForFts } from "../src/experience-store.ts";
 import type { Experience } from "../src/types.ts";
@@ -27,6 +30,65 @@ describe("ExperienceStore", () => {
 		const store = new ExperienceStore(":memory:");
 		await store.initSchema();
 		expect(await store.getById("missing")).toBeNull();
+	});
+
+	// M10 (adversarial review 2026-08-09): snapshot mode — reads (search /
+	// listActive / getById) come from a frozen copy; writes still go to the
+	// live database. A batch run started with a snapshot is immune to
+	// mid-run library writes changing the retrieval behavior.
+	it("snapshot mode freezes reads while writes stay live (M10)", async () => {
+		const livePath = join(tmpdir(), `live-${Date.now()}-${Math.random()}.db`);
+		const snapPath = join(tmpdir(), `snap-${Date.now()}-${Math.random()}.db`);
+		try {
+			const live = new ExperienceStore(livePath);
+			await live.initSchema();
+			const before: Experience = {
+				id: "exp-before-snapshot",
+				type: "EVIDENCE" as const,
+				title: "frozen evidence",
+				payload: { text: "hello" },
+				quality: 0.8,
+				status: "active" as const,
+				sourceSession: "session-1",
+				sourceEntryId: "entry-1",
+				contentHash: "hash-before",
+				createdAt: new Date().toISOString(),
+			};
+			await live.insert(before);
+
+			// Freeze: copy the live db, then keep writing to it.
+			copyFileSync(livePath, snapPath);
+			const after: Experience = {
+				id: "exp-after-snapshot",
+				type: "EVIDENCE" as const,
+				title: "post-snapshot evidence",
+				payload: { text: "world" },
+				quality: 0.9,
+				status: "active" as const,
+				sourceSession: "session-2",
+				sourceEntryId: "entry-2",
+				contentHash: "hash-after",
+				createdAt: new Date().toISOString(),
+			};
+			await live.insert(after);
+
+			// Snapshot-mode store: reads frozen at the copy, writes to live.
+			const snap = new ExperienceStore(livePath, { snapshotPath: snapPath });
+			await snap.initSchema();
+			expect(await snap.getById("exp-before-snapshot")).not.toBeNull();
+			expect(await snap.getById("exp-after-snapshot")).toBeNull(); // frozen
+
+			// Writes still land in the live db (learning loop keeps working).
+			const written: Experience = { ...after, id: "exp-via-snapshot-store", contentHash: "hash-via" };
+			await snap.insert(written);
+			const verify = new ExperienceStore(livePath);
+			await verify.initSchema();
+			expect(await verify.getById("exp-via-snapshot-store")).not.toBeNull();
+			expect(await snap.getById("exp-via-snapshot-store")).toBeNull(); // still frozen
+		} finally {
+			rmSync(livePath, { force: true });
+			rmSync(snapPath, { force: true });
+		}
 	});
 
 	it("finds experiences via FTS search", async () => {

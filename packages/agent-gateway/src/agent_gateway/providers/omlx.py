@@ -56,7 +56,10 @@ class OmlxProvider:
         await self._client.aclose()
 
     async def complete(self, envelope: ChatCompletionEnvelopeV1) -> ModelResult:
-        payload = build_chat_request(envelope, model=self._model)
+        # forward_thinking=True (M9): the local reasoning model must receive the
+        # client's thinking switch, otherwise a thinking-on default yields
+        # content=null and a spurious empty_output escalation.
+        payload = build_chat_request(envelope, model=self._model, forward_thinking=True)
         async with self._semaphore:
             try:
                 response = await self._client.post("/chat/completions", json=payload)

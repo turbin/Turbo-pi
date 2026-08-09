@@ -58,7 +58,14 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 	if (!store) {
 		const storePath = process.env.EXPERIENCE_STORE_PATH ?? "./var/experience.db";
 		mkdirSync(dirname(storePath), { recursive: true });
-		store = new ExperienceStore(storePath);
+		// M10 (adversarial review 2026-08-09): AGENT_SERVER_STORE_SNAPSHOT pins
+		// experience reads to a frozen copy for the server's lifetime — batch
+		// runs are immune to mid-run library writes (manual evolution, dormant
+		// promotion, TTL cleanup) changing the retrieval behavior. The runner
+		// must create the snapshot before starting the instance
+		// (eval/snapshot_store.py); the live db stays the single writer.
+		const snapshotPath = process.env.AGENT_SERVER_STORE_SNAPSHOT;
+		store = new ExperienceStore(storePath, snapshotPath ? { snapshotPath } : {});
 		// better-sqlite3 is synchronous internally, so the schema exists before
 		// any request is served even though initSchema is typed async.
 		void store.initSchema();
@@ -454,6 +461,7 @@ export function teeOpenAISSEWithSession(
 	const pendingToolCalls: AccumulatedToolCall[] = [];
 	let buffer = "";
 	let closed = false;
+	let gatewayMarker: Record<string, unknown> | undefined;
 	const closeWriter = async (customType: string, data?: unknown) => {
 		if (closed) return;
 		closed = true;
@@ -461,6 +469,18 @@ export function teeOpenAISSEWithSession(
 		await writer.close();
 	};
 	const handleLine = (line: string) => {
+		// M3 (adversarial review 2026-08-09): the gateway marks every SSE
+		// response with a `: x-gateway` comment (escalation observability,
+		// issue-003 M1). Record it so sessions expose who actually served
+		// the reply and whether the local model was escalated.
+		if (line.startsWith(": x-gateway ")) {
+			try {
+				gatewayMarker = JSON.parse(line.slice(": x-gateway ".length)) as Record<string, unknown>;
+			} catch {
+				// malformed marker: leave it unset
+			}
+			return;
+		}
 		if (!line.startsWith("data:")) return;
 		const payload = line.slice(5).trim();
 		if (!payload || payload === "[DONE]") return;
@@ -491,6 +511,7 @@ export function teeOpenAISSEWithSession(
 				if (done) {
 					buffer += decoder.decode();
 					if (buffer.trim()) handleLine(buffer.trim());
+					if (gatewayMarker) writer.writeCustomEntry("gateway_marker", gatewayMarker);
 					const assistantMessage = buildAssistantMessageFromOpenAI(chunks, model);
 					if (assistantMessage) writer.writeMessage(assistantMessage);
 					// Post-stream toolCall validation (observe-only): validate accumulated
@@ -609,6 +630,20 @@ function traceStreamCompletion(
 					return;
 				}
 				for (const line of new TextDecoder().decode(value).split("\n")) {
+					// M3: gateway escalation marker as an SSE comment; recorded in
+					// the trace log so served-provider is observable per request.
+					if (line.startsWith(": x-gateway ")) {
+						try {
+							logTrace(
+								requestId,
+								"gateway",
+								JSON.parse(line.slice(": x-gateway ".length)) as Record<string, unknown>,
+							);
+						} catch {
+							// malformed marker: skip
+						}
+						continue;
+					}
 					if (!line.startsWith("data: ")) continue;
 					const payload = line.slice(6).trim();
 					if (!payload || payload === "[DONE]") continue;

@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """E1 A/B harness: run a task subset through control/experiment arms and compare results.
 
-Control arm:  openai client direct to DeepSeek
-Experiment arm: openai client via agent-server (http://127.0.0.1:8789/v1)
+Both arms run through agent-server (:8789) per the 2026-08-05 decision — the
+only difference is the injection toggle (M8): experiment arm injects
+retrieved experiences, control arm sends injection:false so its sessions and
+traces still feed the learning loop. No arm physically bypasses the stack.
 
 Uses the openai Python client directly (NOT litellm/mini-swe-agent) due to
 a litellm connection bug in the eval venv. Implements a minimal Bash agent
@@ -31,8 +33,6 @@ EVAL_DIR = PROJECT_ROOT / "eval"
 RESULTS_DIR = EVAL_DIR / "results"
 VENV_DIR = EVAL_DIR / ".venv"
 
-DEEPSEEK_KEY_FILE = PROJECT_ROOT / ".env"
-
 # ── config ──────────────────────────────────────────────────────────────────
 
 DEFAULT_SEED = 42
@@ -41,8 +41,13 @@ DEFAULT_MODEL = "deepseek-v4-flash"
 DEFAULT_MAX_TURNS = 15
 DEFAULT_TIMEOUT = 120  # seconds per task
 
-CONTROL_ENDPOINT = "https://api.deepseek.com/v1"
+# M8 (2026-08-09): both arms go through agent-server :8789; the only
+# difference is the injection toggle. Direct DeepSeek / 8899 relay bypasses
+# were retired (they mixed the backend variable into the A/B and starved the
+# learning loop of control-arm traces).
 EXPERIMENT_ENDPOINT = "http://127.0.0.1:8789/v1"
+CONTROL_ENDPOINT = EXPERIMENT_ENDPOINT
+GATEWAY_KEY = "lobster-local-key"
 
 # Tool definitions (OpenAI function-calling format)
 BASH_TOOL = {
@@ -63,19 +68,6 @@ BASH_TOOL = {
         },
     },
 }
-
-
-def load_deepseek_key() -> str:
-    """Read DEEPSEEK_API_KEY from .env file (gitignored)."""
-    env_path = DEEPSEEK_KEY_FILE
-    if not env_path.exists():
-        print(f"FATAL: {env_path} not found", file=sys.stderr)
-        sys.exit(1)
-    for line in env_path.read_text().splitlines():
-        if line.startswith("DEEPSEEK_API_KEY="):
-            return line.split("=", 1)[1].strip()
-    print(f"FATAL: DEEPSEEK_API_KEY not found in {env_path}", file=sys.stderr)
-    sys.exit(1)
 
 
 def load_tasks(tasks_path: Path) -> list[dict]:
@@ -148,8 +140,13 @@ def run_agent_loop(
     workdir: Path,
     model: str = DEFAULT_MODEL,
     max_turns: int = DEFAULT_MAX_TURNS,
+    injection: bool | None = None,
 ) -> dict:
-    """Run a minimal Bash agent with tool calling. Returns result dict."""
+    """Run a minimal Bash agent with tool calling. Returns result dict.
+
+    injection (M8): forwarded to agent-server as extra_body when the endpoint
+    is :8789; control arm sends False, experiment sends True.
+    """
     from openai import OpenAI
 
     client = OpenAI(api_key=api_key, base_url=endpoint, timeout=60)
@@ -174,13 +171,16 @@ def run_agent_loop(
     for turn in range(max_turns):
         turns = turn + 1
         try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                tools=[BASH_TOOL],
-                tool_choice="auto",
-                temperature=0.1,
-            )
+            kwargs: dict = {
+                "model": model,
+                "messages": messages,
+                "tools": [BASH_TOOL],
+                "tool_choice": "auto",
+                "temperature": 0.1,
+            }
+            if injection is not None and ":8789" in endpoint:
+                kwargs["extra_body"] = {"injection": injection}
+            response = client.chat.completions.create(**kwargs)
         except Exception as e:
             return {
                 "exit_code": -1,
@@ -266,6 +266,7 @@ def run_task(
     api_key: str,
     run_dir: Path,
     task_index: int,
+    injection: bool | None = None,
 ) -> dict:
     """Run a single task. Returns result dict."""
     task_id = task["id"]
@@ -276,7 +277,7 @@ def run_task(
     workdir.mkdir(parents=True, exist_ok=True)
 
     start_time = time.time()
-    agent_result = run_agent_loop(task, endpoint, api_key, workdir, DEFAULT_MODEL)
+    agent_result = run_agent_loop(task, endpoint, api_key, workdir, DEFAULT_MODEL, injection=injection)
     elapsed = time.time() - start_time
 
     # Run verification
@@ -351,7 +352,6 @@ def main():
         tasks_path = Path.cwd() / tasks_path
 
     tasks = load_tasks(tasks_path)
-    deepseek_key = load_deepseek_key()
 
     # Shuffle with fixed seed
     rng = random.Random(args.seed)
@@ -379,8 +379,8 @@ def main():
         print("DRY RUN — would execute:")
         for i, task in enumerate(shuffled):
             print(f"  [{i+1}/{len(shuffled)}] {task['id']}: {task['description']}")
-        print(f"\nControl arm:  {len(shuffled)} tasks via {CONTROL_ENDPOINT}")
-        print(f"Experiment arm: {len(shuffled)} tasks via {EXPERIMENT_ENDPOINT}")
+        print(f"\nControl arm:  {len(shuffled)} tasks via {CONTROL_ENDPOINT} (injection off)")
+        print(f"Experiment arm: {len(shuffled)} tasks via {EXPERIMENT_ENDPOINT} (injection on)")
         return
 
     # Create run directories
@@ -394,21 +394,21 @@ def main():
     experiment_dir.mkdir(parents=True)
 
     # ── Control arm ──────────────────────────────────────────────────────────
-    print("── Control arm (direct DeepSeek) ──")
+    print("── Control arm (via agent-server :8789, injection off) ──")
     control_results = []
     for i, task in enumerate(shuffled):
         print(f"[C {i+1}/{len(shuffled)}] {task['id']}...", end=" ", flush=True)
-        result = run_task(task, "control", CONTROL_ENDPOINT, deepseek_key, control_dir, i + 1)
+        result = run_task(task, "control", CONTROL_ENDPOINT, GATEWAY_KEY, control_dir, i + 1, injection=False)
         control_results.append(result)
         status = "PASS" if result["passed"] else f"FAIL ({'; '.join(result['verification_failures'])})"
         print(f"{status} | {format_cost(result['cost'])} | {result['elapsed_s']}s | {result['turns']} turns")
 
     # ── Experiment arm ──────────────────────────────────────────────────────
-    print("\n── Experiment arm (via agent-server :8789) ──")
+    print("\n── Experiment arm (via agent-server :8789, injection on) ──")
     experiment_results = []
     for i, task in enumerate(shuffled):
         print(f"[E {i+1}/{len(shuffled)}] {task['id']}...", end=" ", flush=True)
-        result = run_task(task, "experiment", EXPERIMENT_ENDPOINT, "dummy", experiment_dir, i + 1)
+        result = run_task(task, "experiment", EXPERIMENT_ENDPOINT, GATEWAY_KEY, experiment_dir, i + 1, injection=True)
         experiment_results.append(result)
         status = "PASS" if result["passed"] else f"FAIL ({'; '.join(result['verification_failures'])})"
         print(f"{status} | {format_cost(result['cost'])} | {result['elapsed_s']}s | {result['turns']} turns")

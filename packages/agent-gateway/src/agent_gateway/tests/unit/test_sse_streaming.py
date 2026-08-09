@@ -87,7 +87,10 @@ async def test_sse_happy_path_chunk_sequence(
     assert resp.headers["cache-control"] == "no-cache"
 
     comments, events = parse_sse(resp.text)
-    assert comments == []
+    # Escalation marker comment (M1) is emitted on every SSE response.
+    assert len(comments) == 1
+    marker = json.loads(comments[0].split("x-gateway ", 1)[1])
+    assert marker == {"escalated": False, "reason": None, "provider": "omlx", "local_provider": "omlx"}
     assert events[-1] == "[DONE]"
     chunks = [event for event in events[:-1] if isinstance(event, dict)]
 

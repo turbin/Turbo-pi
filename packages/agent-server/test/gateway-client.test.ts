@@ -85,6 +85,20 @@ describe("GatewayClient", () => {
 		expect(JSON.parse(init.body as string).stream).toBe(true);
 	});
 
+	// M2 (adversarial review 2026-08-09): usage=0 in request_traces was caused
+	// by streams never requesting stream_options.include_usage — the gateway
+	// only emits the usage chunk on request. Without it, the length-flaw
+	// signature (completion_tokens pinned at the cap) was invisible.
+	it("stream requests include_usage so token usage is observable (M2)", async () => {
+		const bodyStream = new ReadableStream<Uint8Array>();
+		const mock = mockFetchOnce({ ok: true, body: bodyStream });
+		const client = new GatewayClient(GATEWAY_URL);
+		await client.stream(makeBody());
+
+		const [, init] = mock.mock.calls[0] as unknown as [string, RequestInit];
+		expect(JSON.parse(init.body as string).stream_options).toEqual({ include_usage: true });
+	});
+
 	it("stream throws on non-ok response", async () => {
 		mockFetchOnce({ ok: false, status: 500, statusText: "Internal Server Error" });
 		const client = new GatewayClient(GATEWAY_URL);

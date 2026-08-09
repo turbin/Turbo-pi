@@ -7,13 +7,15 @@ cap, stop=["\n"], temperature=0. One JSONL record per game.
 
 Usage:
     ALFWORLD_DATA=$PWD/alfworld_data ./.venv/bin/python alfworld_agent.py \
-        --base-url https://api.deepseek.com/v1 --api-key $DEEPSEEK_API_KEY \
+        --base-url http://127.0.0.1:8789/v1 --api-key lobster-local-key \
         --output results/alfworld-control.jsonl [--games 5] [--start 0]
 """
 
 import argparse
+import hashlib
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -38,40 +40,80 @@ PREFIXES = {
 
 MAX_STEPS = 49
 
+# Command extraction (M16, 2026-08-04 + 2026-08-09 fixes): reasoning-distilled
+# models (e.g. Qwen3.5-27B-Distilled) narrate before acting ("Let me
+# think...") instead of emitting the ReAct command on the first line.
+# Generate without stop=["\n"] and extract the command from a line-anchored,
+# word-bounded verb phrase. Anchoring kills false positives like "use " in
+# "because" and "take " in "mistake"; the last NON-think match wins (think:
+# is only used when nothing else matched — the loop treats it specially).
+COMMAND_VERB_RE = re.compile(
+    r"^\s*(go to|take|put|open|close|clean|heat|cool|use|examine|inventory|look|think)(?::|\b)"
+)
+
+
+def extract_command(text: str) -> tuple[str, bool]:
+    """Extract the ReAct command from a (possibly narrated) model reply.
+
+    Returns (command, verb_matched). verb_matched=False means no verb-phrase
+    line was found and the raw last line was used — an extraction failure
+    that is recorded per step so failure rates can be compared across arms
+    (injection changes narration style and must not bias the score).
+    """
+    candidates: list[tuple[str, str]] = []
+    for line in text.split("\n"):
+        stripped = line.strip().lstrip(">").strip()
+        m = COMMAND_VERB_RE.match(stripped)
+        if m:
+            phrase = stripped[m.start() :].strip().strip("`").rstrip(".").strip()
+            if phrase:
+                candidates.append((m.group(1), phrase))
+    non_think = [(verb, phrase) for verb, phrase in candidates if not verb.startswith("think")]
+    if non_think:
+        return non_think[-1][1], True
+    if candidates:
+        return candidates[-1][1], True
+    return text.strip().split("\n")[-1].strip().lstrip(">").strip(), False
+
+
+def existing_game_idxs(path: Path) -> set[int]:
+    """Already-recorded game_idx in an append-mode output (M15 dedup:
+    a crash rerun must not double-count games)."""
+    if not path.exists():
+        return set()
+    seen: set[int] = set()
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            seen.add(json.loads(line)["game_idx"])
+        except (json.JSONDecodeError, KeyError):
+            continue  # tolerate a malformed trailing line
+    return seen
+
+
+def pool_signature(pool: list[str]) -> tuple[int, str]:
+    """(size, short sha256) of the sorted game pool, recorded per game so
+    A/B arms can be verified to have played the same pool (C3)."""
+    digest = hashlib.sha256("\n".join(pool).encode("utf-8")).hexdigest()[:16]
+    return len(pool), digest
+
+
+def parse_x_gateway(resp: object) -> dict:
+    """Escalation marker from the gateway x-gateway header (issue-003 M1)."""
+    try:
+        raw = resp.headers.get("x-gateway")  # type: ignore[attr-defined]
+        if not raw:
+            return {}
+        return json.loads(raw)
+    except (AttributeError, json.JSONDecodeError):
+        return {}
+
+
 def process_ob(ob: str) -> str:
     if ob.startswith("You arrive at loc "):
         ob = ob[ob.find(". ") + 2 :]
     return ob
-
-
-# Command extraction: reasoning-distilled models (e.g. Qwen3.5-27B-Distilled)
-# narrate before acting ("Let me think...") instead of emitting the ReAct
-# command on the first line. Generate without stop=["\n"] and extract the
-# command: last line starting with a known verb, or a backticked command.
-# For single-command outputs (DeepSeek) this is a no-op. (2026-08-04 fix)
-COMMAND_VERBS = (
-    "go to", "take", "put", "open", "close", "clean", "heat", "cool",
-    "use", "look", "examine", "inventory", "think:",
-)
-
-
-def extract_command(text: str) -> str:
-    import re
-
-    # Find verb-initial command phrases anywhere in the text (line-anchored or
-    # after prose/backticks), take the last one, and cut at the verb start.
-    verb_re = re.compile(
-        r"(go to |take |put |open |close |clean |heat |cool |use |examine |inventory\b|look\b|think:)"
-    )
-    matches = []
-    for m in verb_re.finditer(text):
-        phrase = text[m.start():].split("\n")[0]
-        phrase = phrase.strip().strip("`").rstrip(".").strip()
-        if phrase:
-            matches.append(phrase)
-    if matches:
-        return matches[-1].lstrip(">").strip()
-    return text.strip().split("\n")[-1].strip().lstrip(">").strip()
 
 
 def main() -> None:
@@ -80,8 +122,21 @@ def main() -> None:
     ap.add_argument("--api-key", required=True)
     ap.add_argument("--model", default="deepseek-v4-flash")
     ap.add_argument("--output", required=True)
-    ap.add_argument("--games", type=int, default=134)
+    ap.add_argument("--games", type=int, default=0, help="games to run; 0 = the whole pool (no wraparound replay)")
     ap.add_argument("--start", type=int, default=0)
+    ap.add_argument(
+        "--max-tokens",
+        type=int,
+        default=200,
+        help="per-turn output cap. issue-003: 200 was the root cause of the length-gate mis-escalation; "
+        "pilot calibrates 800/1024 before full runs.",
+    )
+    ap.add_argument(
+        "--expect-pool-size",
+        type=int,
+        default=0,
+        help="hard-fail if the game pool size differs (C3: pool drift breaks A/B alignment); 0 = skip check",
+    )
     ap.add_argument(
         "--injection",
         choices=["on", "off"],
@@ -100,7 +155,7 @@ def main() -> None:
 
     client = OpenAI(base_url=args.base_url, api_key=args.api_key, timeout=120.0)
 
-    def llm(prompt: str) -> tuple[str, dict]:
+    def llm(prompt: str) -> dict:
         for attempt in range(6):
             try:
                 resp = client.chat.completions.create(
@@ -120,7 +175,7 @@ def main() -> None:
                         {"role": "user", "content": prompt},
                     ],
                     temperature=0,
-                    max_tokens=200,
+                    max_tokens=args.max_tokens,
                     extra_body={
                         "thinking": {"type": "disabled"},
                         **({"injection": args.injection == "on"} if args.injection else {}),
@@ -128,8 +183,16 @@ def main() -> None:
                 )
                 usage = resp.usage.model_dump() if resp.usage else {}
                 raw = resp.choices[0].message.content.strip()
-                action = extract_command(raw)
-                return action, usage
+                marker = parse_x_gateway(resp)
+                action, extract_ok = extract_command(raw)
+                return {
+                    "action": action,
+                    "usage": usage,
+                    "finish_reason": resp.choices[0].finish_reason,
+                    "provider": marker.get("provider", ""),
+                    "escalated": bool(marker.get("escalated", False)),
+                    "extract_ok": extract_ok,
+                }
             except Exception as e:  # noqa: BLE001 - retry any transient API error
                 wait = min(2**attempt * 4, 60)
                 print(f"  llm error ({type(e).__name__}: {e}); retry in {wait}s", file=sys.stderr)
@@ -143,15 +206,34 @@ def main() -> None:
     import alfworld.agents.environment as environment
 
     env = environment.get_environment(config["env"]["type"])(config, train_eval="eval_out_of_distribution")
-    env.game_files = sorted(env.game_files)  # deterministic order for A/B alignment
-    print(f"game files: {len(env.game_files)}")
+    # Deterministic order for A/B alignment; pool bounds verified BEFORE any
+    # game is played (C3: shuffled_cycle rewinds when the pool is exhausted,
+    # which silently replays games and misaligns A/B pairs).
+    pool = sorted(env.game_files)
+    pool_size, pool_hash = pool_signature(pool)
+    print(f"game files: {pool_size} (pool hash {pool_hash})")
+    if args.expect_pool_size and pool_size != args.expect_pool_size:
+        sys.exit(
+            f"FATAL: game pool has {pool_size} files, expected {args.expect_pool_size} "
+            f"(pool hash {pool_hash}) — pool drift breaks A/B alignment (issue-003 C3)"
+        )
+    games = pool_size if args.games <= 0 else args.games
+    if args.start >= pool_size:
+        sys.exit(f"FATAL: --start {args.start} is beyond pool size {pool_size}")
+    if games > pool_size:
+        sys.exit(f"FATAL: --games {games} exceeds pool size {pool_size}; wraparound replay is never allowed (issue-003 C3)")
     env = env.init_env(batch_size=1)
+    env.skip(args.start)  # advance the game iterator so --start N matches game_idx (M14)
 
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out = open(out_path, "a")
+    done = existing_game_idxs(out_path)
+    if done:
+        print(f"resume: {len(done)} games already recorded, skipping (M15 dedup)")
+    end = min(args.start + games, pool_size)
 
-    for game_idx in range(args.start, min(args.start + args.games, 134)):
+    for game_idx in range(args.start, end):
         ob, info = env.reset()
         ob = "\n".join(ob[0].split("\n\n")[1:])
         gamefile = info["extra.gamefile"][0]
@@ -165,6 +247,9 @@ def main() -> None:
         if task_type is None:
             print(f"skip (unknown type): {name}", file=sys.stderr)
             continue
+        if game_idx in done:
+            print(f"[{game_idx}] already recorded, skip")
+            continue
 
         prompt_head = (
             "Interact with a household to solve a task. Here are two examples.\n"
@@ -177,18 +262,32 @@ def main() -> None:
         history = ""
         won = False
         tokens_in = tokens_out = 0
+        escalations = 0
+        extract_failed = 0
         traj = []
         t0 = time.time()
 
         for step in range(1, MAX_STEPS + 1):
-            action, usage = llm(init_prompt + history)
-            tokens_in += usage.get("prompt_tokens", 0)
-            tokens_out += usage.get("completion_tokens", 0)
+            turn = llm(init_prompt + history)
+            action = turn["action"]
+            tokens_in += turn["usage"].get("prompt_tokens", 0)
+            tokens_out += turn["usage"].get("completion_tokens", 0)
+            escalations += 1 if turn["escalated"] else 0
+            extract_failed += 0 if turn["extract_ok"] else 1
             observation, _, done, step_info = env.step([action])
             observation, won, done = process_ob(observation[0]), bool(step_info["won"][0]), bool(done[0])
             if action.startswith("think:"):
                 observation = "OK."
-            traj.append({"step": step, "action": action, "obs": observation})
+            traj.append(
+                {
+                    "step": step,
+                    "action": action,
+                    "obs": observation,
+                    "finish_reason": turn["finish_reason"],
+                    "provider": turn["provider"],
+                    "escalated": turn["escalated"],
+                }
+            )
             history += f" {action}\n{observation}\n>"
             if done:
                 break
@@ -203,10 +302,16 @@ def main() -> None:
             "tokens_out": tokens_out,
             "elapsed_s": round(time.time() - t0, 1),
             "trajectory": traj,
+            # issue-003 fixes (2026-08-09):
+            "init_prompt": init_prompt,  # M18: task context for the evolution pipeline
+            "pool_size": pool_size,  # C3: pool provenance per record
+            "pool_hash": pool_hash,  # C3
+            "escalations": escalations,  # M3: gateway x-gateway marker
+            "extract_failed_steps": extract_failed,  # M16: extraction artifact rate
         }
         out.write(json.dumps(rec) + "\n")
         out.flush()
-        print(f"[{game_idx + 1}/134] {task_type} won={won} steps={len(traj)} in={tokens_in} out={tokens_out}")
+        print(f"[{game_idx + 1}/{pool_size}] {task_type} won={won} steps={len(traj)} in={tokens_in} out={tokens_out}")
 
     out.close()
 

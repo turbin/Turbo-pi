@@ -26,8 +26,17 @@ SYSTEM_PROMPT = (
 )
 
 
-def synthesize_game(game: dict, out_path: Path) -> None:
-    """Write one pi-native session JSONL for a single ALFWorld game."""
+def synthesize_game(game: dict, out_path: Path, prefix: str = "alfworld") -> None:
+    """Write one pi-native session JSONL for a single ALFWorld game.
+
+    M18（2026-08-09）：init_prompt 缺失即硬失败——伪造的 task-context（含
+    完整轨迹）会自泄漏进进化管线；session id 前缀参数化避免跨臂碰撞。
+    """
+    if "init_prompt" not in game:
+        raise ValueError(
+            f"game {game.get('game_idx')} has no init_prompt — regenerate with the current "
+            "alfworld_agent.py (M18: task context must be real, never synthesized)"
+        )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:
         f.write(
@@ -35,11 +44,13 @@ def synthesize_game(game: dict, out_path: Path) -> None:
                 {
                     "type": "session",
                     "version": 3,
-                    "id": f"alfworld-27b-cold-{game['game_idx']}",
+                    "id": f"{prefix}-{game['game_idx']}",
                     "metadata": {
                         "task_type": game["task_type"],
                         "won": game["won"],
                         "gamefile": game["gamefile"],
+                        "pool_size": game.get("pool_size"),
+                        "pool_hash": game.get("pool_hash"),
                     },
                 },
                 ensure_ascii=False,
@@ -70,6 +81,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True, help="alfworld_agent JSONL")
     ap.add_argument("--output-dir", required=True, help="directory for synthesized .jsonl files")
+    ap.add_argument("--prefix", default="alfworld", help="session id 前缀（跨臂/跨轮防碰撞，M18）")
     args = ap.parse_args()
 
     out_dir = Path(args.output_dir)
@@ -77,16 +89,7 @@ def main() -> None:
     with open(args.input) as f:
         for line in f:
             game = json.loads(line)
-            # init_prompt was not originally emitted by alfworld_agent.py; reconstruct it.
-            # The first step's prompt is prompt_head + ob + "\n>".
-            if "init_prompt" not in game:
-                traj = game.get("trajectory", [])
-                # We cannot reconstruct init_prompt from the record alone, so derive the
-                # task type from gamefile and use the trajectory as the narrative text.
-                game["init_prompt"] = f"[Task: {game['task_type']}]\n" + "\n".join(
-                    f"> {s['action']}\n{s['obs']}" for s in traj
-                )
-            synthesize_game(game, out_dir / f"game-{game['game_idx']:03d}.jsonl")
+            synthesize_game(game, out_dir / f"game-{game['game_idx']:03d}.jsonl", prefix=args.prefix)
             games += 1
     print(f"synthesized {games} sessions into {out_dir}")
 

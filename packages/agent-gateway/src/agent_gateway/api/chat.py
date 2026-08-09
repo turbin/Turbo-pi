@@ -28,6 +28,7 @@ import logging
 import time
 import uuid
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -57,6 +58,7 @@ from agent_gateway.security.redact import redacted_finding_payload
 from agent_gateway.sse import (
     DelayedEventStreamResponse,
     build_replay_events,
+    format_sse_comment,
     format_sse_event,
     usage_payload,
 )
@@ -76,6 +78,38 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 STORE_ERRORS = (TraceStoreError, ConcurrencyConflict, InvalidTransition)
+
+
+@dataclass(frozen=True)
+class GatewayMarker:
+    """Escalation observability (adversarial review M1, issue-003 regression #1).
+
+    Every response carries an x-gateway marker so clients (eval harnesses)
+    can see whether the local result was escalated to cloud and who served
+    the final answer, without querying model_runs. Also carries
+    cloud_finish_reason on escalation so a cloud-side length truncation
+    (the same flaw recurring invisibly upstream, C4) stays observable.
+    """
+
+    escalated: bool
+    reason: str | None
+    provider: str
+    local_provider: str = "omlx"
+    cloud_finish_reason: str | None = None
+
+    def as_dict(self) -> dict:
+        d: dict = {
+            "escalated": self.escalated,
+            "reason": self.reason,
+            "provider": self.provider,
+            "local_provider": self.local_provider,
+        }
+        if self.cloud_finish_reason is not None:
+            d["cloud_finish_reason"] = self.cloud_finish_reason
+        return d
+
+    def as_header(self) -> str:
+        return json.dumps(self.as_dict(), ensure_ascii=False)
 
 
 def request_digest(payload: dict) -> str:
@@ -381,6 +415,16 @@ async def finish_escalation(
 
     signals = quality_signals_for(envelope, result)
     signals["escalation_reason"] = reason
+    # C4 (adversarial review): the escalation result is not re-gated — a
+    # cloud-side truncation would otherwise recur invisibly. Record and warn.
+    signals["cloud_finish_reason"] = result.finish_reason
+    if result.finish_reason == "length":
+        logger.warning(
+            "escalated result still truncated (finish_reason=length) trace=%s reason=%s provider=%s",
+            trace_id,
+            reason,
+            decision.provider_name,
+        )
     await record_succeeded_run(
         store,
         trace_id,
@@ -431,7 +475,7 @@ async def escalate_to_cloud(
             exc=exc,
         )
         raise
-    return await finish_escalation(
+    await finish_escalation(
         store=store,
         ledger=ledger,
         envelope=envelope,
@@ -442,6 +486,12 @@ async def escalate_to_cloud(
         decision=decision,
         reservation=reservation,
         result=result,
+    )
+    return result, GatewayMarker(
+        escalated=True,
+        reason=reason,
+        provider=decision.provider_name,
+        cloud_finish_reason=result.finish_reason,
     )
 
 
@@ -464,7 +514,10 @@ async def execute_with_escalation(
     running: RequestExecution,
     timeout_seconds: int,
 ) -> ModelResult:
-    """Local call, quality gate, optional single cloud escalation."""
+    """Local call, quality gate, optional single cloud escalation.
+
+    Returns (result, marker): the final result plus the escalation marker
+    describing who served it (M1)."""
     task = asyncio.ensure_future(route.provider.complete(envelope))
     try:
         result = await await_provider(request, task)
@@ -489,7 +542,7 @@ async def execute_with_escalation(
     )
     gate = evaluate_quality(envelope, result)
     if not gate.escalate:
-        return result
+        return result, GatewayMarker(escalated=False, reason=None, provider=route.provider_name)
     assert gate.reason is not None
     return await escalate_to_cloud(
         request=request,
@@ -612,8 +665,19 @@ async def stream_traced_events(
             reservation=reservation,
             result=result,
         )
+        marker = GatewayMarker(
+            escalated=True,
+            reason=reason,
+            provider=decision.provider_name,
+            cloud_finish_reason=result.finish_reason,
+        )
+    else:
+        marker = GatewayMarker(escalated=False, reason=None, provider=route.provider_name)
 
     response_started = await start_response_transition(store, trace_id, running)
+    # Escalation marker as an SSE comment (M1): transparent to OpenAI SSE
+    # parsers, readable by agent-server for trace observability.
+    yield format_sse_comment("x-gateway", marker.as_dict())
     include_usage = envelope.stream_options.include_usage if envelope.stream_options else False
     for event in build_replay_events(trace_id, envelope, result, include_usage=include_usage):
         _mark_sent()
@@ -680,6 +744,7 @@ async def save_for_replay(store: TraceStore, trace_id: str, *, status: int, body
 @router.post("/v1/chat/completions", response_model=None)
 async def chat_completions(
     request: Request,
+    response: Response,
     context: ChannelContext = Depends(get_channel_context),
     store: TraceStore = Depends(get_trace_store),
     provider: Provider = Depends(get_provider),
@@ -773,7 +838,7 @@ async def chat_completions(
         )
 
     try:
-        result = await execute_with_escalation(
+        result, marker = await execute_with_escalation(
             request=request,
             store=store,
             ledger=ledger,
@@ -805,6 +870,7 @@ async def chat_completions(
         raise GatewayError("database_unavailable", f"trace store unavailable: {exc}") from exc
 
     body = build_openai_response(trace_id, envelope, result)
+    response.headers["x-gateway"] = marker.as_header()
     if idempotency_key:
         await save_for_replay(store, trace_id, status=200, body=body)
     return body

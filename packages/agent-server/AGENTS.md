@@ -15,7 +15,7 @@
 - `GATEWAY_URL` 语义：**裸 base 不带 /v1**；`AGENT_GATEWAY_KEY` 对 gateway 是 channel key、对 DeepSeek 直连是 API key（同一变量两种语义）。
 - 生产 compose 栈（8788 server + evolution + weekly-report sidecar）`restart: unless-stopped`，colima 重启自动恢复。
 - **注入开关**（08-05）：`AGENT_SERVER_INJECTION=off` 关服务级默认；请求级 `injection: true/false`（`/v1/chat/completions` body 或 `/api/stream` 的 `options.injection`）覆盖。关闭时跳过检索+注入但 **session/trace 照常记录**——控制臂必须走 8789 + `injection:false`，不再物理旁路（学习回路要吃全量 trace）。session 里 `experience_injection.disabled=true` 区分“关”与“未命中”。
-- **preflight 门禁**（08-05）：`eval/preflight.py`，所有跑批入口（alfworld_agent/harness/d3_discriminate）启动前必过——按 base-url 端口推导依赖链（8789→8787→8000；8899→relay），探活+nohup 自动拉起自有服务（8789/8787/8899），omlx 只能人工起。手动体检：`eval/.venv/bin/python eval/preflight.py <base-url>`。
+- **preflight 门禁**（08-05，指纹校验 08-09 M11）：`eval/preflight.py`，所有跑批入口（alfworld_agent/harness/d3_discriminate）启动前必过——按 base-url 端口推导依赖链（8789→8787→8000；8790 同链但强制 AGENT_SERVER_INJECTION=off；8899→relay），探活+nohup 自动拉起自有服务；**存活≠通过**：omlx /v1/models 必须列出模型（`AGENT_EVAL_EXPECTED_OMLX_MODEL` 可精确校验）、agent-server /api/status/chain 必须 self/gateway/omlx 全 ok 且 injection 标志与预期匹配，存疑即 fail。手动体检：`eval/.venv/bin/python eval/preflight.py <base-url>`。
 - **Web 监控**（08-05）：`GET /dashboard` 单页面板（链路状态/命中率/日志 tail，5s 自刷）；JSON 接口 `/api/status/chain`（self/gateway/omlx/evolution checkpoint）、`/api/logs?lines=N`（≤1000）。开关：`AGENT_SERVER_WEB=off`（默认 on）关三端点（404），数据 API（hit-rate、evolution/status）常开。日志文件 sink：`AGENT_SERVER_LOG_PATH`（默认 `./var/log/agent-server.log`），stdout 不变。**pkill 批量杀 tsx 会误杀 8789**——杀临时实例用精确 PID（08-05 事故）。
 
 ## 长任务/服务进程纪律（血泪教训）
@@ -35,9 +35,11 @@
 ## ALFWorld harness（eval/alfworld_agent.py）
 
 - 协议：ReAct 论文 2-shot、49 步、temperature=0；`stop=["\n"]` + `thinking:{type:"disabled"}` 依赖 agent-server 透传（07-30 修复，改动须保持）。
-- **蒸馏/reasoning 模型会输出叙述文本而非命令**——`extract_command()` 负责从叙述中提取动作（去 stop 参数、max_tokens=200、`>` 剥离）；改 agent 时保持该函数与 `process_ob` 同时存在（07-04 事故：误删 process_ob 导致 NameError）。
-- 确定性：游戏顺序 sorted 固定，双臂/多轮逐局对齐；输出 JSONL append，支持 `--start N` 续跑。
+- **蒸馏/reasoning 模型会输出叙述文本而非命令**——`extract_command()` 从叙述中提取动作（行锚定+词边界+最后非 think 优先，08-09 M16 重写）；逐局记录 `extract_failed_steps` 与 `escalations`（x-gateway 标记）；`--max-tokens` 参数化（默认 200——issue-003 根因值，pilot 校准 800/1024）。
+- 确定性：游戏顺序 sorted 固定，双臂/多轮逐局对齐；**池上界 = `len(env.game_files)`**——`--games` 超池或 `--expect-pool-size` 不符即硬失败（08-09 C3：shuffled_cycle 回绕重放曾致 20260730 控制臂 17 局 A/B 错位）；`--start N` 用 `env.skip(N)` 推进迭代器（M14）；输出 JSONL append + 按 game_idx 去重（M15）；每条记录带 `pool_size`/`pool_hash`/`init_prompt`。
 - 双臂跑法（08-05 起）：基线臂 `--base-url http://127.0.0.1:8789/v1 --injection off`，实验臂同地址 `--injection on`（或省略）——两臂同路径过 agent-server，trace 全落库。
+- **跑批前门控（issue-003 回归测试 2）**：`eval/gate_length_escalation.py`——model_runs 全量口径 length 升级率 <5% 才可开全量；pilot 校准先跑冷库 5 局。
+- **经验库快照（M10）**：长跑批前 `eval/snapshot_store.py <live.db> <snapshot.db>`，以 `AGENT_SERVER_STORE_SNAPSHOT=<snapshot.db>` 启动/重启评估实例——检索读冻结快照，写入仍走 live 库。
 
 ## 进化管线（offline/）
 

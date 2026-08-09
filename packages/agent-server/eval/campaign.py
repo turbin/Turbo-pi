@@ -62,8 +62,24 @@ def setup_workspace(task_id: str, workdir: Path) -> Path:
     return ws
 
 
-def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int) -> dict:
-    """Minimal bash-tool agent loop (E1 harness 同源形态)。"""
+def _gateway_marker(resp: object) -> dict:
+    """Escalation marker from the gateway x-gateway header (issue-003 M1)."""
+    try:
+        raw = resp.headers.get("x-gateway") if hasattr(resp, "headers") else None  # type: ignore[attr-defined]
+        if not raw:
+            return {}
+        return json.loads(raw)
+    except (AttributeError, json.JSONDecodeError):
+        return {}
+
+
+def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int, *, injection: bool) -> dict:
+    """Minimal bash-tool agent loop (E1 harness 同源形态)。
+
+    C1（2026-08-09 对抗审查）：`injection` 是必选关键字参数——实验/对照臂
+    必须显式声明注入开关，而不是靠未定义变量 NameError。每条响应记录
+    trace_id 与 x-gateway 升级标记（C2/M1），供判据核算与 model_runs 回填。
+    """
     transcript: list[dict] = []
     messages = [
         {
@@ -77,6 +93,8 @@ def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int)
     ]
     t0 = time.time()
     requests = 0
+    trace_ids: list[str] = []
+    escalated = False
     for _ in range(MAX_TURNS):
         if time.time() - t0 > timeout_s:
             transcript.append({"role": "agent", "content": "[timeout]"})
@@ -88,6 +106,8 @@ def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int)
             tools=[BASH_TOOL],
             extra_body={"injection": injection},
         )
+        trace_ids.append(getattr(resp, "id", ""))
+        escalated = escalated or bool(_gateway_marker(resp).get("escalated"))
         msg = resp.choices[0].message
         transcript.append({"role": "assistant", "content": msg.content or "", "tool_calls": bool(msg.tool_calls)})
         if not msg.tool_calls:
@@ -106,7 +126,14 @@ def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int)
             output = (proc.stdout + proc.stderr)[:8000]
             transcript.append({"role": "tool", "content": output[:500]})
             messages.append({"role": "tool", "tool_call_id": call.id, "content": output})
-    return {"status": "completed", "transcript": transcript, "workspace": str(ws), "requests": requests}
+    return {
+        "status": "completed",
+        "transcript": transcript,
+        "workspace": str(ws),
+        "requests": requests,
+        "trace_ids": trace_ids,
+        "escalated": escalated,
+    }
 
 
 def grade(task_id: str, execution: dict, ws: Path) -> dict:
@@ -126,12 +153,21 @@ def main() -> None:
     ap.add_argument("--model", default="agent-auto")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--metrics", default="", help="核算既有结果 JSONL 的判据，不跑批")
+    ap.add_argument(
+        "--gateway-db",
+        default="",
+        help="gateway SQLite（model_runs 回填升级标记，C2）；--metrics 时生效。"
+        "默认 packages/agent-gateway/var/agent_gateway.db",
+    )
     args = ap.parse_args()
 
     if args.metrics:
-        from campaign_metrics import load_results
+        from campaign_metrics import annotate_escalation, load_results
 
         rows = load_results(Path(args.metrics))
+        gateway_db = Path(args.gateway_db or "../../agent-gateway/var/agent_gateway.db")
+        if gateway_db.exists():
+            rows = annotate_escalation(rows, gateway_db)
         print(json.dumps({"daily": daily_summary(rows), "criteria": check_criteria(rows)}, indent=2, ensure_ascii=False))
         return
 
@@ -176,7 +212,10 @@ def main() -> None:
                     "arm": arm,
                     "score": g["score"],
                     "passed": g["score"] >= PASS_THRESHOLD,
-                    "escalated": False,  # 由 gateway model_runs 事后标注（见设计文档 §4）
+                    # C2：升级标记来自网关 x-gateway 头（M1），trace_ids 供
+                    # model_runs 回填核对；不再硬编码 False。
+                    "escalated": execution["escalated"],
+                    "trace_ids": execution["trace_ids"],
                     "requests": execution["requests"],
                     "grading": g,
                 }

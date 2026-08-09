@@ -36,6 +36,18 @@ function rowToCheckpoint(row: CheckpointRow): Checkpoint {
 	};
 }
 
+export interface ExperienceStoreOptions {
+	/**
+	 * M10 (adversarial review 2026-08-09): read-only snapshot database for
+	 * experience reads (search/listActive/getById/getByContentHash). A batch
+	 * run pins the experience set it was started with; live writes (evolution
+	 * promotion, TTL cleanup, scheduler) keep going to the live database so
+	 * the learning loop is unaffected. The snapshot file must be created by
+	 * the runner before the server starts (eval/snapshot_store.py).
+	 */
+	snapshotPath?: string;
+}
+
 interface ExperienceRow {
 	id: string;
 	type: Experience["type"];
@@ -126,9 +138,13 @@ export function tokenizeForFts(text: string): string {
 
 export class ExperienceStore {
 	private db: Database.Database;
+	private readDb: Database.Database;
 
-	constructor(path: string) {
+	constructor(path: string, opts: ExperienceStoreOptions = {}) {
 		this.db = new Database(path);
+		// M10: snapshot mode serves reads from a frozen copy of the experience
+		// tables; the live db stays the single writer.
+		this.readDb = opts.snapshotPath ? new Database(opts.snapshotPath, { readonly: true }) : this.db;
 	}
 
 	async initSchema(): Promise<void> {
@@ -214,13 +230,13 @@ export class ExperienceStore {
 	}
 
 	async getById(id: string): Promise<Experience | null> {
-		const row = this.db.prepare("SELECT * FROM experiences WHERE id = ?").get(id) as ExperienceRow | undefined;
+		const row = this.readDb.prepare("SELECT * FROM experiences WHERE id = ?").get(id) as ExperienceRow | undefined;
 		if (!row) return null;
 		return rowToExperience(row);
 	}
 
 	async getByContentHash(contentHash: string): Promise<Experience | null> {
-		const row = this.db.prepare("SELECT * FROM experiences WHERE content_hash = ?").get(contentHash) as
+		const row = this.readDb.prepare("SELECT * FROM experiences WHERE content_hash = ?").get(contentHash) as
 			| ExperienceRow
 			| undefined;
 		if (!row) return null;
@@ -232,7 +248,7 @@ export class ExperienceStore {
 	}
 
 	async listActive(type: Experience["type"], limit: number): Promise<Experience[]> {
-		const rows = this.db
+		const rows = this.readDb
 			.prepare(`
 				SELECT * FROM experiences
 				WHERE type = ? AND status = 'active'
@@ -305,7 +321,7 @@ export class ExperienceStore {
 	}
 
 	async search(query: string, limit: number): Promise<Experience[]> {
-		const rows = this.db
+		const rows = this.readDb
 			.prepare(`
 				SELECT e.* FROM experiences_fts fts
 				JOIN experiences e ON e.rowid = fts.rowid

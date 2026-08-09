@@ -1,7 +1,7 @@
 # design 目录索引（INDEX）
 
 维护说明：本索引概述 `doc/design/`（目录名带前导空格）下每份文档的内容，并记录从 agent-server P0 起各阶段决策的变化时间线。**新增设计文档时请同步更新本索引。**
-最后更新：2026-07-25（覆盖 E1 决策记录）。
+最后更新：2026-08-09（覆盖对抗性审查与 issue-003 登记）。
 
 阅读指引：
 - **通用约束 canonical 版本**（工程内改动、omlx 不可动、提交格式、git 纪律）：`2026-07-22-agent-server-p3-candidate-tasks.md` 的"通用约束"一节，后续任务书均为引用。
@@ -144,6 +144,9 @@
 | 2026-08-04-agent-server-c3-amendment-and-r2-evolution-input-changes-and-decisions.md | **C 决策 3 修正【用户批准】**：失败经验三层化（原始文本不入库/败局作归因输入/蒸馏验证 Guard 卡入库）+ R2 进料三路合并（学生+老师胜局+败局对照）+ 触发器门控→局级胜负迁移（27B 升级率 0% 使门控断粮）+ 教训卡必须程序化提取禁自由诊断（2605.29463 红线） |
 | 2026-08-05-agent-server-injection-toggle-and-eval-preflight-changes-and-decisions.md | **注入开关 + preflight 门禁【用户重申目标驱动】**：`AGENT_SERVER_INJECTION=off` + 请求级 `injection` 覆盖，关时跳注入但 session/trace 照录（`disabled:true` 区分关与未命中）；**控制臂跑法变更=8789+injection off 同路径对照取代物理旁路**（基线轨迹进学习回路）；eval/preflight.py 按端口推导依赖链探活+nohup 自动拉起 8789/8787/8899 |
 | 2026-08-09-agent-server-27b-b-round-findings-and-gate-length-flaw.md | **B 阶段结果+门控 length 缺陷【重大修正】**：冷/热均 21/134（Δ=0 噪声带，注入无净效应）；**核心发现：两臂 84-87% 请求经 finish_reason_length 门控升级到 DeepSeek（max_tokens=200×27B 叙述风格误杀），从未测过纯 27B**——“升级率 0%/本地独立/云端归零”等结论撤回；补救方案 A/B/C 待用户拍板 |
+| 2026-08-09-adversarial-review-experiment-validity.md | **实验有效性对抗性审查【3 路并行，代码行级验证】**：length 缺陷同类 bug 全链路排查，39 项发现（4 critical/21 major/14 minor）——C1 campaign runner 不可运行、C2 判据结构性永绿（escalated 硬编码）、C3 alfworld 134 硬编码致历史控制臂 17 局重放错位、C4 升级结果不过闸且 max_tokens 原样上云；方案 A 两处修正（agent-local 绕门控不成立、pilot 校准+升级率<5% 门槛）；P0/P1/P2 修复分批待拍板；issue-003 登记 |
+| 2026-08-09-gate-length-issue-and-adversarial-review-changes-and-decisions.md | issue-003 登记 + 对抗审查决策记录：agent-local 绕门控否定（routing.py 忽略 model 名）、pilot 校准+升级率门槛、39 项不分拆 issue、不动 quality.py、历史数据不回溯 |
+| 2026-08-09-p0-fixes-changes-and-decisions.md | **P0 修复批次实施【全部落地，测试全绿】**：gateway x-gateway 升级标记（M1）/云端结果观测（C4）/thinking 透传（M9）；campaign runner（C1）与判据 fail-loud（C2）；alfworld 池上界/去重/提取正则/init_prompt（C3/M14-M16/M18）；控制臂 8789/8790（M8）；preflight 指纹（M11）；快照（M10）；流式 include_usage（M2）；system 合并（M5）；issue-003 回归测试两件 + issue-002 补测转正；quality.py 未动；重跑方案 A/B/C 仍待用户拍板 |
 | 2026-08-07-agent-server-experience-production-line.md | **经验生产线标准参照**：分层架构图（L0 模型/L1 路由/L2 经验/L3 进化/L4 运维）+ 双时序图（在线检索注入/离线 ETL-蒸馏-验证-晋升）+ 四条红线 + 实证状态表（27B 进化破零：41 Method+62 Guard） |
 | 2026-08-05-agent-server-c-campaign-design.md | **C 阶段 campaign 设计【判据预注册】**：重复集 20 每日跑 + 新任务 79 七日切片（QwenClawBench 99 任务，seed=42 分层）；判据①重复任务升级率 D7≤5% ②新任务 <20%；D1/D7 同路径对照臂（injection off）；脚手架已交付（plan/metrics/runner + 9 pytest）；启动时机=B 热库出数后 |
 | 2026-08-05-agent-server-web-monitor-changes-and-decisions.md | **Web 监控面板**：`/dashboard` 单页（链路状态/命中率/日志 tail，5s 自刷）+ `/api/status/chain`（self/gateway/omlx/evolution，任何 HTTP 响应即活）+ `/api/logs?lines=N`（logTrace 文件 sink，默认 var/log/agent-server.log）；`AGENT_SERVER_WEB=off` 关三端点（默认 on，数据 API 不 gate）；pkill 误杀 8789 事故入教训 |
@@ -174,6 +177,7 @@
 | plans/2026-07-30-eval-benchmark-pivot-plan.md | E 改道计划 v3：benchmark 替换为 ALFWorld+QwenClawBench+Claw-Eval（三 benchmark 调研结论、臂切换、成本表） |
 | plans/2026-07-30-student-teacher-reconnect-plan.md | 学生-老师链路接回计划：勘察结论（代码行级）+ 三腿实验设计 + S1-S7 执行步骤 + 验收标准 |
 | plans/2026-07-31-agent-self-evolution-roadmap.md | **自进化路线图【用户设计意图 + 已批准】**：四约束（不微调只外挂记忆/harness 自进化/门控→云→学习/相似轨迹合并）；R0 评估收口 → R1 轨迹合并+入库验证 → R2 升级轨迹学习闭环 → R3 harness 自进化（人工审批门） → R4 全本地化决策点；北极星=升级率下降+SR 升+云成本降 |
+| plans/2026-08-09-gate-length-issue-and-adversarial-review-plan.md | issue-003 登记 + 对抗性审查计划【已批准：仅文档交付】：issue 模板与回归测试规划、三路审查方法、39 项发现汇总、P0-P2 修复优先级、执行步骤 |
 
 进度跟踪目录 `doc/design/progress/`：每个里程碑一个进度文件，多 agent 交接 + 断点恢复用；规范见 `progress/README.md`。
 
@@ -281,6 +285,13 @@
 - 【验】E1 smoke-02：两臂各 5/5 通过，实验臂 token +38%（注入开销，冷库注入为空块），session 归档机制验证通过
 - 【废】E2 Terminal-Bench / E3 SWE-bench（2026-07-30 用户拍板）：benchmark 替换为 ALFWorld（E2'）+ QwenClawBench（E3'）+ Claw-Eval 文本子集（E4'）；TB 全量中止（控制臂 8 trial/2 resolved 归档）；wheelhouse/中继/正向代理基础设施保留复用 → 取代记录 `2026-07-30-agent-server-eval-benchmark-pivot-changes-and-decisions.md`
 - 【立】评估 judge 口径：agent=deepseek-v4-flash、judge=deepseek-v4-pro（hybrid 评分对 judge 质量敏感，judge 成本 <$5）
+
+### B 阶段门控 length 缺陷 + 对抗审查（08-09）
+
+- 【废】A 阶段 bisect“27B 升级率 0/147=0%”结论：全量口径 84-87%，小样本不具代表性作废（issue-003）
+- 【改】重跑方案 A 补充观察“冷库臂 agent-local 绕门控”被代码核查否定：routing.py V1 忽略 model 名 → 双臂统一 agent-auto + max_tokens pilot 校准（5 局定 800/1024）+ 验收门槛 model_runs length 升级率 <5%
+- 【留】对抗性审查 39 项发现（4 critical/21 major/14 minor）→ P0/P1/P2 修复分批待用户拍板；历史数据影响：alfworld-20260730 控制臂 17/134 局重放错位（C3），引用需注明口径
+- 【立】方法论纪律：度量必须与现象同源（C2 教训）；烟囱测试通过 ≠ 真实运行可信；A/B 审计清单=臂间差异恰好等于处理变量
 
 ---
 

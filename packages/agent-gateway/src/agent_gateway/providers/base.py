@@ -102,6 +102,13 @@ def parse_chat_response(body: object) -> ModelResult:
     content = message.get("content")
     if content is not None and not isinstance(content, str):
         raise _invalid("upstream message content is not a string")
+    # M9: reasoning models (e.g. thinking-on defaults) answer in
+    # `reasoning_content` with content=null; merge it so the empty_output
+    # quality gate does not fire on a perfectly good reply.
+    if content is None:
+        reasoning = message.get("reasoning_content")
+        if isinstance(reasoning, str) and reasoning:
+            content = reasoning
 
     tool_calls: tuple[ToolCallResult, ...] | None = None
     raw_tool_calls = message.get("tool_calls")

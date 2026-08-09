@@ -172,6 +172,9 @@ function toGatewayRequest(
 	if (options.maxTokens !== undefined) req.max_tokens = options.maxTokens;
 	if (options.stop !== undefined) req.stop = options.stop;
 	if (options.thinking !== undefined) req.thinking = options.thinking;
+	// M2 (adversarial review 2026-08-09): request the usage chunk so token
+	// observability survives the stream (gateway omits it otherwise).
+	req.stream_options = { include_usage: true };
 	return req;
 }
 

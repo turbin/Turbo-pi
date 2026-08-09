@@ -3,15 +3,20 @@
 
 输入：结果 JSONL 行（每天每任务一行）：
   {day, task_id, kind: "repeat"|"new", arm: "experiment"|"control",
-   score: 0..1, passed: bool, escalated: bool, requests: int}
+   score: 0..1, passed: bool, escalated: bool, requests: int,
+   trace_ids: [gateway trace ids]}
 
 判据（预注册，doc/design/2026-08-05-agent-server-c-campaign-design.md）：
   ① 重复任务升级率 D7 ≤ 5%（实验臂）
   ② 新任务升级率（全程）< 20%（实验臂）
   ③ 升级率逐日下降趋势 + 成本/错误分布同报（报告中呈现，不在此断言）
+
+C2（2026-08-09 对抗审查）："escalated" 必须真实标注（运行时 x-gateway 标记或
+model_runs 回填）；未标注的行一律 fail loud，绝不当作 0 升级率放行。
 """
 
 import json
+import sqlite3
 from pathlib import Path
 
 CRITERION_REPEAT_D7_MAX = 0.05
@@ -22,9 +27,45 @@ def load_results(path: Path) -> list[dict]:
     return [json.loads(line) for line in Path(path).read_text().splitlines() if line.strip()]
 
 
+def annotate_escalation(rows: list[dict], gateway_db: Path) -> list[dict]:
+    """C2: join gateway model_runs——按 trace_id 回填缺失的 escalated 标记。
+
+    model_runs 是升级事实的唯一 ground truth；运行时 x-gateway 标记缺失时
+    （旧结果、直连路径）用这张表补标。只补"escalated"缺失的行。
+    """
+    if not gateway_db.exists():
+        raise FileNotFoundError(f"gateway database not found: {gateway_db}")
+    con = sqlite3.connect(f"file:{gateway_db}?mode=ro", uri=True)
+    try:
+        rows_table = con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='model_runs'").fetchall()
+        if not rows_table:
+            raise ValueError(f"gateway database {gateway_db} has no model_runs table")
+        escalated_trace_ids = {
+            r[0]
+            for r in con.execute(
+                "SELECT DISTINCT trace_id FROM model_runs WHERE purpose='escalation' AND state='succeeded'"
+            )
+        }
+    finally:
+        con.close()
+    out = []
+    for row in rows:
+        if "escalated" not in row:
+            row = {**row, "escalated": any(t in escalated_trace_ids for t in row.get("trace_ids", []))}
+        out.append(row)
+    return out
+
+
 def escalation_rate(rows: list[dict]) -> float:
+    """C2: 未标注 escalated 的行拒绝出结论（fail loud），绝不静默当作 0。"""
     if not rows:
         return 0.0
+    unmarked = [r for r in rows if "escalated" not in r]
+    if unmarked:
+        raise ValueError(
+            f"{len(unmarked)}/{len(rows)} result rows lack the 'escalated' marker — "
+            "annotate with gateway model_runs first (issue-003 C2: unmarked rows must not pass criteria)"
+        )
     return sum(1 for r in rows if r.get("escalated")) / len(rows)
 
 

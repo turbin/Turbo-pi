@@ -141,6 +141,31 @@ describe("toOpenAIRequest", () => {
 		expect(req.messages[1]).toEqual({ role: "user", content: "帮我 review 代码" });
 	});
 
+	// M5 (adversarial review 2026-08-09): when the caller already has a system
+	// message, the injected systemPrompt (skill catalog) must merge INTO it —
+	// never become a second system message. Control arm is
+	// [system(harness), user], so the experiment arm must stay
+	// [system(harness + catalog), user(evidence), user], not
+	// [system(catalog), system(harness), user(evidence), user]: the prompt
+	// skeleton is then arm-symmetric and stable as the catalog grows.
+	it("merges injected systemPrompt into the existing system message (M5)", () => {
+		const payload = {
+			messages: [
+				{ role: "system", content: "You are the harness." },
+				userMsg("do the task"),
+			] as InjectionPayload["messages"],
+			systemPrompt: "<available_skills>\n- skill-a\n</available_skills>",
+		};
+		const req = toOpenAIRequest(payload, model);
+		const systemMessages = req.messages.filter((m) => m.role === "system");
+		expect(systemMessages).toHaveLength(1);
+		expect(req.messages[0]).toEqual({
+			role: "system",
+			content: "You are the harness.\n\n<available_skills>\n- skill-a\n</available_skills>",
+		});
+		expect(req.messages[1]).toEqual({ role: "user", content: "do the task" });
+	});
+
 	it("passes through OpenAI-shaped assistant tool_calls and tool_call_id", () => {
 		const payload = {
 			messages: [

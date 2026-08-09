@@ -123,6 +123,64 @@ def test_build_request_omits_unset_optionals() -> None:
     assert "temperature" not in body
 
 
+def test_build_request_forwards_thinking_when_flag_set() -> None:
+    """M9: forward_thinking=True 时 thinking 进 payload（omlx/kimi 两条路径都传 True）。"""
+    body = build_chat_request(make_envelope(thinking={"type": "disabled"}), model="m", forward_thinking=True)
+    assert body["thinking"] == {"type": "disabled"}
+
+
+async def test_complete_forwards_thinking_to_local_omlx() -> None:
+    """M9: omlx 本地路径必须透传 thinking——否则 reasoning 模型默认 thinking-on
+    时 content=null 会被误判 empty_output 升级。"""
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json=GOOD_RESPONSE_BODY)
+
+    provider = make_provider(handler)
+    await provider.complete(make_envelope(thinking={"type": "disabled"}))
+    assert seen["body"]["thinking"] == {"type": "disabled"}
+
+
+def test_parse_response_merges_reasoning_content_when_content_empty() -> None:
+    """M9: 上游只回 reasoning_content 时并入 content，避免 empty_output 误判。"""
+    result = parse_chat_response(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "reasoning_content": "让我想想……",
+                    },
+                    "finish_reason": "stop",
+                }
+            ]
+        }
+    )
+    assert result.content == "让我想想……"
+    assert result.finish_reason == "stop"
+
+
+def test_parse_response_keeps_content_when_reasoning_present() -> None:
+    result = parse_chat_response(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "正式回答",
+                        "reasoning_content": "内部推理",
+                    },
+                    "finish_reason": "stop",
+                }
+            ]
+        }
+    )
+    assert result.content == "正式回答"
+
+
 # --- parse_chat_response (pure parsing) ---
 
 

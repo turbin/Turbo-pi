@@ -35,6 +35,11 @@ def format_sse_event(payload: dict) -> bytes:
     return _sse(payload)
 
 
+def format_sse_comment(name: str, payload: dict) -> bytes:
+    """Format a JSON payload as an SSE comment line (ignored by SSE parsers)."""
+    return f": {name} {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
+
+
 def usage_payload(result: ModelResult) -> dict:
     prompt_tokens = result.prompt_tokens or 0
     completion_tokens = result.completion_tokens or 0

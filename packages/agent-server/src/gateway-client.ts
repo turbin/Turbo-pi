@@ -8,6 +8,7 @@ import type { OpenAIChatRequest } from "./openai-compat.ts";
  */
 export interface GatewayChatRequest extends OpenAIChatRequest {
 	stream?: boolean;
+	stream_options?: { include_usage?: boolean };
 	temperature?: number;
 	max_tokens?: number;
 	stop?: string | string[];
@@ -43,7 +44,11 @@ export class GatewayClient {
 	}
 
 	async stream(body: GatewayChatRequest): Promise<ReadableStream<Uint8Array>> {
-		const resp = await this.post({ ...body, stream: true });
+		// M2 (adversarial review 2026-08-09): always request the usage chunk —
+		// without stream_options.include_usage the gateway omits it and
+		// request_traces/alfworld usage stays all zeros, hiding length-flaw
+		// signatures (completion_tokens pinned at the cap).
+		const resp = await this.post({ ...body, stream: true, stream_options: { include_usage: true } });
 		if (!resp.body) throw new Error("gateway error: no response body");
 		return resp.body;
 	}

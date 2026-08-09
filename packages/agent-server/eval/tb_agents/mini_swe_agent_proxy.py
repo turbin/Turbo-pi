@@ -12,12 +12,12 @@ template (mini-swe-setup.sh.j2 in the same directory) to install offline from
 /wheelhouse first, falling back to the Tsinghua PyPI mirror over the network.
 
 Usage:
-    # Control arm (direct DeepSeek)
-    OPENAI_BASE_URL=https://api.deepseek.com/v1 OPENAI_API_KEY=<key> \
+    # Control arm (agent-server :8790, AGENT_SERVER_INJECTION=off, M8)
+    OPENAI_BASE_URL=http://host.docker.internal:8790/v1 OPENAI_API_KEY=<key> \
     tb run -d terminal-bench-core --agent-import-path eval.tb_agents.mini_swe_agent_proxy:MiniSweAgentProxy \
       -m openai/deepseek-v4-flash
 
-    # Experiment arm (via agent-server)
+    # Experiment arm (via agent-server :8789, injection on)
     OPENAI_BASE_URL=http://host.docker.internal:8789/v1 OPENAI_API_KEY=dummy \
     tb run -d terminal-bench-core --agent-import-path eval.tb_agents.mini_swe_agent_proxy:MiniSweAgentProxy \
       -m openai/deepseek-v4-flash
