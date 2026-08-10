@@ -37,6 +37,7 @@ sys.path.insert(0, str(HARNESS_REF))  # vendored QCB lib_tasks/lib_grading
 AGENT_SERVER = "http://127.0.0.1:8789/v1"
 MAX_TURNS = 30
 RETRY_BASE_SECONDS = 30  # 测试可 monkeypatch 为 0
+TOOL_TIMEOUT_SECONDS = 120  # 单条 bash 命令上限；超时作为观察返回而非炸批
 PASS_THRESHOLD = 0.5
 
 BASH_TOOL = {
@@ -145,14 +146,21 @@ def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int,
         messages.append(msg.model_dump())
         for call in msg.tool_calls:
             args = json.loads(call.function.arguments or "{}")
-            proc = subprocess.run(
-                ["bash", "-c", args.get("command", "")],
-                cwd=ws,
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-            output = (proc.stdout + proc.stderr)[:8000]
+            try:
+                proc = subprocess.run(
+                    ["bash", "-c", args.get("command", "")],
+                    cwd=ws,
+                    capture_output=True,
+                    text=True,
+                    timeout=TOOL_TIMEOUT_SECONDS,
+                )
+                output = (proc.stdout + proc.stderr)[:8000]
+            except subprocess.TimeoutExpired:
+                # D2 事故：agent 的大范围 find（1T 外置盘）撞 120s 上限，
+                # TimeoutExpired 未捕获杀死整批。超时转为观察让 agent 自行调整。
+                output = f"[command timed out after {TOOL_TIMEOUT_SECONDS}s — narrow the command scope]"
+            except OSError as e:
+                output = f"[command failed to start: {e}]"
             transcript.append({"type": "message", "message": {"role": "toolResult", "content": [output[:500]]}})
             messages.append({"role": "tool", "tool_call_id": call.id, "content": output})
     return {

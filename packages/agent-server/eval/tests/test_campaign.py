@@ -379,6 +379,61 @@ def test_run_agent_gives_up_after_max_retries(tmp_path):
         campaign.run_agent(client, "agent-auto", "t", tmp_path, timeout_s=60, injection=False)
 
 
+def test_run_agent_tool_timeout_returns_observation_not_crash(tmp_path):
+    """2026-08-10 D2 事故：agent 发起的大范围 find 扫描撞 120s 工具超时，
+    TimeoutExpired 未捕获杀死整批。工具超时必须作为观察返回给 agent。"""
+    import types
+
+    import campaign
+
+    campaign.RETRY_BASE_SECONDS = 0
+    campaign.TOOL_TIMEOUT_SECONDS = 1  # 测试提速
+
+    class MsgWithCall:
+        content = None
+        tool_calls = [
+            types.SimpleNamespace(
+                id="call_1",
+                function=types.SimpleNamespace(name="bash", arguments='{"command": "sleep 5"}'),
+            )
+        ]
+
+        def model_dump(self):
+            return {"role": "assistant", "content": None, "tool_calls": []}
+
+    class MsgFinal:
+        content = "understood, adapting"
+        tool_calls = None
+
+        def model_dump(self):
+            return {"role": "assistant", "content": "understood, adapting"}
+
+    class Resp:
+        def __init__(self, msg):
+            self.id = "chatcmpl-fake-3"
+            self.headers = {}
+            self.choices = [types.SimpleNamespace(message=msg)]
+
+    class Completions:
+        def __init__(self):
+            self.n = 0
+
+        def create(self, **kwargs):
+            self.n += 1
+            return Resp(MsgWithCall() if self.n == 1 else MsgFinal())
+
+    client = types.SimpleNamespace(chat=types.SimpleNamespace(completions=Completions()))
+    result = campaign.run_agent(client, "agent-auto", "t", tmp_path, timeout_s=60, injection=False)
+    assert result["status"] == "completed"
+    # 工具超时被转换为 toolResult 观察而不是异常
+    tool_results = [
+        e for e in result["transcript"]
+        if e.get("message", {}).get("role") == "toolResult"
+    ]
+    assert tool_results, "expected a toolResult entry for the timed-out command"
+    assert "timed out" in tool_results[0]["message"]["content"][0]
+
+
 def test_completed_keys_for_resume(tmp_path):
     import json
 
