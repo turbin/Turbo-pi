@@ -36,6 +36,7 @@ sys.path.insert(0, str(HARNESS_REF))  # vendored QCB lib_tasks/lib_grading
 
 AGENT_SERVER = "http://127.0.0.1:8789/v1"
 MAX_TURNS = 30
+RETRY_BASE_SECONDS = 30  # 测试可 monkeypatch 为 0
 PASS_THRESHOLD = 0.5
 
 BASH_TOOL = {
@@ -100,12 +101,26 @@ def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int,
             transcript.append({"type": "message", "message": {"role": "assistant", "content": [{"type": "text", "text": "[timeout]"}]}})
             break
         requests += 1
-        resp = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            tools=[BASH_TOOL],
-            extra_body={"injection": injection},
-        )
+        # 27B 慢回合 latency 可达 700-950s（D1 事故：单次 APITimeout 杀死整日
+        # 批次）。瞬时 API 错误重试，指数退避；重试耗尽才向外抛。
+        resp = None
+        last_err: Exception | None = None
+        for attempt in range(4):
+            try:
+                resp = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    tools=[BASH_TOOL],
+                    extra_body={"injection": injection},
+                )
+                break
+            except Exception as e:  # noqa: BLE001 - APITimeout/Connection/5xx 均为瞬时
+                last_err = e
+                wait = RETRY_BASE_SECONDS * (2**attempt)
+                print(f"  llm error ({type(e).__name__}); retry {attempt + 1}/4 in {wait}s", file=sys.stderr)
+                time.sleep(wait)
+        if resp is None:
+            raise RuntimeError(f"llm failed after 4 attempts: {last_err}")
         trace_ids.append(getattr(resp, "id", ""))
         escalated = escalated or bool(_gateway_marker(resp).get("escalated"))
         msg = resp.choices[0].message
@@ -212,11 +227,18 @@ def main() -> None:
     out_dir = EVAL_DIR / "results" / args.run_id
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "run.jsonl"
-    client = OpenAI(base_url=AGENT_SERVER, api_key="lobster-local-key", timeout=300.0)
+    # 单请求可能 15min+（27B 长输出），客户端超时必须大于最慢回合。
+    client = OpenAI(base_url=AGENT_SERVER, api_key="lobster-local-key", timeout=1800.0)
+    done = completed_keys(out_path)
+    if done:
+        print(f"resume: {len(done)} tasks already completed, skipping")
 
     with open(out_path, "a") as out:
         for arm, ids in arms.items():
             for i, task_id in enumerate(ids):
+                if (args.day, arm, task_id) in done:
+                    print(f"[{arm} {i + 1}/{len(ids)}] {task_id} skip (done)")
+                    continue
                 kind = "repeat" if task_id in set(batch["repeat"]) else "new"
                 meta = next(t for t in tasks if t.id == task_id)
                 ws = setup_workspace(task_id, out_dir / f"day{args.day}" / arm)
@@ -259,6 +281,19 @@ def main() -> None:
                 out.write(json.dumps(row, ensure_ascii=False) + "\n")
                 out.flush()
                 print(f"[{arm} {i + 1}/{len(ids)}] {task_id} score={g['score']:.2f}")
+
+
+def completed_keys(results_path: Path) -> set[tuple[int, str, str]]:
+    """断点续跑：已从 run.jsonl 完成的 (day, arm, task_id) 集合。缺文件返回空集。"""
+    if not results_path.exists():
+        return set()
+    done: set[tuple[int, str, str]] = set()
+    for line in results_path.read_text().splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        done.add((int(row["day"]), str(row["arm"]), str(row["task_id"])))
+    return done
 
 
 def task_prompt(task_id: str) -> str:

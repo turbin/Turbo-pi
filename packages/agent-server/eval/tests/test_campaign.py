@@ -322,3 +322,74 @@ def test_run_agent_accepts_injection_kwarg_and_records_marker(tmp_path):
     assert result["status"] == "completed"
     assert result["trace_ids"] == ["chatcmpl-fake-1"]
     assert result["escalated"] is True
+
+
+# ── 2026-08-09 D1 事故：单请求 APITimeout 杀死整日批次（red-first）────────
+
+
+def test_run_agent_retries_transient_api_errors(tmp_path):
+    """27B 慢回合 latency 可达 700-950s；单次 APITimeoutError 不得杀死批次。"""
+    import types
+
+    import campaign
+    import openai
+
+    campaign.RETRY_BASE_SECONDS = 0
+    calls = {"n": 0}
+
+    class Msg:
+        content = "ok"
+        tool_calls = None
+
+        def model_dump(self):
+            return {"role": "assistant", "content": "ok"}
+
+    class Resp:
+        id = "chatcmpl-fake-2"
+        headers = {}
+        choices = [types.SimpleNamespace(message=Msg())]
+
+    class Completions:
+        def create(self, **kwargs):
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise openai.APITimeoutError(request=None)
+            return Resp()
+
+    client = types.SimpleNamespace(chat=types.SimpleNamespace(completions=Completions()))
+    result = campaign.run_agent(client, "agent-auto", "t", tmp_path, timeout_s=60, injection=False)
+    assert calls["n"] == 3
+    assert result["status"] == "completed"
+
+
+def test_run_agent_gives_up_after_max_retries(tmp_path):
+    import types
+
+    import campaign
+    import openai
+
+    campaign.RETRY_BASE_SECONDS = 0
+
+    class Completions:
+        def create(self, **kwargs):
+            raise openai.APIConnectionError(request=None)
+
+    client = types.SimpleNamespace(chat=types.SimpleNamespace(completions=Completions()))
+    with pytest.raises(Exception):
+        campaign.run_agent(client, "agent-auto", "t", tmp_path, timeout_s=60, injection=False)
+
+
+def test_completed_keys_for_resume(tmp_path):
+    import json
+
+    import campaign
+
+    p = tmp_path / "run.jsonl"
+    p.write_text(
+        "\n".join([
+            json.dumps({"day": 1, "arm": "experiment", "task_id": "task_a"}),
+            json.dumps({"day": 1, "arm": "control", "task_id": "task_a"}),
+        ])
+    )
+    assert campaign.completed_keys(p) == {(1, "experiment", "task_a"), (1, "control", "task_a")}
+    assert campaign.completed_keys(tmp_path / "missing.jsonl") == set()
