@@ -254,7 +254,7 @@ def main() -> None:
                 execution = run_agent(
                     client, args.model, task_prompt(task_id), ws, meta.timeout_seconds, injection=arm == "experiment"
                 )
-                g = grade(task_id, execution, ws)
+                g = safe_grade(task_id, execution, ws)
                 # 轨迹落盘（夜间进化的原料）：每任务一份完整 transcript，
                 # 缺失即无进化输入——合成器对它硬失败。
                 traj_dir = out_dir / "transcripts" / f"day{args.day}"
@@ -289,6 +289,28 @@ def main() -> None:
                 out.write(json.dumps(row, ensure_ascii=False) + "\n")
                 out.flush()
                 print(f"[{arm} {i + 1}/{len(ids)}] {task_id} score={g['score']:.2f}")
+
+
+def safe_grade(task_id: str, execution: dict, ws: Path) -> dict:
+    """评分崩溃降级为 grading_error 行（score=0），不杀死批次。
+
+    issue-011：QCB 任务内嵌评分脚本自身有 bug（如 readme_content 未绑定——
+    agent 未产出 README 时触发 UnboundLocalError），exec 评分代码的异常
+    不得穿透到批次层。
+    """
+    try:
+        g = grade(task_id, execution, ws)
+        g["grading_error"] = False
+        return g
+    except Exception as e:  # noqa: BLE001 - vendored 评分代码异常不可枚举
+        return {
+            "task_id": task_id,
+            "score": 0.0,
+            "grading_type": "error",
+            "breakdown": {},
+            "notes": f"grading crashed: {type(e).__name__}: {e}",
+            "grading_error": True,
+        }
 
 
 def completed_keys(results_path: Path) -> set[tuple[int, str, str]]:

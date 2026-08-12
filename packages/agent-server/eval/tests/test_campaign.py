@@ -434,6 +434,21 @@ def test_run_agent_tool_timeout_returns_observation_not_crash(tmp_path):
     assert "timed out" in tool_results[0]["message"]["content"][0]
 
 
+def test_safe_grade_degrades_on_grader_crash(tmp_path, monkeypatch):
+    """issue-011：任务内嵌评分脚本自身 bug（UnboundLocalError 等）不得杀死批次。"""
+    import campaign
+
+    def boom(task_id, execution, ws):
+        raise UnboundLocalError("cannot access local variable 'readme_content'")
+
+    monkeypatch.setattr(campaign, "grade", boom)
+    g = campaign.safe_grade("task_x", {}, tmp_path)
+    assert g["grading_error"] is True
+    assert g["score"] == 0.0
+    assert g["grading_type"] == "error"
+    assert "readme_content" in g["notes"]
+
+
 def test_completed_keys_for_resume(tmp_path):
     import json
 
