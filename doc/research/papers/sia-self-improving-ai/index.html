@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SIA：通过支架与权重更新实现自我改进的 AI（中文翻译）</title>
+<style>
+body { font-family: -apple-system, "Songti SC", "Noto Serif CJK SC", Georgia, serif; max-width: 860px; margin: 2em auto; padding: 0 1.2em; line-height: 1.75; color: #1a1a1a; }
+h1 { font-size: 1.5em; line-height: 1.4; }
+h2 { font-size: 1.25em; margin-top: 1.8em; border-bottom: 1px solid #ddd; padding-bottom: .2em; }
+h3 { font-size: 1.1em; margin-top: 1.4em; }
+h4 { font-size: 1em; margin-top: 1.2em; }
+.authors { color: #444; }
+.meta { background: #f6f6f6; border-left: 4px solid #888; padding: .6em 1em; font-size: .9em; color: #444; }
+figure { margin: 1.6em 0; text-align: center; }
+figure img { max-width: 100%; border: 1px solid #e0e0e0; border-radius: 4px; }
+figcaption { font-size: .88em; color: #555; text-align: left; margin-top: .5em; }
+table { border-collapse: collapse; width: 100%; margin: 1.2em 0; font-size: .9em; }
+th, td { border: 1px solid #ccc; padding: .4em .6em; text-align: left; vertical-align: top; }
+caption { font-weight: bold; text-align: left; margin-bottom: .4em; }
+pre { background: #f6f8fa; padding: .8em; overflow-x: auto; border-radius: 4px; }
+code { background: #f0f0f0; padding: 0 .25em; border-radius: 3px; }
+pre code { background: none; padding: 0; }
+.refs p { font-size: .85em; margin: .35em 0; text-align: justify; }
+blockquote { border-left: 3px solid #bbb; margin-left: 0; padding-left: 1em; color: #444; }
+</style>
+</head>
+<body>
+
+<div class="meta">
+原文：SIA: Self Improving AI with Harness &amp; Weight Updates<br>
+作者：Prannay Hebbar, Yogendra Manawat, Samuel Verboomen, Alesia Ivanova, Selvam Palanimalai, Kunal Bhatia, Vignesh Baskaran<br>
+arXiv:2605.27276v2 [cs.AI]，2026-05-28，https://arxiv.org/abs/2605.27276<br>
+来源：Zotero 本地文库（Item MDVLNC7T）；全文中文翻译由 AI 完成（pi 子任务分块翻译 + 主会话汇总），仅供参考。<br>
+说明：正文完整翻译；图 1/4/5/6 为 PDF 内嵌位图原图，图 2/3 为矢量图高清渲染；文末参考文献保留英文原文。
+</div>
+
+<h1>SIA：通过支架与权重更新实现自我改进的 AI（SIA: Self Improving AI with Harness &amp; Weight Updates）</h1>
+
+<p class="authors">Prannay Hebbar<sup>∗1</sup>, Yogendra Manawat<sup>∗1</sup>, Samuel Verboomen<sup>2</sup>, Alesia Ivanova<sup>4</sup>, Selvam Palanimalai<sup>3</sup>, Kunal Bhatia<sup>1</sup>, Vignesh Baskaran<sup>1</sup><br>
+<em>∗同等贡献。</em><br>
+1 Hexo Labs Palo Alto（帕洛阿尔托）· 2 Hexo Labs Brussels（布鲁塞尔）· 3 Hexo Labs Toronto（多伦多）· 4 牛津大学（University of Oxford）</p>
+
+<p class="keywords"><strong>关键词（Keywords）：</strong>自改进智能体（Self-Improving Agents）、测试时训练（Test-Time Training）、强化学习（Reinforcement Learning）、支架工程（Harness Engineering）、支架生成（Scaffold Generation）</p>
+
+<h2>摘要（Abstract）</h2>
+
+<p>构建和改进 AI 的瓶颈在于人类。无论是模型还是包裹模型的智能体，都由人来编写、调优和纠错。让 AI 能够自行摸索出自我改进之法的长期目标仍然悬而未决。两条大体互不相通的研究线都在攻克这一瓶颈。<strong>支架更新（harness update）学派</strong>用一个元智能体（meta-agent）重写任务特定智能体的支架（scaffold，即其工具、提示词、重试逻辑与搜索流程），同时保持模型权重固定；<strong>测试时训练（test-time training）学派</strong>则使用手写的强化学习（RL）流水线，在保持支架固定的前提下，根据任务反馈更新模型自身的权重。这两个阵营相互隔离、各自为战。我们提出 <strong>SIA</strong>——一个自我改进循环：由语言模型智能体（<strong>Feedback-Agent</strong>）同时更新任务特定智能体的<strong>支架</strong>与<strong>权重</strong>。我们在三个差异显著的任务域上进行评估：中文罪名分类、底层 GPU 内核优化与单细胞 RNA 去噪。在所有三个基准上，同时动用两个杠杆（lever）的效果均优于仅迭代支架。SIA-W+H 在 LawBench 上超出此前 SOTA 25.1%，GPU 内核比此前 SOTA 快 12.4%（1,017 vs 1,161 μs），去噪任务超出此前 SOTA 20.4%。支架更新使智能体更具能动性（agentic），塑造其搜索与行动的方式；而权重更新则构建了任何提示词或支架都无法灌输的领域直觉。</p>
+
+<h2>1. 引言（Introduction）</h2>
+
+<h3>1.1 人类是瓶颈（Humans are the bottleneck）</h3>
+<p>当今 AI 的进展受限于人类这一速率瓶颈。模型由研究者设计并做后训练，构建于其上的智能体则由工程师搭建支架、编写提示词、调试并调优。该领域的长期目标——能够自行找出自我改进之法的 AI（模型或智能体）——仍然悬而未决。我们将本文视为迈向该目标的具体一步：一个系统，只需给定任务规格说明（task specification）与一个验证器（verifier）（二者均在 §3 中定义），即可在无需进一步人工干预的情况下同时改进其支架与模型权重。</p>
+
+<h3>1.2 自我改进 AI 的两大阵营（Two silos of self-improving AI）</h3>
+<p>关于自动化自我改进的研究已分化为两个大体互不相通的阵营（silo），如下所述。</p>
+
+<p><strong>阵营 1：支架/脚手架自我改进（Harness/scaffold self-improvement）。</strong>元智能体逐代重写任务特定智能体的支架——包括其系统提示词、工具调度逻辑、重试策略与答案抽取代码——同时底层语言模型的权重保持固定。近期的代表工作包括 Darwin Gödel Machine（Zhang et al., 2025）、Meta-Harness（Lee et al., 2026）、Hyperagents（Zhang et al., 2026），以及更广泛的自动化智能体系统设计研究线（Hu et al., 2024）。该阵营中反复出现的经验观察是：支架修改集中在软件工程层面的"卫生"问题——解析、重试、调度——而很少带来基础模型在任何提示词下都无法产生的领域特定推理。</p>
+
+<p><strong>阵营 2：测试时后训练（Test-time post-training）。</strong>一条手写的 RL 流水线在测试时根据任务反馈更新模型自身的权重，通常将支架固定为单一的"提示词 + 评分器"模板。代表工作包括 TTRL（Zuo et al., 2025）、Discover 测试时训练系列（Yuksekgonul et al., 2026），以及 TTT 惊人有效性结果（Akyürek et al., 2024）。此处的收益来自内部策略的变更，但带来这一收益的流水线本身由人类设计，且不会适应一个带支架的智能体所暴露出的任务结构。</p>
+
+<p><strong>缺口（The gap）。</strong>这两个阵营相互隔离、各自为战。支架方向的工作使模型保持固定；测试时训练则使支架保持固定。</p>
+
+<h3>1.3 贡献（Contributions）</h3>
+<ul>
+<li>我们提出并评估了一个 <strong>Feedback-Agent</strong>，它在进行支架更新的同时，<em>还</em>训练任务特定智能体的权重，以提升任意下游任务的性能。该系统与任务无关：给定任务规格说明与验证器，它既能产出演化后的支架，也能产出一组经 RL 适配的低秩适配（Low-Rank Adaptation，LoRA；Hu et al., 2022）权重。</li>
+<li>我们在<em>三个对比鲜明的任务域</em>上实证检验了组合方法——法律（191 类中文罪名分类；Fei et al., 2023）、系统（H100 上的 Triton 内核优化；Novikov et al., 2025）与生物学（单细胞 RNA 去噪；van Dijk et al., 2018）——并观察到相对于此前 SOTA 的一致提升：LawBench 上提升 25.1%（70.1% vs 45.0%），GPU 内核提速 12.4%（1,017 vs 1,161 μs），去噪提升 20.4%（mse norm 0.289 vs 0.240）。</li>
+<li>我们单独剥离出<em>仅支架</em>的贡献（跨多次迭代的支架更新轨迹），并将其与完整流水线（支架 + 权重更新）对比，证明权重更新带来了仅靠支架无法取得的额外增益。</li>
+</ul>
+
+<h3>1.4 路线图（Roadmap）</h3>
+<p>§2 陈述本文回答的研究问题，并将每个问题映射到后续章节。§3 界定技术词汇。§4 将 SIA 置于自我改进与测试时训练工作的版图中。§5 描述可配置循环（configurable-loop）方法。§6 给出各任务的实验结果与消融。§7 讨论每个杠杆各自改变了什么。§8 与 §9 以局限性与未来工作收尾。</p>
+
+<figure>
+<img src="images/page02_0_image.jpg" alt="Figure 1">
+<figcaption>图 1：SIA 在三个不同任务上的表现。每个面板比较三个运行点：基线（Baseline，第一代，无 SIA）、SIA-H（仅支架更新）与 SIA-W+H（支架 + 权重更新），指标分别为 LawBench Top-1 准确率、TriMul CUDA 加速与 scRNA-seq 去噪的 mse norm。虚线标记此前的最先进水平（SOTA）。SIA-W+H 在所有三个任务上均严格优于 SIA-H。（Figure 1. SIA across three diverse tasks. Each panel compares three operating points: Baseline (first generation, no SIA), SIA-H (harness updates only), and SIA-W+H (harness + weight updates), on LawBench Top-1 accuracy, TriMul CUDA speedup, and scRNA-seq denoising mse norm. The dashed line marks the previous state-of-the-art. SIA-W+H strictly outperforms SIA-H on all three tasks.）</figcaption>
+</figure>
+
+<h2>2. 研究问题（Research Questions）</h2>
+<p>本文围绕两个研究问题展开，每个问题都由后文特定章节回答。</p>
+<ul>
+<li><strong>RQ1 总体论点（Overall thesis）。</strong>我们首先考察：当模型权重保持固定时，仅靠支架迭代能在多大程度上改进一个任务特定智能体。随后我们考察：在同一循环中迭代地同时更新支架<em>与</em>模型权重，能否突破仅支架的天花板。组合方法是否优于仅迭代支架，并且在差异显著的任务域中是否仍然成立？</li>
+<li><strong>RQ2 机制：每个杠杆各自改变了什么（Mechanism: what does each lever change）？</strong>权重更新是否浮现出任何支架修改都无法触及的领域知识？支架迭代是否产生了质不同的（外部基础设施层面的）变化？</li>
+</ul>
+
+<h2>3. 背景与预备知识（Background and Preliminaries）</h2>
+
+<h3>3.1 智能体及其组成部分（Agent and its components）</h3>
+<p>任务特定智能体（task-specific agent）是一个接收任务实例并产出答案的程序。我们将其分解为以下部分：</p>
+<ul>
+<li><strong>LLM。</strong>具有权重 θ 的底层语言模型。我们全程使用 <code>openai/gpt-oss-120b</code> 作为基础模型。</li>
+<li><strong>系统提示词（System prompt）。</strong>附加在每次模型调用之前、用以框定任务的固定文本。</li>
+<li><strong>工具调度逻辑（Tool-dispatch logic）。</strong>解析模型工具调用输出并将其路由到各处理器（文件 I/O、代码执行、数据集查询、评分器调用）的 Python 代码。</li>
+<li><strong>答案抽取（Answer extraction）。</strong>将模型响应（通常是结构化的结尾块）转换为基准格式预测的代码。</li>
+<li><strong>评分器（Grader）。</strong>编排器（orchestrator）调用的确定性验证器，用于计算每个实例的奖励。</li>
+</ul>
+<p>我们全程将智能体中固定不变、非权重的组成部分称为<strong>支架（scaffold，亦作 harness）</strong>。它是系统提示词、工具调度逻辑、答案抽取以及任何支撑性基础设施的并集——即智能体中所有固定代码而非模型输出的部分。</p>
+
+<h3>3.2 元智能体 vs. 任务特定智能体（Meta-agent vs. task-specific agent）</h3>
+<p>元智能体（meta-agent）是一种 LLM 调用，其输出本身就是一个智能体。SIA 使用两个元智能体：</p>
+<ul>
+<li><strong>Meta-Agent（M）。</strong>根据任务规格说明 U 以及基准附带提供的任何参考实现 R，生成初始支架 A<sub>1</sub>：<br>
+<code>A1 = M(U, R)</code></li>
+<li><strong>Feedback-Agent（F）。</strong>读取上一代的支架 A<sub>g</sub>、其执行轨迹 τ<sub>g</sub> 与性能指标 E<sub>g</sub>，并综合出改进后的支架：<br>
+<code>A<sub>g+1</sub> = F(A<sub>g</sub>, τ<sub>g</sub>, E<sub>g</sub>, U)</code></li>
+</ul>
+<p>任务特定智能体即第 g 代中实际对评估数据集执行任务的支架 A<sub>g</sub>。</p>
+
+<h3>3.3 轨迹与反馈循环（Trajectory and feedback loop）</h3>
+<p>与仅依据聚合指标进行改进的系统不同，F 接收完整的轨迹 τ<sub>g</sub>——即 A<sub>g</sub> 在 D（评估数据集）上运行所得到的完整结构化执行日志：每个任务实例的每条提示词、模型响应、工具调用、工具结果与抽取答案。这使得 F 能够诊断具体的失败模式，而不是对汇总统计量做出反应。</p>
+<p>每一代 g 都遵循三阶段协议：</p>
+<ol>
+<li><strong>执行（Execution）。</strong>A<sub>g</sub> 在沙箱内运行于 D 之上：对数据集目录只读访问，对工作目录读写访问。捕获轨迹 τ<sub>g</sub>。</li>
+<li><strong>分析（Analysis）。</strong>F 接收 A<sub>g</sub> 的源代码、τ<sub>g</sub>、指标 E<sub>g</sub>，以及（可选）用于抑制单实例过拟合的示例任务描述。</li>
+<li><strong>改进（Improvement）。</strong>F 产出两件产物：一份改进报告（散文式分析与提议的修改）以及下一代智能体 A<sub>g+1</sub>。</li>
+</ol>
+
+<h3>3.4 符号表（Symbol table）</h3>
+<table>
+<caption>表 1：符号表</caption>
+<thead>
+<tr><th>符号（Symbol）</th><th>含义（Meaning）</th></tr>
+</thead>
+<tbody>
+<tr><td><code>g</code></td><td>世代索引（Generation index）</td></tr>
+<tr><td><code>G<sub>max</sub></code></td><td>最大世代数（Maximum number of generations）</td></tr>
+<tr><td><code>A<sub>g</sub></code></td><td>第 g 代的智能体支架（Agent scaffold at generation g）</td></tr>
+<tr><td><code>D</code></td><td>评估数据集（Evaluation dataset）</td></tr>
+<tr><td><code>U</code></td><td>任务规格说明（基准描述 + 示例实例）（Task specification (benchmark description + sample instances)）</td></tr>
+<tr><td><code>E<sub>g</sub></code></td><td>第 g 代的性能指标与错误日志（Performance metrics and error logs at generation g）</td></tr>
+<tr><td><code>τ<sub>g</sub></code></td><td>第 g 代的执行轨迹（Execution trajectory at generation g）</td></tr>
+<tr><td><code>F</code></td><td>反馈智能体（Feedback agent）</td></tr>
+<tr><td><code>G</code></td><td>RL 训练期间每个状态的采样（rollout）次数（Number of rollouts per state during RL training）</td></tr>
+<tr><td><code>π<sub>θ</sub></code></td><td>当前策略（具有可训练权重 θ 的模型）（Current policy (model with trainable weights θ)）</td></tr>
+<tr><td><code>π<sub>θ0</sub></code></td><td>冻结的参考策略（基础模型）（Frozen reference policy (base model)）</td></tr>
+<tr><td><code>s</code></td><td>初始状态（任务提示词）（Initial state (task prompt)）</td></tr>
+<tr><td><code>a</code></td><td>动作（模型生成的响应 / 采样结果）（Action (model-generated response / rollout)）</td></tr>
+<tr><td><code>V(s, a)</code></td><td>给定状态 s 下动作 a 的任务奖励（Task reward for action a given state s）</td></tr>
+</tbody>
+</table>
+<h2>4. 相关工作（Related Work）</h2>
+
+<p>我们分别综述两条研究路线（silo），刻画 SIA 所针对的具体空白，并在一张对比表中总结整体格局。</p>
+
+<h3>4.1. 支架/脚手架自我改进（Harness / Scaffold Self-Improvement）</h3>
+
+<ul>
+  <li><strong>Darwin Gödel Machine</strong>（Zhang et al., 2025）。对智能体源代码进行进化搜索：一个智能体种群对自身提出并评估代码变异，适应度最高的变体存活下来。模型保持固定。</li>
+  <li><strong>Meta-Harness</strong>（Lee et al., 2026）。由 LLM 驱动的支架变异，对支架图进行端到端优化。SIA 的支架更新步骤在精神上最接近 Meta-Harness；区别在于我们在支架收敛之后进行权重更新，而非继续变异。</li>
+  <li><strong>Hyperagents</strong>（Zhang et al., 2026）。最接近的同期工作。Hyperagents 允许元机制（meta-mechanism）本身——即元智能体编辑任务专用智能体的规则——也可被编辑，而不仅仅是任务专用智能体本身。智能体与智能体改进者协同进化。与 SIA 的区别在于杠杆（lever）：Hyperagents 增强了脚手架编辑的表达能力，但模型权重保持固定；SIA 则增加了第二个基于权重的杠杆。</li>
+  <li><strong>AI Scientist</strong>（Lu et al., 2024）。一个覆盖完整研究流程的元智能体：提出假设、运行实验、撰写论文。其输出是研究成果（artefact），而非修改后的脚手架；脚手架在各次运行之间保持固定。</li>
+  <li><strong>智能体系统的自动化设计（Automated Design of Agentic Systems, ADAS）</strong>（Hu et al., 2024）。对构建块（子智能体、工具、提示词）的组合进行元搜索。模型固定。</li>
+  <li><strong>AutoResearcher</strong>（Karpathy, 2026）。一种用于自主机器学习实验的静态脚手架（static scaffold）：智能体提出并运行实验配置，但智能体架构本身在迭代之间不发生变化。</li>
+</ul>
+
+<h3>4.2. 测试时训练与测试时强化学习（Test-time Training and Test-time RL）</h3>
+
+<ul>
+  <li><strong>Learning to discover at test time</strong>（Yuksekgonul et al., 2026）。我们在训练更新步骤中使用的目标函数：在测试时（test time）以熵效用（entropic-utility）目标函数下的 rollout 训练权重；SIA 复用了这一损失函数以及基于 LoRA 的训练栈。</li>
+  <li><strong>Surprising effectiveness of TTT</strong>（Akyürek et al., 2024）。实证表明，测试时的逐任务梯度自适应能显著提升 few-shot（少样本）性能，确立了"测试时训练即自适应"（TTT-as-adaptation）这一框架。</li>
+  <li><strong>TTRL</strong>（Zuo et al., 2025）。利用多数投票导出的伪奖励（pseudo-rewards）在无标注测试数据上进行强化学习。其设定是单提示、单响应；没有脚手架（scaffold），也没有逐实例验证器（verifier）。SIA 的不同之处在于：奖励是确定性的任务验证器，且 rollout 是在脚手架结构下进行的。</li>
+  <li><strong>STaR</strong>（Zelikman et al., 2022）；<strong>Self-Refine</strong>（Madaan et al., 2023）；<strong>Reflexion</strong>（Shinn et al., 2023）。更早期的自我改进循环：要么引导推理轨迹（reasoning traces），要么使用语言批评。STaR 在模型自生成的推理过程（rationales）上对模型进行微调（一种有监督的权重更新）；Self-Refine 与 Reflexion 则纯粹在推理时运作，不进行任何权重更新。</li>
+  <li><strong>Self-play fine-tuning</strong>（Chen et al., 2024）。迭代式微调，模型自身的输出作为训练信号。训练流水线为手工编写；脚手架固定不变。</li>
+  <li><strong>EUREKA</strong>（Ma et al., 2023）。由一个 LLM 生成奖励函数（脚手架侧的改变），随后用于训练 RL 策略（权重侧的改变）。两个组件相互交互，但奖励函数生成器本身并不被训练后的策略更新——该循环是单向的，而非共同演化（co-evolutionary）的。SIA 的不同之处在于：Feedback-Agent 在闭环反馈中动态地在脚手架更新与权重更新之间选择，每种更新类型都以两个组件当前状态下产生的轨迹为依据。</li>
+</ul>
+
+<h3>4.3. 强化学习与智能体训练基础设施（RL and Agent Training Infrastructure）</h3>
+
+<p>在所有训练运行中，我们使用 <code>gpt-oss-120b</code> 搭配 LoRA 秩 32（LoRA rank 32）作为基础模型（base model）与适配器配置。权重更新在 H100 GPU 上通过 Modal（我们的 RL 训练平台）执行，该平台在单个托管流水线内处理 rollout 生成、奖励分配与梯度更新。SIA 建立在现有训练框架之上；Feedback-Agent 在其控制下组合这些基础设施组件，将权重更新视为与脚手架重写（scaffold rewriting）并列的两个可选动作之一。相关基础设施包括：用于灵活 RLHF 的 <code>verl/HybridFlow</code>（Sheng et al., 2024）、用于长时程智能体训练的 SkyRL（Cao et al., 2025）、用于统一后训练的 LLaMA-Factory（Zheng et al., 2024），以及用于精简微调配置的 Axolotl。</p>
+
+<h3>4.4. 对比表（Comparison Table）</h3>
+
+<table>
+  <caption>表 1：沿两个维度对自我改进/自动化智能体的比较——系统是否编辑脚手架（harness）？是否编辑模型权重？（Comparison of self-improving / automated agents along two axes: Does the system edit the harness? Does it edit the model weights?）</caption>
+  <thead>
+    <tr>
+      <th>系统（Agent）</th>
+      <th>修改脚手架（Edits harness）</th>
+      <th>修改模型权重（Edits weights）</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>SIA（本文）</td><td>是</td><td>是</td></tr>
+    <tr><td>Hyperagents（Zhang et al., 2026）</td><td>是</td><td>否</td></tr>
+    <tr><td>Darwin Gödel Machine（Zhang et al., 2025）</td><td>是</td><td>否</td></tr>
+    <tr><td>Meta-Harness（Lee et al., 2026）</td><td>是</td><td>否</td></tr>
+    <tr><td>AI Scientist（Lu et al., 2024）</td><td>部分</td><td>否</td></tr>
+    <tr><td>Automated agentic system design（Hu et al., 2024）</td><td>是</td><td>否</td></tr>
+    <tr><td>AutoResearcher（Karpathy, 2026）</td><td>否</td><td>否</td></tr>
+    <tr><td>TTRL（Zuo et al., 2025）</td><td>否</td><td>是</td></tr>
+    <tr><td>Discover-TTT（Yuksekgonul et al., 2026; Akyürek et al., 2024）</td><td>否</td><td>是</td></tr>
+    <tr><td>EUREKA（Ma et al., 2023）</td><td>部分</td><td>是</td></tr>
+    <tr><td>FunSearch（Romera-Paredes et al., 2024）</td><td>部分</td><td>否</td></tr>
+    <tr><td>Voyager（Wang et al., 2023）</td><td>是</td><td>否</td></tr>
+    <tr><td>Self-Refine（Madaan et al., 2023）/ Reflexion（Shinn et al., 2023）</td><td>部分</td><td>否</td></tr>
+    <tr><td>STaR（Zelikman et al., 2022）</td><td>否</td><td>是</td></tr>
+    <tr><td>ReAct（Yao et al., 2022）</td><td>否</td><td>否</td></tr>
+  </tbody>
+</table>
+
+<p>据我们所知，SIA 是唯一在单一自我改进循环中同时更新脚手架与权重的系统。</p>
+
+<h2>5. 方法（Method）</h2>
+
+<h3>5.1. 概述（Overview）</h3>
+
+<p>SIA 是一个由三个 LLM 组件驱动的可配置循环：<strong>Meta-Agent</strong>、<strong>Task-Specific Agent</strong> 和 <strong>Feedback-Agent</strong>。Meta-Agent 初始化任务专用智能体的脚手架（scaffold）。每次执行后，Feedback-Agent 观察轨迹（trajectory）与性能，然后在每一步动态地在两个互补动作之间二选一：<strong>harness 更新（脚手架演化，权重固定）</strong>或<strong>训练算法更新（由 Feedback-Agent 选定 RL 方法进行权重更新，脚手架固定）</strong>。动作的选择，以及在选择权重更新时对训练算法的选择，均以任务类型与观测到的奖励动态为条件。Harness Update Phase（脚手架更新阶段）与 Weight Update Phase（权重更新阶段）是这两种动作类型的软标签（soft labels），而非刻板的顺序阶段。</p>
+
+<figure>
+  <img src="images/figure2.png" alt="Figure 2: Conceptual view of SIA">
+  <figcaption>图 2：SIA 概念图。（a）两个互补的杠杆：一个文本脚手架与一个 LoRA 适配器。每次执行后，Feedback-Agent（淡紫色）选择下一个动作：脚手架更新（蓝绿色）或权重更新（琥珀色）。两个杠杆自由交错，而非锁定在顺序阶段中。（b）一个示例 7 步序列，展示 Feedback-Agent 在脚手架更新与权重更新之间交替。每个 FB:H/FB:W 徽标标记一次决策。指标曲线由两类步骤共同抬升：脚手架更新（蓝绿色段）与权重更新（琥珀色段）各自贡献不同的增益。（English: (a) Two complementary levers (a textual scaffold and a LoRA adapter). After each execution, the Feedback-Agent (mauve) selects the next action: a harness update (teal) or a weight update (amber). The two levers are interleaved freely, not locked into sequential phases. (b) An example 7-step sequence showing the Feedback-Agent alternating between harness and weight updates. Each FB:H/FB:W badge marks one decision. The metric curve rises from both types of step, with harness updates (teal segments) and weight updates (amber segments) each contributing distinct gains.）</figcaption>
+</figure>
+
+<figure>
+  <img src="images/figure3.png" alt="Figure 3: SIA system architecture">
+  <figcaption>图 3：SIA 系统架构图。Meta-Agent 根据任务规范 U 与验证器 V 初始化脚手架。Task-Specific Agent 在环境中执行并产生轨迹；Feedback-Agent 分析轨迹并选择下一个动作：要么合成改进后的脚手架（harness 更新），要么触发权重更新，然后将结果反馈给 Task-Specific Agent。循环重复直至步骤预算（step budget）耗尽。（English: SIA system architecture. The Meta-Agent initialises a scaffold from the task specification U and verifier V. The Task-Specific Agent executes inside the Environment, producing a trajectory; the Feedback-Agent analyses the trajectory and selects the next action, either synthesising an improved scaffold (harness update) or triggering a weight update, then feeds the result back to the Task-Specific Agent. The loop repeats until the step budget is exhausted.）</figcaption>
+</figure>
+
+<h3>5.2. 系统组件（System Components）</h3>
+
+<p>SIA 的三个组件（Meta-Agent、Task-Specific Agent、Feedback-Agent）在 §3.2 中定义；实现细节如下。在所有实验中，Meta-Agent 与 Feedback-Agent 使用 Claude Sonnet 4.6；任务专用智能体使用 <code>gpt-oss-120b</code>（脚手架步骤）或经 RL 适配的检查点（训练步骤）。</p>
+
+<h3>5.3. 脚手架更新（Harness Updates）</h3>
+
+<p>当 Feedback-Agent 选择一次脚手架更新时，循环运行一步脚手架演化。每一步都遵循逐步协议（执行 → 分析 → 改进）。rollout 由当前模型 π<sub>θ</sub>（基础模型或经 RL 适配的模型）产生；在此步骤中模型权重 θ 保持固定，只有脚手架 A<sub>g</sub> 发生变化。递推关系（recurrence）为：</p>
+
+<p><code>A<sub>g+1</sub> = F(A<sub>g</sub>, τ<sub>g</sub>(π<sub>θ</sub>), E<sub>g</sub>, U)</code></p>
+
+<p>其中 τ<sub>g</sub>(π<sub>θ</sub>) 表示使用模型 π<sub>θ</sub> 执行脚手架 A<sub>g</sub> 所收集的轨迹。</p>
+
+<p><strong>示例任务正则化（Sample-task regularisation）。</strong>在脚手架生成期间，Meta-Agent 以多样化的任务规范集合为条件，这有助于缓解初始脚手架对单个基准测试实例的过拟合。</p>
+
+<h2>6. 实验（Experiments）</h2>
+
+<p>我们在横跨法律、系统与生物学的三个对比性任务上评估 SIA。这些基准常被用于评估其他自我改进 AI 系统；我们特意在其上运行，以便与先前工作直接对比。</p>
+
+<h3>6.1. 设置（Setup）</h3>
+
+<table>
+  <caption>表 2：逐任务评估设置（Per-task evaluation setup）</caption>
+  <thead>
+    <tr>
+      <th>任务（Task）</th>
+      <th>领域（Domain）</th>
+      <th>训练 / 测试（Train / Test）</th>
+      <th>指标（Metric）</th>
+      <th>先前 SOTA（Previous SOTA）</th>
+      <th>验证器（Verifier）</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>LawBench（191 类）</td>
+      <td>中文法律</td>
+      <td>5,332 / 913</td>
+      <td>top-1 准确率</td>
+      <td>0.450</td>
+      <td>留出测试划分判分器（held-out test-split grader）</td>
+    </tr>
+    <tr>
+      <td>AlphaEvolve TriMul</td>
+      <td>底层（low-level）</td>
+      <td>无 / 固定输入形状</td>
+      <td><code>score = 1500/runtime</code>（越高越快）</td>
+      <td>1.292</td>
+      <td>H100 计时</td>
+    </tr>
+    <tr>
+      <td>MAGIC scRNA-seq 去噪</td>
+      <td>单细胞</td>
+      <td>无 / 胰腺 scRNA-seq</td>
+      <td>MSE 归一化（<code>∈[0,1]</code>，越高越好）</td>
+      <td>0.24</td>
+      <td>对照真实值的 MAGIC 参考（MAGIC reference against ground truth）</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>所有权重更新步骤均通过 LoRA（秩 r=32，学习率 4×10<sup>−5</sup>）适配 <code>gpt-oss-120b</code>。</p>
+
+<h3>6.2. 基线（Baselines）</h3>
+
+<p>由于脚手架更新步骤从由 Meta-Agent 初始化的、围绕 <code>gpt-oss-120b</code> 的脚手架出发，并与我们报告所用相同的验证器对抗运行，因此按构造方式（by construction），初始分数即为经 Meta-Agent 初始脚手架 A<sub>1</sub> 过滤后的 <code>gpt-oss-120b</code>（一个任务专用系统提示词、单工具调度循环，以及在任何 Feedback-Agent 迭代开始前根据基准规范一次性生成的输出解析器）。随后，脚手架更新轨迹刻画脚手架迭代在该基线之上新增的内容，而权重更新轨迹刻画权重更新在仅脚手架（harness-only）最优之上新增的内容。我们将此视为主要基线结构。</p>
+<p>在所有任务中，Feedback-Agent（我们的方法）从脚手架迭代（scaffold iteration）开始，一旦脚手架（harness）进展陷入停滞便切换至权重更新；我们报告 SIA-H（仅脚手架的最佳结果）和 SIA-W+H（脚手架 + 权重更新的最佳结果），以隔离每个机制（lever）各自的贡献。</p>
+
+<h3>6.3 各任务结果（Per-task results）</h3>
+
+<h4>6.3.1 LawBench：191 类中文刑事罪名分类（LawBench: 191-Class Chinese Criminal Charge Classification）</h4>
+<p>LawBench(Fei et al., 2023)是一个多类别法律文档分类基准，取材于真实的中文刑事案情描述。给定一份事实案情摘要，模型必须从中国成文法（statutory law）中的 191 个不同类别中识别出正确的罪名。这 191 个类别编码了精细的法律区分，即便是训练有素的从业者也会觉得颇具难度：盗窃类（普通盗窃、公共财产盗窃、侵占）、人身伤害类（普通伤害、加重伤害、重伤）以及各类欺诈变体，彼此之间在法律上精确的事实要件各不相同，且直接影响量刑结果。随机猜测基线（random-guess baseline）的正确率不足百分之一。该基准包含 5,332 个训练样本和 913 个测试样本；所有评估均在留出的测试集（held-out test split）上进行。</p>
+<p><strong>脚手架更新（Harness updates）。</strong>早期脚手架迭代建立了一条可用的分类流水线；后续几代将其重构为 TF-IDF + LinearSVC 流水线，迭代调优字符 n-gram 范围与正则化参数 C，准确率稳步提升，直至增益在 50.0% 处趋于平稳——较最初运行提升了 36.5 个百分点。此时，Feedback-Agent 检测到奖励停滞，遂切换至权重更新。</p>
+<p><strong>权重更新（Weight updates）。</strong>由于奖励信号是一个干净的、基于结果的标量（罪名是否正确），并且 rollout——每次 rollout 都是针对测试集执行的一个生成的解决方案脚本——可以低成本地并行生成，Feedback-Agent 采用了带 GAE 的 PPO：学习得到的状态价值头（value head）V<sub>φ</sub> 对生成的解决方案脚本产生逐 token 的优势估计（advantage estimate），而裁剪替代目标 <code>min(r̂<sub>t</sub>Â<sub>t</sub>, clip(r<sub>t</sub>, 1±ε)Â<sub>t</sub>)</code> 则防止策略偏离一个可用的基线过远。这为模型编写能正确处理细粒度罪名区分的分类代码的能力施加了稳定的梯度压力，将准确率推升至 70.1%，较仅脚手架的最佳结果再提升 20.1 个百分点（图 4）。</p>
+
+<figure>
+  <img src="images/page09_0_image.jpg" alt="Figure 4">
+  <figcaption>图 4：LawBench 结果。基线（Baseline）、SIA-H（仅脚手架）与 SIA-W+H（脚手架 + 权重更新）的 Top-1 准确率。虚线：此前的最先进水平（prior state-of-the-art）。（LawBench results. Top-1 accuracy for Baseline, SIA-H (harness only), and SIA-W+H (harness + weight updates). Dashed line: prior state-of-the-art.）</figcaption>
+</figure>
+
+<h4>6.3.2 AlphaEvolve TriMul：用于蛋白质结构预测的 CUDA 内核优化（AlphaEvolve TriMul: CUDA Kernel Optimisation for Protein Structure Prediction）</h4>
+<p>三角乘性更新（triangular multiplicative update，TriMul）是 AlphaFold2 的 Evoformer 模块中的核心运算，用于在蛋白质结构预测过程中传播成对残基相互作用特征。该任务取自 AlphaEvolve 基准，要求智能体在 H100 GPU 上为这一运算编写自定义 CUDA 内核。TriMul 受内存带宽限制而非计算限制：由于三角稀疏结构，线程访问非连续内存，引发 warp 分歧（warp divergence）与缓存未命中，使得标准稠密矩阵优化技术失效。要实现高吞吐，需要 H100 专属知识——张量核心调度（tensor core scheduling）、共享内存分块（shared-memory tiling）、寄存器压力管理——而这些是标准库（cuBLAS、cuSPARSE）无法应用于此运算的。得分定义为 1500/运行时间（runtime），因此得分越高意味着内核越快。</p>
+<p><strong>脚手架更新（Harness updates）。</strong>智能体在多次迭代中逐步构建并完善可用的 CUDA 内核，最终收敛到最佳运行时间 12,483 µs，即 1.14× 加速。增量式的脚手架改动（内存布局提示、编译标志、重试逻辑）持续带来较小的增益，直至轨迹趋于平稳，此时 Feedback-Agent 切换至权重更新。</p>
+<p><strong>权重更新（Weight updates）。</strong>内核优化具有稀疏、结果主导（outcome-heavy）的奖励结构：大多数生成的内核要么编译失败，要么远非最优，这使得冷启动（cold start）下的原始梯度信号缺乏信息量。Feedback-Agent 采用了熵优势加权（entropic advantage weighting），通过带自适应温度 β 的 softmax 重分配——<code>w<sub>i</sub> ∝ exp(r<sub>i</sub>/β)</code>——提高高奖励 rollout 的权重、压低接近零奖励的噪声，从而即使在 rollout 批次中大多数内核都很差时也能产生有效的梯度流。这使得模型能够内化 H100 专属的设计模式——共享内存分块、fp32 寄存器累加、块大小选择——这些是任何脚手架编辑都无法编码的，将运行时间降至 1,017 µs，最终加速 14.02×，较仅脚手架的最高水平降低了 91.9%（图 5）。</p>
+
+<figure>
+  <img src="images/page10_0_image.jpg" alt="Figure 5">
+  <figcaption>图 5：TriMul CUDA 结果。基线（Baseline）、SIA-H（仅脚手架）与 SIA-W+H（脚手架 + 权重更新）相对基线的加速比。虚线：此前的最先进水平。（TriMul CUDA results. Speedup over baseline for Baseline, SIA-H (harness only), and SIA-W+H (harness + weight updates). Dashed line: prior state-of-the-art.）</figcaption>
+</figure>
+
+<h4>6.3.3 MAGIC scRNA-seq 去噪：单细胞 RNA 插补（MAGIC scRNA-seq Denoising: Single-Cell RNA Imputation）</h4>
+<p>单细胞 RNA 测序（scRNA-seq）测量数千个单细胞的基因表达，但得到的计数矩阵高度稀疏：由于技术性丢失（technical dropout），许多真实的非零计数被观测为零。MAGIC（基于马尔可夫亲和图的细胞插补，Markov Affinity-based Graph Imputation of Cells）通过在细胞间构建 k 近邻图、计算马尔可夫转移概率，并将表达值在图邻居间扩散来插补缺失信号。该任务要求智能体在胰腺 scRNA-seq 数据(Baron et al., 2016)上调优 MAGIC 的耦合超参数——邻居数量 k、扩散步数 t、核带宽（kernel bandwidth）α——以及预处理选择。该优化并不平凡：k 过小会过拟合单个细胞的噪声；过大则导致过度平滑，破坏真实的生物学信号。评估使用 <em>mse norm</em>，即相对于真值（ground truth）的归一化重建质量得分（越高越好；1.0 表示完美插补）。</p>
+<p><strong>脚手架更新（Harness updates）。</strong>智能体在多次迭代中扫描了 MAGIC 的耦合超参数空间——邻居数 k、扩散步数 t、带宽 α——并达到稳定平台期，<em>mse norm</em> 稳定在最佳值 0.241。进一步的脚手架迭代未能产生有意义的改进，促使 Feedback-Agent 切换至权重更新。</p>
+<p><strong>权重更新（Weight updates）。</strong>借助 GRPO，模型完全超越了参数调优的范畴。关键在于，第一个权重更新检查点引入了一项结构性变换，而仅脚手架的循环在全部脚手架迭代中从未生成过它：一个两行的后处理步骤（<code>np.clip</code> + <code>np.rint</code>），将插补后的计数取整为非负整数，从而强制满足一个生物学不变式——该不变式显而易见地正确，却在此前任何版本的脚手架中都缺失。这把 <em>mse norm</em> 提升至 0.289，较仅脚手架的最佳结果提升 20%（图 6）。</p>
+
+<figure>
+  <img src="images/page11_0_image.jpg" alt="Figure 6">
+  <figcaption>图 6：去噪结果。基线（Baseline）、SIA-H（仅脚手架）与 SIA-W+H（脚手架 + 权重更新）的 MSE norm。虚线：此前的最先进水平。（Denoising results. MSE norm for Baseline, SIA-H (harness only), and SIA-W+H (harness + weight updates). Dashed line: prior state-of-the-art.）</figcaption>
+</figure>
+
+<h2>7. 讨论（Discussion）</h2>
+
+<h3>7.1 组合式与仅脚手架对比（Combined vs. harness-only）（RQ1）</h3>
+<p>为隔离每个机制（lever）各自的贡献，我们对 SIA-H（仅脚手架更新）与 SIA-W+H（脚手架 + 权重更新）进行消融（ablate）对比。表 3 报告了全部三个任务上的初始得分、此前的最先进水平（prior SOTA）以及两个运行点（operating point）。</p>
+
+<table>
+  <caption>表 3：消融：SIA-H 对比 SIA-W+H。"初始（Initial）"为 gpt-oss-120b 经由 Meta-Agent 的初始脚手架 A₁ 得到的得分；SIA-H 为仅脚手架的最佳结果；SIA-W+H 加入权重更新。（Ablation: SIA-H vs. SIA-W+H. "Initial" is the gpt-oss-120b score through the Meta-Agent's initial scaffold A₁. SIA-H is the harness-only best; SIA-W+H adds weight updates.）</caption>
+  <thead>
+    <tr>
+      <th>任务（Task）</th>
+      <th>初始（Initial）</th>
+      <th>此前 SOTA（Prev. SOTA）</th>
+      <th>SIA-H（仅脚手架）</th>
+      <th>SIA-W+H（脚手架 + 权重）</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>LawBench（top-1 准确率）</td>
+      <td>13.5%</td>
+      <td>45.0%</td>
+      <td>50.0%</td>
+      <td>70.1%</td>
+    </tr>
+    <tr>
+      <td>AlphaEvolve TriMul（奖励）</td>
+      <td>0.105</td>
+      <td>1.292</td>
+      <td>0.120</td>
+      <td>1.475</td>
+    </tr>
+    <tr>
+      <td>去噪（<em>mse norm</em>）</td>
+      <td>0.048</td>
+      <td>0.240</td>
+      <td>0.241</td>
+      <td>0.289</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>SIA-W+H 在每项任务上都严格优于 SIA-H，从而证实了 RQ1。增益十分可观：LawBench 上 +20.1 个百分点，TriMul 上运行时间降低 91.9%（12,483 → 1,017 µs），去噪上提升 20%。每个机制占据不同的变更空间——外部脚手架与内部参数——因此两者都不会使对方可获得的增益饱和（参见 §7.2–7.4）。</p>
+
+<h3>7.2 脚手架迭代改变了什么？（What does harness iteration change?）（RQ2a）</h3>
+<p>脚手架迭代产生外部化（externalised）的变更——新工具、更严谨的解析器、搜索过程、重试策略和提示词（prompt）结构——而模型权重保持不变。</p>
+<p>在全部三个任务中，可以观察到 Feedback-Agent 构建日益专业化的脚手架：在 LawBench 上，是一个结构化的答案提取层，以及一个对模型 top 候选进行重排序的 SVC 重排序器；在 TriMul 上，是一个编译错误解析器，将 CUDA 诊断信息作为结构化上下文反馈回来，外加一个返回中位运行时间的计时脚手架（timing harness）；在 MAGIC 去噪上，是一个批量配置驱动器和一个结果解析工具，将（参数集，得分）配对组织起来供模型推理。</p>
+<p>在全部三种情况下，这些变更都是软件工程层面的改进：新工具、更严谨的输出解析器、更智能的重试逻辑。模型检查点全程保持不变；所有增益都来自脚手架如何在与任务环境的交互中充当模型的中介。</p>
+
+<h3>7.3 Feedback-Agent 如何应用权重更新（How the Feedback-Agent applies weight updates）（RQ2b）</h3>
+<p>Feedback-Agent 并不运行固定的强化学习（RL）流程。尽管本文报告了三个任务，我们一直在更广的一组未收录于本文的任务上运行 SIA；下文中的算法描述反映了在那一更广泛实验中观察到的常见模式。在本文报告的三个任务中，LawBench 上观察到的是带 GAE 的 PPO；TriMul 上是熵优势加权；去噪上是 GRPO。关于跨任务算法选择的更完整论述留待 v2。</p>
+<ul>
+  <li><strong>带 GAE 的 PPO（PPO with GAE）。</strong>适用情形：步骤级奖励稠密、训练稳定性是约束条件时——多步工具使用或长代码生成任务中，单次灾难性更新就可能导致策略崩溃。学习得到的状态价值头 V<sub>φ</sub> 产生逐 token 的优势估计 <code>Â<sub>t</sub> = Σ<sub>l</sub>(γλ)<sup>l</sup>δ<sub>t+l</sub></code>；裁剪替代目标 <code>min(r̂<sub>t</sub>Â<sub>t</sub>, clip(r<sub>t</sub>, 1±ε)Â<sub>t</sub>)</code> 防止策略离开信任域（trust region）。这种 actor-critic 双重优化开销较大，但能提供可用的最低方差梯度信号。</li>
+  <li><strong>GRPO。</strong>适用情形：rollout 采样成本低、验证器在回合结束时触发时——分类、短答案或单元测试任务中，数百个补全（completion）可以在单次前向传播中完成评分。优势在大小为 G 的 rollout 组内归一化：<code>Â<sub>i</sub> = (r<sub>i</sub> − r̄)/σ<sub>r</sub></code>，从而完全省去价值网络。这使内存占用减半，并支持大规模并行批次。</li>
+  <li><strong>熵优势加权（Entropic advantage weighting）。</strong>适用情形：奖励直方图严重右偏时——正确解罕见但单个解信号很强的任务，如困难的数学证明或通过率较低的代码合成。与将低于平均水平的 rollout 直接置零不同，该方法通过带自适应温度 β 的 softmax 重新分配梯度质量：<code>w<sub>i</sub> ∝ exp(r<sub>i</sub>/β)</code>(Yuksekgonul et al., 2026)。温度在线调优，使有效样本量保持在最低阈值之上，防止塌缩到单条轨迹上。</li>
+  <li><strong>REINFORCE + 对基座模型的 KL 约束（REINFORCE + KL-to-base）。</strong>适用情形：奖励稠密、主要风险是能力回退（capability regression）而非梯度方差时——基础模型已经接近胜任、不希望参数大幅移动的细粒度领域自适应任务。蒙特卡洛回报 <code>R<sub>t</sub> = Σ<sub>t′≥t</sub> γ<sup>t′−t</sup>r<sub>t′</sub></code> 直接作为优势，并叠加对冻结参考的惩罚项 <code>αKL(π<sub>θ</sub>‖π<sub>θ0</sub>)</code>。无评论家网络（critic）、无分组，是最简单的训练循环。</li>
+  <li><strong>Best-of-N 行为克隆（Best-of-N behavioural cloning）。</strong>适用情形：奖励过于稀疏，以至于所有 rollout 上 E[r]≈0、策略梯度信号数值上为零时。Feedback-Agent 将其作为阶段零冷启动调用：按验证器得分最高的 k 个 rollout 通过交叉熵损失蒸馏进模型，将基线通过率提升到后续 PPO 或 GRPO 阶段可行的水平。</li>
+  <li><strong>DPO。</strong>适用情形：验证器能对输出排序但无法绝对评分时——具有软性质量标准的任务中，序数（ordinal）信号可靠而基数（cardinal）奖励不可靠。给定获胜 rollout y+ 与失败 rollout y−，直接最小化目标 <code>−log σ(β log π<sub>θ</sub>(y+) / π<sub>θ0</sub>(y+) − β log π<sub>θ</sub>(y−) / π<sub>θ0</sub>(y−))</code>，无需奖励模型。</li>
+</ul>
+<p>每种训练方法都以轨迹观测为条件，而非依赖固定调度（schedule）。</p>
+<h3>7.4 权重更新改变了什么（What weight updates change, RQ2b）</h3>
+<p>权重更新产生内化知识（internalised knowledge）：编码进模型参数、任何脚手架（scaffold）编辑都无法触及的领域特定模式。与修改模型周围基础设施的脚手架变更不同，权重更新直接修改模型对解空间的先验（prior）。</p>
+<p>在 LawBench 上，针对 191 类罪名分类体系（charge taxonomy）的梯度压力锐化了模型对相邻类别的消歧能力，无需任何提示侧（prompt-side）提示即可区分盗窃子类型、殴打等级与欺诈变体。在 AlphaEvolve TriMul 上，权重收敛于针对 H100 的内核设计模式（共享内存分块、fp32 寄存器累加、块大小选择），而无论脚手架质量如何，基础模型都从未产生过这些模式。在 MAGIC 去噪任务上，第一个权重更新检查点引入了一个脚手架从未提出过的结构不变量：一个 <code>np.clip</code> + <code>np.rint</code> 后处理步骤，将插补（imputed）计数取整为非负整数，从而将生物学约束直接编码进策略。</p>
+<p>在每种情况下，内化知识都是任务特定且与验证器（verifier）对齐的，它源自直接的梯度压力，而非任何人工编写的指令。脚手架决定智能体如何搜索（how the agent searches）；权重更新则改变模型知道什么（what the model knows）。</p>
+<h2>8. 局限性（Limitations）</h2>
+<p><strong>耦合的共同演化式古德哈特（Coupled co-evolutionary Goodhart）。</strong>脚手架搜索与强化学习（RL）权重更新都针对同一个固定验证器 <code>V</code> 进行优化。每一轮都会塑造另一方所看到的分布：脚手架找出当前策略易于利用的脚手架结构；权重则在通过某个随后会改变的脚手架收集到的数据上进行训练。这一耦合系统的联合不动点（joint fixed point）是两个对彼此更新历史互不可见的优化器之间的纳什均衡（Nash equilibrium），而不是能在分布外（out-of-distribution）脚手架或新策略上最大化 <code>V</code> 的点。标准的古德哈特（Goodhart）分析假设只有一个优化器；双杠杆（two-lever）设置则产生一种耦合变体，其不动点在训练验证器上看似很强，但对任一组成部分的任何扰动都脆弱不堪。</p>
+<h2>9. 未来工作（Future Work）</h2>
+<p><strong>对动作选择策略的元强化学习（Meta-RL over the action-selection policy）。</strong>Feedback-Agent 目前使用冻结的大语言模型（LLM）先验在脚手架更新与权重更新之间做出选择。一种更有原则的方法是把选择策略本身当作要学习的对象：在一组任务分布上运行 SIA，把每个（轨迹，动作，结果）三元组当作外部 MDP 中的一次转移（transition），并在该外部 MDP 上通过强化学习训练选择器。这样，选择器就能通过跨任务的经验改进其杠杆归因（lever-attribution），而不是依赖在来自不同能力机制（capability regime）的轨迹上校准的固定启发式。这创造了一个真正递归的结构——一个改进机制本身也在自我改进的自改进系统，并引发了关于此类嵌套循环稳定性的非平凡问题，这些问题不同于单层强化学习或元学习（meta-learning）中的任何问题。</p>
+<p><strong>更交织的训练与脚手架切换（More interleaved training and harness switching）。</strong>当前的 SIA 循环以离散的粗粒度轮次在脚手架搜索与权重更新阶段之间交替。一种更细粒度的调度——Feedback-Agent 可以在脚手架搜索中途触发权重更新，或在梯度步之后立即恢复脚手架探索——可以缩短观察到平台期（plateau）与对其采取行动之间的延迟，并可能解锁粗粒度交替所错过的改进轨迹。</p>
+
+<h2>参考文献（References，保留英文原文）</h2>
+<div class="refs">
+<p>References [1] Ekin Aky¨ urek, Mehul Damani, Adam Zweiger, Linlu Qiu, Han Guo, Jyothish Pari, Yoon Kim, and Jacob Andreas. The surprising effectiveness of test-time training for few-shot learning.International Conference on Machine Learning, 2024.</p>
+<p>[2] Maayan Baron, Adrian Veres, Samuel L. Wolock, Abigail L. Faust, Renaud Gaujoux, Amedeo Vetere, Jennifer Hyoje Ryu, Bridget K. Wagner, Shai S. Shen-Orr, Allon M. Klein, et al. A single-cell transcrip- tomic map of the human and mouse pancreas reveals inter- and intra-cell population structure.Cell Systems, 3(4):346–360.e4, 2016. [3] Shiyi Cao et al. SkyRL-v0: Train real-world long-horizon agents via reinforcement learning. Technical report, NovaSky, UC Berkeley, 2025. [4] Zixiang Chen, Yihe Deng, Huizhuo Yuan, Kaixuan Ji, and Quanquan Gu. Self-play fine-tuning converts weak language models to strong language models. InInternational Conference on Machine Learning, 2024. [5] D. V. Dijk, Roshan Sharma, J. Nainys, Kristina M. Yim, Pooja Kathail, Ambrose J. Carr, Cassandra Burdziak, Kevin R. Moon, Christine L. Chaffer, D. Pattabiraman, et al. Recovering gene interactions from single-cell data using data diffusion.Cell, 174(3):716–729.e27, 2018. [6] Zhiwei Fei, Xiaoyu Shen, D. Zhu, Fengzhe Zhou, Zhuo Han, Songyang Zhang, Kai Chen, Zongwen Shen, and Jidong Ge. LawBench: Benchmarking legal knowledge of large language models.arXiv.org, 2023. [7] Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, and Weizhu Chen. LoRA: Low-rank adaptation of large language models. InInternational Conference on Learning Representations, 2021. [8] Shengran Hu, Cong Lu, and Jeff Clune. Automated design of agentic systems.International Conference on Learning Representations, 2024. [9] Andrej Karpathy. autoresearch: AI agents running research on single-GPU nanochat training automat- ically, 2026. [10] Yoonho Lee, Roshen Nair, Qizheng Zhang, Kangwook Lee, Omar Khattab, and Chelsea Finn. Meta- harness: End-to-end optimization of model harnesses.International Conference on Machine Learning, 2026. [11] Chris Lu, Cong Lu, Robert Lange, Jakob Foerster, Jeff Clune, and David Ha. The AI scientist: Towards fully automated open-ended scientific discovery.arXiv.org, 2024. [12] Yecheng Jason Ma, William Liang, Guanzhi Wang, De-An Huang, Osbert Bastani, Dinesh Jayaraman, Yuke Zhu, Linxi Fan, and Anima Anandkumar. Eureka: Human-level reward design via coding large language models. InInternational Conference on Learning Representations, 2023. [13] Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler Hallinan, Luyu Gao, Sarah Wiegreffe, Uri Alon, Nouha Dziri, Shrimai Prabhumoye, Yiming Yang, et al. Self-refine: Iterative refinement with self- feedback. InNeural Information Processing Systems, volume 36, pages 46534–46594. Neural Information Processing Systems Foundation, Inc. (NeurIPS), 2023. [14] Alexander Novikov, Ngˆ an V˜u, Marvin Eisenberger, Emilien Dupont, Po-Sen Huang, Adam Zsolt Wag- ner, S. Shirobokov, B. Kozlovskii, Francisco J. R. Ruiz, Abbas Mehrabian, et al. AlphaEvolve: A coding agent for scientific and algorithmic discovery.arXiv.org, 2025. [15] B. Romera-Paredes, M. Barekatain, Alexander Novikov, Matej Balog, M. P. Kumar, Emilien Dupont, Francisco J. R. Ruiz, J. Ellenberg, Pengming Wang, Omar Fawzi, et al. Mathematical discoveries from program search with large language models.Nature, 625:468–475, 2023. [16] Guangming Sheng, Chi Zhang, Zilingfeng Ye, Xibin Wu, Wang Zhang, Ru Zhang, Yanghua Peng, Haibin Lin, and Chuan Wu. HybridFlow: A flexible and efficient RLHF framework. InEuropean Conference on Computer Systems, 2024. [17] Noah Shinn, Federico Cassano, Beck Labash, Ashwin Gopinath, Karthik Narasimhan, and Shunyu Yao. Reflexion: Language agents with verbal reinforcement learning. InNeural Information Processing Sys- tems, volume 36, pages 8634–8652. Neural Information Processing Systems Foundation, Inc. (NeurIPS), 2023.</p>
+<p>[18] Guanzhi Wang, Yuqi Xie, Yunfan Jiang, Ajay Mandlekar, Chaowei Xiao, Yuke Zhu, Linxi Fan, and Anima Anandkumar. Voyager: An open-ended embodied agent with large language models.Trans. Mach. Learn. Res., 2023. [19] Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan, and Yuan Cao. ReAct: Synergizing reasoning and acting in language models. InInternational Conference on Learning Representations, 2023. [20] Mert Yuksekgonul, Daniel Koceja, Xinhao Li, Federico Bianchi, Jed McCaleb, Xiaolong Wang, Jan Kautz, Yejin Choi, James Zou, Carlos Guestrin, et al. Learning to discover at test time.arXiv.org, 2026. [21] Eric Zelikman, Yuhuai Wu, and Noah D. Goodman. STaR: Bootstrapping reasoning with reasoning. In Advances in Neural Information Processing Systems 35, volume 35, pages 15476–15488. Neural Infor- mation Processing Systems Foundation, Inc. (NeurIPS), 2022. [22] Jenny Zhang, Shengran Hu, Cong Lu, Robert Lange, and Jeff Clune. Darwin G¨ odel machine: Open- ended evolution of self-improving agents.SuperIntelligence - Robotics - Safety &amp; Alignment, 2(3), 2025. [23] Jenny Zhang, Bingchen Zhao, Wannan Yang, Jakob Foerster, Jeff Clune, Minqi Jiang, Sam Devlin, and Tatiana Shavrina. Hyperagents.arXiv preprint arXiv:2603.19461, 2026. [24] Yaowei Zheng, Richong Zhang, Junhao Zhang, Yanhan Ye, Zheyan Luo, and Yongqiang Ma. LlamaFac- tory: Unified efficient fine-tuning of 100+ language models. InAnnual Meeting of the Association for Computational Linguistics, pages 400–410. Association for Computational Linguistics, 2024. [25] Yuxin Zuo, Kaiyan Zhang, Shang Qu, Li Sheng, Xuekai Zhu, Yuchen Zhang, Biqing Qi, Youbang Sun, Ganqu Cui, Ning Ding, et al. TTRL: Test-time reinforcement learning.arXiv.org, 2025.</p>
+</div>
+
+</body>
+</html>
