@@ -1,7 +1,7 @@
 # design 目录索引（INDEX）
 
 维护说明：本索引概述 `doc/design/`（目录名带前导空格）下每份文档的内容，并记录从 agent-server P0 起各阶段决策的变化时间线。**新增设计文档时请同步更新本索引。**
-最后更新：2026-08-09（覆盖对抗性审查与 issue-003 登记）。
+最后更新：2026-08-11（新增经验库 schema 演化方案与 self-improve 回路方案 plans/2026-08-11）。
 
 阅读指引：
 - **通用约束 canonical 版本**（工程内改动、omlx 不可动、提交格式、git 纪律）：`2026-07-22-agent-server-p3-candidate-tasks.md` 的"通用约束"一节，后续任务书均为引用。
@@ -143,6 +143,7 @@
 | 2026-08-03-agent-server-evolution-pipeline-timeout-analysis.md | **进化管线失败根因分析**：输入规模失配（一请求一文件 × 一文件一轨迹 = 6372 轨迹 × 25-40 LLM 调用/轨迹 → 数天）；第 2 次 SIGKILL 超时证伪（27m45s<120min，消息格式只是拼接）+OOM 证伪（64GB 无 jetsam），来源未定论但随规模修正消失；证据链 mermaid + 代码行级证据；根治=agent-server 会话亲和（入 M5） |
 | 2026-08-04-agent-server-c3-amendment-and-r2-evolution-input-changes-and-decisions.md | **C 决策 3 修正【用户批准】**：失败经验三层化（原始文本不入库/败局作归因输入/蒸馏验证 Guard 卡入库）+ R2 进料三路合并（学生+老师胜局+败局对照）+ 触发器门控→局级胜负迁移（27B 升级率 0% 使门控断粮）+ 教训卡必须程序化提取禁自由诊断（2605.29463 红线） |
 | 2026-08-05-agent-server-injection-toggle-and-eval-preflight-changes-and-decisions.md | **注入开关 + preflight 门禁【用户重申目标驱动】**：`AGENT_SERVER_INJECTION=off` + 请求级 `injection` 覆盖，关时跳注入但 session/trace 照录（`disabled:true` 区分关与未命中）；**控制臂跑法变更=8789+injection off 同路径对照取代物理旁路**（基线轨迹进学习回路）；eval/preflight.py 按端口推导依赖链探活+nohup 自动拉起 8789/8787/8899 |
+| 2026-08-13-agent-server-system-design-and-issue-inventory.md | **系统全量设计参照（多 agent 调研合成）**：分层架构图（L0-L4 含 C campaign 件）+ 双时序图（在线含 x-gateway 标记/离线含夜间循环五步法）+ 三条函数级 call graph（在线/gateway/进化）+ issue 台账 001-011（open: 003/010/002余留，标注待解决）+ 故障模式元教训 4 条 + 生效决议摘要 |
 | 2026-08-09-agent-server-27b-b-round-findings-and-gate-length-flaw.md | **B 阶段结果+门控 length 缺陷【重大修正】**：冷/热均 21/134（Δ=0 噪声带，注入无净效应）；**核心发现：两臂 84-87% 请求经 finish_reason_length 门控升级到 DeepSeek（max_tokens=200×27B 叙述风格误杀），从未测过纯 27B**——“升级率 0%/本地独立/云端归零”等结论撤回；补救方案 A/B/C 待用户拍板 |
 | 2026-08-09-adversarial-review-experiment-validity.md | **实验有效性对抗性审查【3 路并行，代码行级验证】**：length 缺陷同类 bug 全链路排查，39 项发现（4 critical/21 major/14 minor）——C1 campaign runner 不可运行、C2 判据结构性永绿（escalated 硬编码）、C3 alfworld 134 硬编码致历史控制臂 17 局重放错位、C4 升级结果不过闸且 max_tokens 原样上云；方案 A 两处修正（agent-local 绕门控不成立、pilot 校准+升级率<5% 门槛）；P0/P1/P2 修复分批待拍板；issue-003 登记 |
 | 2026-08-09-gate-length-issue-and-adversarial-review-changes-and-decisions.md | issue-003 登记 + 对抗审查决策记录：agent-local 绕门控否定（routing.py 忽略 model 名）、pilot 校准+升级率门槛、39 项不分拆 issue、不动 quality.py、历史数据不回溯 |
@@ -178,6 +179,8 @@
 | plans/2026-07-30-student-teacher-reconnect-plan.md | 学生-老师链路接回计划：勘察结论（代码行级）+ 三腿实验设计 + S1-S7 执行步骤 + 验收标准 |
 | plans/2026-07-31-agent-self-evolution-roadmap.md | **自进化路线图【用户设计意图 + 已批准】**：四约束（不微调只外挂记忆/harness 自进化/门控→云→学习/相似轨迹合并）；R0 评估收口 → R1 轨迹合并+入库验证 → R2 升级轨迹学习闭环 → R3 harness 自进化（人工审批门） → R4 全本地化决策点；北极星=升级率下降+SR 升+云成本降 |
 | plans/2026-08-09-gate-length-issue-and-adversarial-review-plan.md | issue-003 登记 + 对抗性审查计划【已批准：仅文档交付】：issue 模板与回归测试规划、三路审查方法、39 项发现汇总、P0-P2 修复优先级、执行步骤 |
+| plans/2026-08-11-experience-schema-evolution-plan.md | 经验库 schema 演化【待评审】：SIA 论文符号表对照 → Experience 增加溯源三字段（scaffoldHash/supersedesId/verification）+ SQLite 增量迁移 + markStaleByScaffoldHash；对齐自进化路线图 R1/R3，排期待实验完成后定 |
+| plans/2026-08-11-self-improve-skill-plan.md | self-improve 回路【待评审】：支架自改两层设计（S1 仅 SKILL.md 策略层可即行 / S2 extension 机制层 reflect 工具+验证闸+evolution-log）；自反思快环+teacher 慢环分层；对齐 R3 人工审批门 |
 
 进度跟踪目录 `doc/design/progress/`：每个里程碑一个进度文件，多 agent 交接 + 断点恢复用；规范见 `progress/README.md`。
 
