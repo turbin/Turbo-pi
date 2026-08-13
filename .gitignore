@@ -51,3 +51,5 @@ collect.sh
 # Repo-local pinned Node toolchain (see scripts/with-node25.sh)
 .tools/
 !doc/design/plans/
+backup/*
+!backup/index.md
