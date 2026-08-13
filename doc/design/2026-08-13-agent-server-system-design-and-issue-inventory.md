@@ -236,9 +236,85 @@ run-evolution.ts: cmdRun()                                   :99
    ⑥ writeCheckpoint()（失败时 cmdRun 捕获写 metric=0 失败 ckpt）
 ```
 
-## 5. 问题台账（issue-001~011）
+## 5. 设计机制详述
 
-### 5.1 待解决（open）
+### 5.1 门控机制（gateway quality gate）
+
+**定位**：本地模型输出的质量守门员，决定"接受本地结果"还是"升级云端"——成本与质量的平衡点。
+
+**判定规则**（`quality.py: evaluate_quality`，按序四条，命中即升级）：
+
+| 规则 | 触发条件 | 意图 |
+|---|---|---|
+| invalid_tool_schema | toolCall 参数不满足最小 schema | 防格式崩坏 |
+| finish_reason_length | 输出被 max_tokens 截断 | 防不完整输出 |
+| empty_output | content 与 tool_calls 双空 | 防空响应（gemma EOS 问题起源） |
+| forced_tool_missing | 强制工具未出现 | 防协议违背 |
+
+**升级链路**：`begin_escalation` 三重前置——egress 许可（422）→ DLP 扫描（403）→ 预算预留（429）→ 云端调用（仅一次，云结果不再二次门控，C4）。
+
+**可观测性**：`x-gateway` 标记（非流式响应头/流式 SSE 注释行 + body 内嵌字段）随响应下发；`model_runs` 落库为 ground truth（sequence/purpose/provider/quality_signals）；两者互为印证，拒绝只信其一（M1/C2 决议）。
+
+**已知缺陷**：`finish_reason_length` 对"叙述型模型 + 小 max_tokens"场景系统性误杀（issue-003，**待解决**——重跑方案待拍板；规则策略讨论留 P2）。跑批放行由 `gate_length_escalation.py` 把守（窗口内 length 升级率 <5%）。
+
+### 5.2 经验卡机制（experience cards）
+
+**卡片类型与注入形态**：
+
+| 类型 | 内容 | 注入方式 | 限额 |
+|---|---|---|---|
+| EVIDENCE | 事实/工作流碎片 | `<Extra Info>` 合成块，插入最后 user 消息前 | 检索 top-8 |
+| ABILITY:Method | 程序级方法步骤 | 同上合成块 | quality 前 5 |
+| ABILITY:Guard | 护栏/教训（"注意："前缀） | 同上合成块 | quality 前 5 |
+| SKILL | 技能描述 | `<available_skills>` 拼入 system prompt | catalog ≤10 |
+| SOP | 可调用流程 | schema 并入 tools 列表（重名请求侧胜出） | ≤15 |
+
+**生命周期**（状态机）：
+
+```
+ETL 候选（dormant）→ 蒸馏成卡（py 阈值 0.5）→ 晋升验证（ts 阈值 0.5）→ active
+    ↑                      ↓ 不足                       ↓ 不足
+    └── dormant rescore 重打分 ← dormant（留观）    丢弃
+active → rescore 下滑 → 降回 dormant；dormant 超 TTL 30 天或超 cap 10000 → removed
+```
+
+**硬约束**：检索 SQL 层 `status='active'` 过滤——dormant/removed 物理不可达 prompt；原始轨迹从不入库注入（三层化红线）；失败轨迹只作离线归因输入，教训以程序化提取的 Guard 卡沉淀（禁自由诊断）。
+
+**快照纪律**（M10）：跑批前 `snapshot_store.py` 冻结快照，跑批全程检索只读快照（被测对象不中途变化），写路径（trace/session/晋升）一律走 live 库。
+
+**已知缺陷**：卡片缺"交付物"维度、闸门不验交付产出（issue-010，**待解决**——C 后统一修复）。
+
+### 5.3 检索机制
+
+`retrieve()`：取最后一条 user 消息原文为 query（无语义解析）→ FTS5 bm25 top-24（CJK 字+bigram 前缀，OR 拼接）→ 词袋余弦重排 top-8。无 embedding、无 LLM 参与。已知局限：字面匹配对措辞差异不敏感（语义检索是待建能力）；FTS 拉丁检索局限挂技术债。
+
+### 5.4 注入开关与同路径对照机制
+
+服务级 `AGENT_SERVER_INJECTION=off` + 请求级 `injection` 布尔覆盖（`/v1` body 或 `/api/stream` options）。**关闭语义**：跳过检索+注入（含 skill catalog/SOP schema），session 与 trace 无条件照录；session 中 `experience_injection.disabled=true` 区分"关"与"未命中"。对照臂与实验臂走完全相同代码路径——基线轨迹也进学习回路（08-05 决议，取代物理旁路）。
+
+### 5.5 学习回路触发机制
+
+触发器已从门控（步级形式失败）迁移到**局级胜负**（08-04 决议）：败局（won=False / score 低于阈）触发败局重放归因。R2 进料三路合并：学生轨迹 + 同局老师胜局 + 败局对照。C campaign 为每日批次全量进化（每日夜间 runbook 触发）。
+
+### 5.6 奖惩机制
+
+**现役（经验卡层面）**：晋升阈值（准入奖励）、dormant 留观/丢弃（准入拒绝）、rescore 降级（留用查看）、TTL/cap 清理（淘汰）。**行为层面无奖惩**——模型执行时收不到任何结果反馈信号。
+
+**关键缺口**：闸门打分依据是裁判自评（"程序合理性"），与真实执行结果脱钩（issue-010 的结构性根源）。
+
+**待建（已立项方向，C 后统一修复批次）**：卡片实战结果归因奖惩——request_traces.retrievedIds × 任务分数 join，得"卡×结果"关联；高分任务注入卡加分，重复失败任务注入卡降分/降 dormant/强制重验。质量控制：最小样本阈值防误杀；对照臂差值校准（相关≠因果）。不做 token 级 RL（与本地 4-bit 部署形态不兼容）。
+
+### 5.7 运维保障机制
+
+- **preflight 门禁**：跑批入口必过依赖指纹校验（omlx 模型列表/gateway 模型/8789 链路+injection 标志），自有服务 down 自动 nohup 拉起；omlx 只探活
+- **Web 监控**：`/dashboard`（链路/命中率/日志，5s 自刷）+ `/api/status/chain` + `/api/logs`；`AGENT_SERVER_WEB=off` 可关（默认 on）
+- **issue 登记制度**：`doc/issues-snapshot/`，每 issue 必带回归测试哨兵，推送前 `./test.sh` 门控
+- **跑批纪律**：nohup 常驻 + 独立监视器 + caffeinate 防休眠 + 断点续跑（completed_keys）
+- **批次层异常隔离**：任何局部失败（API 超时/工具超时/评分崩溃）降级为观察，永不穿透批次层（issue-008/009/011 沉淀）
+
+## 6. 问题台账（issue-001~011）
+
+### 6.1 待解决（open）
 
 | # | 问题 | 根因 | 解决方案 | 状态 |
 |---|---|---|---|---|
@@ -246,7 +322,7 @@ run-evolution.ts: cmdRun()                                   :99
 | 010 | 照卡执行挤占交付本能：注入卡片致重复集分数下滑（0.567→0.378 后回升 0.467） | 蒸馏模板缺"交付物"维度；验证闸门只验程序合理性不验交付产出 | 预列 4 项：①蒸馏模板加 deliverables 字段 ②闸门加交付物产出检查 ③存量卡重蒸馏 ④补"无交付轨迹拦截"回归测试 | **待解决——C 完成后统一修复（用户指令）** |
 | 002 余留 | 管线分阶段断点持久化 | 任意阶段失败全量重跑（2-4h/次放大器） | 立项做断点持久化，或降级为已知风险/关闭 | **待解决——C 收口后用户决策** |
 
-### 5.2 已解决（fixed，均带回归哨兵，一个发布周期无复发后转 closed）
+### 6.2 已解决（fixed，均带回归哨兵，一个发布周期无复发后转 closed）
 
 | # | 问题 | 修复 | 回归测试 |
 |---|---|---|---|
@@ -260,14 +336,14 @@ run-evolution.ts: cmdRun()                                   :99
 | 009 | 工具超时未捕获杀死批次 | TimeoutExpired 转 toolResult 观察 | `test_campaign.py` 1 例 |
 | 011 | QCB 评分脚本崩溃杀死批次 | safe_grade 降级 grading_error 行 | `test_campaign.py` 1 例 |
 
-### 5.3 故障模式归纳（台账的元教训）
+### 6.3 故障模式归纳（台账的元教训）
 
 1. **局部异常穿透批次层**（008/009/011 三例同源）：原则已定——任何局部失败降级为观察，永不穿透批次层。
 2. **小样本外推失真**（003 的 147 请求 bisect vs 全量 84%）：升级率必须 model_runs 全量口径核验。
 3. **自评通过 ≠ 行为效用**（010）：验证闸门需要面向交付物的 outcome 检查。
 4. **观测缺口即盲区**（004/005）：标记断裂造成假绿——标记与 model_runs 互为印证、拒绝只信其一（决议 M1/C2）。
 
-## 6. 当前生效决议摘要（详见各决策记录）
+## 7. 当前生效决议摘要（详见各决策记录）
 
 - **失败经验三层化**（08-04）：原始失败文本不入库；败局作归因输入；Guard 卡程序化提取+回放验证（≤5）
 - **注入开关与同路径对照**（08-05）：双臂同走 8789，对照臂 injection off；DeepSeek 直连臂例外
