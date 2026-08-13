@@ -15,3 +15,4 @@
 | [issue-009](issue-009-campaign-tool-timeout-kills-batch.md) | campaign 工具超时未捕获杀死批次（agent find 扫描 1T 盘撞 120s） | fixed（2026-08-10，待观察） | 2026-08-10（D2 监视器告警） | 2026-08-10（TimeoutExpired 转 toolResult 观察） | `test_campaign.py::test_run_agent_tool_timeout_returns_observation_not_crash` |
 | [issue-010](issue-010-card-guided-execution-crowds-out-deliverable.md) | 照卡执行挤占交付本能——注入卡片致重复集分数连续下滑（0.567→0.404），蒸馏模板缺交付物维度+验证闸门盲区 | **open（代码修改延迟到 C 测试完成后，用户决定）** | 2026-08-12（D3 数据+个案分析） | 待定（修复项 4 条已预列） | 待定（届时补：无交付轨迹的闸门拦截测试） |
 | [issue-011](issue-011-qcb-grader-script-crash-kills-batch.md) | QCB 内嵌评分脚本崩溃杀死批次（readme_content 未绑定，上游资产 bug） | fixed（2026-08-13，待观察） | 2026-08-13（D5 监视器告警） | 2026-08-13（safe_grade 降级为 grading_error 行） | `test_campaign.py::test_safe_grade_degrades_on_grader_crash` |
+| [issue-012](issue-012-ewc-memory-design-review.md) | EWC 思想对记忆系统设计的借鉴——7 方案采纳评审（设计评审非故障） | 评审完成（采纳项入统一修复批次/backlog） | 2026-08-13（用户提供 Q&A） | 采纳 4（1/3/5/7）部分采纳 2（2/6） | 落地时随统一修复批次补 |
