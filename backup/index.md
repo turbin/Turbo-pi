@@ -16,4 +16,4 @@
 
 | 日期 | 目录 | 内容 | 状态 |
 |---|---|---|---|
-| （待 C 轮结束后执行） | `c-campaign-2026XXXX/` | C campaign D1-D7 全部数据 + 经验库 + 卡片导出 + 日志 | **待办** |
+| 2026-08-14 | `c-campaign-20260814/` | C campaign D1-D7 全量：run.jsonl 267 任务 + transcripts + 终态经验库与每日快照 + 920 条 active 卡导出 + 跑批/进化日志（口径见该目录 README） | ✅ 完成 |

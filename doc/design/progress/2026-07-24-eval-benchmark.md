@@ -22,6 +22,8 @@
 
 ## 2. 交接信息（跨 agent 共享事实）
 
+- 2026-08-14 kimi：**C 阶段收官**——判据①②双达标（升级率全程 0%）；归因 +10.3pp（抗劣化形态）；收口报告 `doc/design/2026-08-14-agent-server-c-campaign-final-report.md`；数据已归档 `backup/c-campaign-20260814/`（含 920 条 active 卡导出）。**下一步：按协议逐案请示五份方案（doc/design/plans/2026-08-13-*）**。
+
 - 2026-08-13 kimi：**C 后待启动方案已落盘（doc/design/plans/，用户确认需逐一询问后启动）**：①plan-card-deliverable-fix（issue-010 主体修复）②plan-outcome-attribution-reward（实战归因奖惩+置信度，issue-010项5+012项1/7）③plan-scenario-tags（domain 标签+检索过滤，backlog）④plan-b-rerun-pure-27b（issue-003 收口，含 A/B/C 三选与 pilot 校准）⑤plan-pipeline-checkpointing（issue-002 余留，附降级/关闭备选与决策参考数据）。**触发协议：C 收口报告交付后，逐一向用户确认是否启动**。
 
 - 2026-08-12 kimi：**用户指令——C 完成后统一回顾所有未完成 issue 并一次修复**。届时清单：issue-003（open，B' 重跑方案 A/B/C 拍板后关闭）、issue-010（open，预列修复项 4 条：蒸馏模板交付物维度/闸门交付检查/存量卡重蒸馏/回归测试）、issue-002 余留项（断点持久化立项或降级关闭）、fixed-待观察项（001/004/005/006/007/008/009）的 closed 评估。C 期间不改代码（用户 08-12 决定）。
