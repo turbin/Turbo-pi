@@ -16,6 +16,8 @@ function makeSop(overrides: Partial<Experience>): Experience {
 			},
 		},
 		quality: 0.9,
+		confidence: 0.5,
+		rescoreExcludedBatches: 0,
 		status: "active",
 		sourceSession: "seed",
 		sourceEntryId: "seed-1",

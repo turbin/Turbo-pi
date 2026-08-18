@@ -8,6 +8,12 @@ const TOKEN_RE = /[一-鿿]+|[a-zA-Z0-9]+/g;
  * Retrieve experiences relevant to `query`: FTS bm25 fetches up to
  * `min(limit * 3, 24)` candidates, then a cosine score over token
  * overlap re-ranks them and the top `limit` are returned.
+ *
+ * F2 (T3): final rank weight = cosine × confidence — real-world attribution
+ * confidence participates in ordering so demoted (low-confidence) cards sink
+ * while rewarded cards surface (plan §3-3 降权落地形态). bm25 candidate
+ * fetch in store.search stays confidence-free on purpose: it only selects
+ * the candidate pool; the weight applies at the re-rank step.
  */
 export async function retrieve(store: ExperienceStore, query: string, limit: number): Promise<RetrievedExperience[]> {
 	const ftsQuery = buildFtsQuery(query);
@@ -15,7 +21,7 @@ export async function retrieve(store: ExperienceStore, query: string, limit: num
 	const candidates = await store.search(ftsQuery, Math.min(limit * 3, 24));
 	const scored = candidates.map((experience) => ({
 		experience,
-		score: cosineScore(query, `${experience.title} ${JSON.stringify(experience.payload)}`),
+		score: cosineScore(query, `${experience.title} ${JSON.stringify(experience.payload)}`) * experience.confidence,
 	}));
 	scored.sort((a, b) => b.score - a.score);
 	return scored.slice(0, limit);

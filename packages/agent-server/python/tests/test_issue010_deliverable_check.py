@@ -192,6 +192,41 @@ def test_ppt_group_caps_per_trajectory_not_per_group():
     assert not with_del.deliverable_capped
 
 
+def test_ppt_mixed_group_no_deliverable_does_not_drag_partner():
+    """m2 test review finding ①（T3 处理）：无交付轨迹不参与锦标赛——
+    即使它在 verifier 眼中"更强"（关键词分更高），也不拖低有交付伙伴的
+    归一化分（实测：混合锦标赛下 D 归一化 0.4455 被拖拒；排除后 D 单独
+    vs_reference 0.6225 过闸）。
+    """
+    verifier, _ = make_verifier()
+    # N：无交付但 verifier 视角更强（7 个正向关键词 → 字母分 4/5）；
+    # D：有交付（bash 写文件标记），3 个正向关键词（字母分 3/5）。
+    strong_no_deliverable = (
+        "Run the tests, verify the fix with a checklist and edge case coverage, "
+        "apply backoff with jitter, and rollback on failure."
+    )
+    deliverable = (
+        "Run the tests and the checklist with edge case coverage.\n"
+        "bash: cat > report.md <<EOF\nall green\nEOF"
+    )
+    scored, tournaments = score_trajectories(
+        [
+            TeacherTrajectory(task_id="task-mix", task="assess the policy",
+                              trajectory=strong_no_deliverable),
+            TeacherTrajectory(task_id="task-mix", task="assess the policy",
+                              trajectory=deliverable),
+        ],
+        verifier=verifier,
+    )
+    by_traj = {s.traj.trajectory: s for s in scored}
+    # 锦标赛只含交付轨迹（1 条 → vs_reference），无交付轨迹不参与。
+    assert tournaments == {}
+    d = by_traj[deliverable]
+    n = by_traj[strong_no_deliverable]
+    assert not d.deliverable_capped and d.accepted and d.quality >= 0.5
+    assert n.deliverable_capped and not n.accepted and n.quality == DELIVERY_CAP_QUALITY
+
+
 def test_select_experiences_reports_deliverable_cap_reason():
     """select_experiences 对封顶轨迹给明确的跳过原因（交付检查），不抽卡。"""
     from verification_selection.pipeline import select_experiences

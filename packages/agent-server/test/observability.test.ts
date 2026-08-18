@@ -14,6 +14,8 @@ function exp(
 			title,
 			payload: role ? { role } : {},
 			quality: 0.7,
+			confidence: 0.5,
+			rescoreExcludedBatches: 0,
 			status: "active",
 			sourceSession: "",
 			sourceEntryId: "",

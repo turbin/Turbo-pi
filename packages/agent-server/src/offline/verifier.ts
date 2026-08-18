@@ -80,6 +80,9 @@ export async function verifyAndCanonicalize(items: VerifyItem[], store: Experien
 				title: normalized.title,
 				payload: normalized.payload,
 				quality: item.quality,
+				// F2 (T3): 新卡置信度默认 0.5（实战归因由离线脚本按证据更新）。
+				confidence: 0.5,
+				rescoreExcludedBatches: 0,
 				status: "active",
 				sourceSession: item.sourceSession ?? "",
 				sourceEntryId: item.sourceEntryId ?? "",

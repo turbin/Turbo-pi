@@ -43,6 +43,8 @@ function dormantEvidence(text: string): Experience {
 		title: text.slice(0, 50),
 		payload: { text },
 		quality: 0,
+		confidence: 0.5,
+		rescoreExcludedBatches: 0,
 		status: "dormant",
 		sourceSession: "session-1",
 		sourceEntryId: "entry-1",

@@ -191,22 +191,33 @@ def score_trajectories_with_checkpoint(
                 scored.append(ScoredTrajectory(t, qf, method, (not capped) and qf >= score_threshold,
                                                deliverable_capped=capped))
             continue
-        if len(trajs) > 1:
-            res = verifier.select_best(trajs[0].task, texts, k=k, rng=rng)
+        # PPT 混合组交互（m2 test review finding ①，T3 处理）：无交付轨迹不参与
+        # 锦标赛——它们在封顶后不可能产卡，参与只会以"verifier 高分"抢占归一化
+        # 质量、拖低有交付伙伴（issue-010 教训：自评高分 ≠ 行为效用）。有交付
+        # 轨迹相互竞争；全组无交付则零打分全部封顶（比打分后封顶更早拦截）。
+        deliverable = [t for t in trajs if has_deliverable(t.trajectory)]
+        if len(deliverable) > 1:
+            res = verifier.select_best(trajs[0].task, [t.trajectory for t in deliverable], k=k, rng=rng)
             tournaments[task_id] = res
             qualities = list(res.normalized)
             method = "ppt"
-        else:
-            t = trajs[0]
+        elif len(deliverable) == 1:
+            t = deliverable[0]
             ps = verifier.score_pair(t.task, t.trajectory, REFERENCE_TRAJECTORY)
             qualities = [ps.preference]
             method = "vs_reference"
-        for t, q in zip(trajs, qualities):
+        else:
+            qualities = []
+            method = "capped"  # 全组无交付：零打分，全部封顶
+        # 按原组顺序回填：有交付轨迹用其打分，无交付轨迹直接封顶（幂等）。
+        quality_by_id = {id(t): q for t, q in zip(deliverable, qualities)}
+        group_qualities = [quality_by_id.get(id(t), DELIVERY_CAP_QUALITY) for t in trajs]
+        for t, q in zip(trajs, group_qualities):
             qf, capped = _apply_deliverable_cap(q, t)
             scored.append(ScoredTrajectory(t, qf, method, (not capped) and qf >= score_threshold,
                                            deliverable_capped=capped))
         journal.append(task_id, {"task_id": task_id, "input_hash": h,
-                                 "method": method, "qualities": qualities})
+                                 "method": method, "qualities": group_qualities})
     return scored, tournaments
 
 

@@ -9,6 +9,11 @@
     2. 以 AGENT_SERVER_STORE_SNAPSHOT=<snapshot.db> 启动（或重启）评估实例
     3. 跑批全程实验臂检索只读快照——手动进化 / dormant 提升 / TTL 清理
        不再中途改变被测对象的处理行为；写入仍走 live 库（学习回路不受影响）
+
+F2（T3）快照再生：experiences 表新增 confidence/rescore_excluded_batches 列
+后，**快照必须重新生成**（本脚本整库复制，新列随 live 库自动带入）；
+旧 schema 快照仍可只读打开（读路径 COALESCE 默认 confidence=0.5 / 排除计数=0），
+但检索排序不含真实置信度——归因奖惩生效期跑批前请重新生成快照。
 """
 
 import sqlite3

@@ -140,8 +140,10 @@ def test_changed_trajectory_content_invalidates_cache(tmp_path):
     score_trajectories_with_checkpoint(trajs, verifier=verifier, run_dir=str(rundir))
 
     # task-b 轨迹内容变化（新 session 补录）→ 哈希不匹配 → 重打；其余跳过。
+    # （新轨迹带交付标记：无交付轨迹不参与打分，T3 混合组处理。）
     changed = [t if t.task_id != "task-b" else TeacherTrajectory(
-        task_id="task-b", task=t.task, trajectory="A completely different trajectory with backoff and retry."
+        task_id="task-b", task=t.task, trajectory="A completely different trajectory with backoff and retry.\n"
+        "bash: cat > report.md <<EOF\ndone\nEOF"
     ) for t in trajs]
     verifier2, mock2 = make_verifier()
     rescored, _ = score_trajectories_with_checkpoint(changed, verifier=verifier2, run_dir=str(rundir))

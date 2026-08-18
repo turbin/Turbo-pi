@@ -22,6 +22,8 @@ function makeExp(id: string, hash: string): Experience {
 		title: `evidence ${id}`,
 		payload: { text: `content ${id}` },
 		quality: 0.8,
+		confidence: 0.5,
+		rescoreExcludedBatches: 0,
 		status: "active" as const,
 		sourceSession: "session-1",
 		sourceEntryId: "entry-1",

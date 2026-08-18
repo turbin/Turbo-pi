@@ -171,6 +171,8 @@ function makeExperience(id: string, entry: SeedEntry): Experience {
 		title: entry.title,
 		payload: { text: entry.text },
 		quality: 0.9,
+		confidence: 0.5,
+		rescoreExcludedBatches: 0,
 		status: "active",
 		sourceSession: "bench",
 		sourceEntryId: id,

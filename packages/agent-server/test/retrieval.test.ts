@@ -10,6 +10,8 @@ function makeExp(id: string, title: string, text: string): Experience {
 		title,
 		payload: { text },
 		quality: 0.8,
+		confidence: 0.5,
+		rescoreExcludedBatches: 0,
 		status: "active",
 		sourceSession: "session-1",
 		sourceEntryId: `entry-${id}`,

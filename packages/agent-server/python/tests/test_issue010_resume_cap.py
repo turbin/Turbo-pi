@@ -53,13 +53,18 @@ def traj(task_id: str, text: str) -> TeacherTrajectory:
 
 
 def test_resume_path_reapplies_deliverable_cap(tmp_path):
-    """resume 命中缓存时交付检查必须同样执行：下调阈值也不能让缓存无交付轨迹入闸。"""
+    """resume 命中缓存时交付检查必须同样执行：下调阈值也不能让缓存无交付轨迹入闸。
+
+    T3 混合组处理：无交付轨迹在组构造期即被拦截（零打分，直接封顶条目）——
+    journal 存封顶值，resume 复用后仍必须保持 accepted=False（"resume 不重查
+    交付"的错实现此处 accepted=True 而红）。
+    """
     rundir = tmp_path / "run"
     t = traj("task-91", NO_DELIVERABLE_TRAJ)
 
     verifier, mock = make_verifier()
     scored1, _ = score_trajectories_with_checkpoint([t], verifier=verifier, run_dir=str(rundir))
-    assert len(mock.calls) > 0
+    assert len(mock.calls) == 0  # 全组无交付：零打分（比打分后封顶更早拦截）
     assert scored1[0].deliverable_capped and not scored1[0].accepted
     assert scored1[0].quality == DELIVERY_CAP_QUALITY
 
@@ -115,7 +120,7 @@ def test_ppt_group_resume_caps_per_trajectory_identically(tmp_path):
 
 
 def test_m1_era_journal_without_cap_version_is_invalidated(tmp_path):
-    """T2-6：M1 时代（extra=""）journal 条目 hash 不匹配 → 重打，旧语义产物不复用。"""
+    """T2-6：M1 时代（extra=""）journal 条目 hash 不匹配 → 重写，旧语义产物不复用。"""
     rundir = tmp_path / "run"
     t = traj("task-93", NO_DELIVERABLE_TRAJ)
 
@@ -133,11 +138,14 @@ def test_m1_era_journal_without_cap_version_is_invalidated(tmp_path):
         f.write(json.dumps({"key": "task-93", "input_hash": h_old, "method": "vs_reference",
                             "qualities": [0.85]}) + "\n")
 
-    # 当前管线（指纹含 extra=DELIVERY_CAP_VERSION）：hash 不匹配 → 必须重打。
+    # 当前管线（指纹含 extra=DELIVERY_CAP_VERSION）：hash 不匹配 → 旧条目必须
+    # 被新语义产物覆盖（无交付组零打分，直接封顶条目）；旧 0.85 绝不复用。
     verifier2, mock2 = make_verifier()
     scored, _ = score_trajectories_with_checkpoint([t], verifier=verifier2, run_dir=str(rundir))
-    assert len(mock2.calls) > 0  # 重打（非复用旧缓存）
-    assert scored[0].deliverable_capped  # 且新语义生效
+    assert len(mock2.calls) == 0  # 无交付组：拦截发生在打分之前
+    assert scored[0].deliverable_capped  # 新语义生效
+    assert scored[0].quality == DELIVERY_CAP_QUALITY
     # journal 更新为新指纹条目（旧条目被 last-write-wins 覆盖）。
     entries = [json.loads(line) for line in (rundir / "scores.jsonl").read_text().splitlines()]
     assert entries[-1]["input_hash"] != h_old
+    assert entries[-1]["qualities"] == [DELIVERY_CAP_QUALITY]

@@ -25,6 +25,8 @@ function makeExp(overrides: Partial<Experience>): Experience {
 		title: overrides.title ?? "title",
 		payload: overrides.payload ?? {},
 		quality: overrides.quality ?? 0.8,
+		confidence: 0.5,
+		rescoreExcludedBatches: 0,
 		status: overrides.status ?? "active",
 		sourceSession: "session-1",
 		sourceEntryId: "entry-1",

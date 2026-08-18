@@ -16,6 +16,8 @@ function makeExp(overrides: Partial<Experience> & Pick<Experience, "id" | "title
 	return {
 		type: "EVIDENCE",
 		quality: 0.8,
+		confidence: 0.5,
+		rescoreExcludedBatches: 0,
 		status: "active",
 		sourceSession: "session-1",
 		sourceEntryId: "entry-1",

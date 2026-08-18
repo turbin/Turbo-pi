@@ -33,6 +33,21 @@ export interface Experience {
 	title: string;
 	payload: Record<string, unknown>;
 	quality: number;
+	/**
+	 * F2 (T3): real-world attribution confidence in [0,1]. Default 0.5 for
+	 * new/old rows (COALESCE default); the offline eval/attribution.py raises
+	 * it on success evidence (cap 1.0) and lowers it on demotion events
+	 * (>= 3 failed task-days). Retrieval ranks by quality*confidence so
+	 * demoted cards sink. quality itself stays the verifier score (untouched).
+	 */
+	confidence: number;
+	/**
+	 * F2 (T3): remaining evolution runs during which this row is excluded
+	 * from runDormantRescore self-re-evaluation (复升排除, N pre-registered
+	 * batches) — set by the manual demotion channel (eval/attribution.py
+	 * --demote), decremented once per runDailyEvolution batch.
+	 */
+	rescoreExcludedBatches: number;
 	status: "active" | "dormant" | "removed";
 	sourceSession: string;
 	sourceEntryId: string;

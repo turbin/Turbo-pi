@@ -15,6 +15,8 @@ function makeExperience(overrides: Partial<Experience> = {}): Experience {
 		title: "你好问候偏好",
 		payload: { text: "用户说你好时偏好简洁的中文回复" },
 		quality: 0.9,
+		confidence: 0.5,
+		rescoreExcludedBatches: 0,
 		status: "active",
 		sourceSession: "sess-0",
 		sourceEntryId: "entry-0",

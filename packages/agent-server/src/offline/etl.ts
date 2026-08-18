@@ -57,6 +57,8 @@ export async function etlSessionFiles(paths: string[], store: ExperienceStore): 
 						charEnd: text.length,
 					},
 					quality: 0,
+					confidence: 0.5,
+					rescoreExcludedBatches: 0,
 					status: "dormant",
 					sourceSession: path,
 					sourceEntryId: message.entryId,

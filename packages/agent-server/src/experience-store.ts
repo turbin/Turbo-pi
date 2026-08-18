@@ -58,6 +58,8 @@ interface ExperienceRow {
 	title: string;
 	payload: string;
 	quality: number;
+	confidence?: number;
+	rescore_excluded_batches?: number;
 	status: Experience["status"];
 	source_session: string;
 	source_entry_id: string;
@@ -72,6 +74,9 @@ function rowToExperience(row: ExperienceRow): Experience {
 		title: row.title,
 		payload: JSON.parse(row.payload) as Record<string, unknown>,
 		quality: row.quality,
+		// F2 (T3): 旧库/旧快照无新列 → 读回 COALESCE 默认（confidence=0.5, 排除计数=0）。
+		confidence: row.confidence ?? 0.5,
+		rescoreExcludedBatches: row.rescore_excluded_batches ?? 0,
 		status: row.status,
 		sourceSession: row.source_session,
 		sourceEntryId: row.source_entry_id,
@@ -155,6 +160,13 @@ export function tokenizeForFts(text: string): string {
 }
 
 export class ExperienceStore {
+	/**
+	 * F2 (T3): schema version for experiences.confidence /
+	 * rescore_excluded_batches migrations. initSchema ensures the columns
+	 * (PRAGMA table_info + ALTER, M1 pattern) and stamps user_version.
+	 */
+	static readonly SCHEMA_VERSION = 1;
+
 	private db: Database.Database;
 	private readDb: Database.Database;
 
@@ -173,6 +185,10 @@ export class ExperienceStore {
 				title TEXT NOT NULL,
 				payload TEXT NOT NULL,
 				quality REAL NOT NULL DEFAULT 0,
+				-- F2 (T3): 实战归因置信度 [0,1]，默认 0.5；降权卡沉底（检索排序加权）。
+				confidence REAL NOT NULL DEFAULT 0.5,
+				-- F2 (T3): 复升排除计数——人工降级通道设置，每批递减，N 批后恢复复评资格。
+				rescore_excluded_batches INTEGER NOT NULL DEFAULT 0,
 				status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','dormant','removed')),
 				branch_path TEXT,
 				times_selected INTEGER NOT NULL DEFAULT 0,
@@ -234,13 +250,28 @@ export class ExperienceStore {
 		if (!hasTraceCol("task_id")) {
 			this.db.exec("ALTER TABLE request_traces ADD COLUMN task_id TEXT");
 		}
+		// F2 (T3): experiences 增 confidence/rescore_excluded_batches——PRAGMA + ALTER
+		// 迁移（M1 模式）+ user_version 版本化；旧行读回列默认值（COALESCE 语义）。
+		// 快照（readDb）只读打开，从不被 ALTER（M10 写侧-读侧分离）。
+		const version = this.db.pragma("user_version", { simple: true }) as number;
+		if (version < ExperienceStore.SCHEMA_VERSION) {
+			const expCols = this.db.prepare("PRAGMA table_info(experiences)").all() as { name: string }[];
+			const hasExpCol = (name: string) => expCols.some((c) => c.name === name);
+			if (!hasExpCol("confidence")) {
+				this.db.exec("ALTER TABLE experiences ADD COLUMN confidence REAL NOT NULL DEFAULT 0.5");
+			}
+			if (!hasExpCol("rescore_excluded_batches")) {
+				this.db.exec("ALTER TABLE experiences ADD COLUMN rescore_excluded_batches INTEGER NOT NULL DEFAULT 0");
+			}
+			this.db.pragma(`user_version = ${ExperienceStore.SCHEMA_VERSION}`);
+		}
 	}
 
 	async insert(exp: Experience): Promise<void> {
 		this.db
 			.prepare(`
-				INSERT INTO experiences (id, type, title, payload, quality, status, source_session, source_entry_id, content_hash, created_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				INSERT INTO experiences (id, type, title, payload, quality, confidence, rescore_excluded_batches, status, source_session, source_entry_id, content_hash, created_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			`)
 			.run(
 				exp.id,
@@ -248,6 +279,8 @@ export class ExperienceStore {
 				exp.title,
 				JSON.stringify(exp.payload),
 				exp.quality,
+				exp.confidence,
+				exp.rescoreExcludedBatches,
 				exp.status,
 				exp.sourceSession,
 				exp.sourceEntryId,
@@ -284,6 +317,32 @@ export class ExperienceStore {
 
 	async promoteToActive(id: string, quality: number): Promise<void> {
 		this.db.prepare("UPDATE experiences SET status = 'active', quality = ? WHERE id = ?").run(quality, id);
+	}
+
+	/**
+	 * F2 (T3): 人工确认降级通道——把指定 active 卡降为 dormant 并打复升排除标记。
+	 * 不自动执行：只由离线归因脚本（eval/attribution.py --demote）在人工确认
+	 * 待降级清单后调用。降级不动 quality/confidence（降权由 --apply 另行写）。
+	 * 返回实际降级的行数（未知 id 忽略）。
+	 */
+	async demoteToDormant(ids: string[], rescoreExcludeBatches: number): Promise<number> {
+		return this.db
+			.prepare(
+				"UPDATE experiences SET status = 'dormant', rescore_excluded_batches = ? WHERE id IN (SELECT value FROM json_each(?)) AND status = 'active'",
+			)
+			.run(rescoreExcludeBatches, JSON.stringify(ids)).changes;
+	}
+
+	/**
+	 * F2 (T3): 每运行一批进化，递减所有复升排除计数（>0 者 -1，钳到 0）——
+	 * N 批后 dormant 卡恢复 runDormantRescore 自评复评资格。返回递减行数。
+	 */
+	async decrementRescoreExclusions(): Promise<number> {
+		return this.db
+			.prepare(
+				"UPDATE experiences SET rescore_excluded_batches = rescore_excluded_batches - 1 WHERE rescore_excluded_batches > 0",
+			)
+			.run().changes;
 	}
 
 	async listActive(type: Experience["type"], limit: number): Promise<Experience[]> {

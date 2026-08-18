@@ -10,6 +10,8 @@ function makeSkill(overrides: Partial<Experience>): Experience {
 		title: "code-review",
 		payload: { sections: { overview: "How to review code" } },
 		quality: 0.9,
+		confidence: 0.5,
+		rescoreExcludedBatches: 0,
 		status: "active",
 		sourceSession: "seed",
 		sourceEntryId: "seed-1",

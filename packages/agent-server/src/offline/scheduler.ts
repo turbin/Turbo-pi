@@ -113,9 +113,13 @@ export async function runDailyEvolution(store: ExperienceStore, options: DailyEv
 
 	// Stage 4: re-verify dormant ETL candidates (SPEC §6 Stage 3). Scores below
 	// the promotion threshold leave the row dormant for a later run.
+	// F2 (T3) 复升排除：带 rescore_excluded_batches 标记的 dormant 行（被实战
+	// 证据降级、由人工通道确认）跳过自评复评 N 批——阻断"自评复升→再注入→
+	// 再失败"循环；每运行一批计数递减，N 批后恢复复评资格。
 	const rescoreLimit = options.rescoreLimit ?? DEFAULT_RESCORE_LIMIT;
 	const dormantRows = (await store.listDormant("EVIDENCE", rescoreLimit)).filter(
-		(row) => typeof row.payload.text === "string" && (row.payload.text as string).trim(),
+		(row) =>
+			row.rescoreExcludedBatches <= 0 && typeof row.payload.text === "string" && (row.payload.text as string).trim(),
 	);
 	let rescored = 0;
 	let promotedFromDormant = 0;
@@ -152,10 +156,21 @@ export async function runDailyEvolution(store: ExperienceStore, options: DailyEv
 	const cutoffIso = new Date(now() - dormantTtlDays * DAY_MS).toISOString();
 	const removedDormant = await store.removeDormantBefore(cutoffIso, dormantCap);
 
+	// F2 (T3): 复升排除计数每批递减（无论该行本轮是否被选中）。
+	const decrementedExclusions = await store.decrementRescoreExclusions();
+
 	return writeCheckpoint(store, {
 		kind: "evolution",
 		epoch: now(),
 		metric: promoted + promotedFromDormant,
-		snapshot: JSON.stringify({ etlInserted, pipeline, promoted, rescored, promotedFromDormant, removedDormant }),
+		snapshot: JSON.stringify({
+			etlInserted,
+			pipeline,
+			promoted,
+			rescored,
+			promotedFromDormant,
+			removedDormant,
+			decrementedExclusions,
+		}),
 	});
 }

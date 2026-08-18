@@ -28,7 +28,9 @@ DELIVERY_CAP_QUALITY = 0.49
 
 # 交付检查逻辑版本：检测器/封顶语义变化时递增，使既有打分缓存（ScoreJournal）
 # 全部失效重打（输入哈希 = prompt 指纹 + 轨迹内容，指纹含本版本）。
-DELIVERY_CAP_VERSION = "v1"
+# v1：T2 交付检查（打分后逐条封顶）；v2：T3 混合组处理（无交付轨迹不参与
+# 锦标赛、全组无交付零打分）——锦标赛组成变化即质量语义变化，v1 journal 失效。
+DELIVERY_CAP_VERSION = "v2"
 
 _FILE_EXT = r"(?:md|json|csv|yaml|yml|txt|py|sh|xml|html|ini|log|docx|pdf)"
 
