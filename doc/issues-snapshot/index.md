@@ -1,6 +1,6 @@
 # issues-snapshot 索引
 
-状态图例：open（待修）/ fixed（已修待观察）/ closed（一个发布周期无复发）
+状态图例：open（待修）/ fixed（已修待观察）/ closed（一个发布周期无复发）/ deferred（用户裁决延后，非故障演进项）
 
 | Issue | 标题 | 状态 | 报告 | 修复 | 回归测试 |
 |---|---|---|---|---|---|
@@ -16,3 +16,5 @@
 | [issue-010](issue-010-card-guided-execution-crowds-out-deliverable.md) | 照卡执行挤占交付本能——注入卡片致重复集分数连续下滑（0.567→0.404），蒸馏模板缺交付物维度+验证闸门盲区 | **open（代码修改延迟到 C 测试完成后，用户决定）** | 2026-08-12（D3 数据+个案分析） | 待定（修复项 4 条已预列） | 待定（届时补：无交付轨迹的闸门拦截测试） |
 | [issue-011](issue-011-qcb-grader-script-crash-kills-batch.md) | QCB 内嵌评分脚本崩溃杀死批次（readme_content 未绑定，上游资产 bug） | fixed（2026-08-13，待观察） | 2026-08-13（D5 监视器告警） | 2026-08-13（safe_grade 降级为 grading_error 行） | `test_campaign.py::test_safe_grade_degrades_on_grader_crash` |
 | [issue-012](issue-012-ewc-memory-design-review.md) | EWC 思想对记忆系统设计的借鉴——7 方案采纳评审（设计评审非故障） | 评审完成（采纳项入统一修复批次/backlog） | 2026-08-13（用户提供 Q&A） | 采纳 4（1/3/5/7）部分采纳 2（2/6） | 落地时随统一修复批次补 |
+| [issue-013](issue-013-request-id-collision-trace-merge.md) | requestId 碰撞致 request_traces 跨日静默合并（C 库 D2-D7 检索记录全失） | open（修复已规划入 F0 批次，9B 起跑前） | 2026-08-14（对抗审查 F-1 双侧复核） | 待定（F0：randomUUID+注入集落库+task_id 透传） | 待定（F0 落地时补 `test/regressions/issue-013-*.test.ts`） |
+| [issue-014](issue-014-bm25-literal-retrieval-limits-generalization.md) | 字面检索 bm25 对措辞差异不敏感——泛化测量受限 | **deferred**（用户 08-14 裁决：全部实验完成后确认是否演进） | 2026-08-14（承接 v2 §3.4 边界 5） | 延后不修 | 立项时补检索质量基准 |

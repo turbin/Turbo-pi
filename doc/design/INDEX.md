@@ -1,7 +1,7 @@
 # design 目录索引（INDEX）
 
 维护说明：本索引概述 `doc/design/`（目录名带前导空格）下每份文档的内容，并记录从 agent-server P0 起各阶段决策的变化时间线。**新增设计文档时请同步更新本索引。**
-最后更新：2026-08-11（新增经验库 schema 演化方案与 self-improve 回路方案 plans/2026-08-11）。
+最后更新：2026-08-14（C 后统一修改方案 v3：用户五项裁决落盘；新增交叉评估臂 plan 与裁决决策记录）。
 
 阅读指引：
 - **通用约束 canonical 版本**（工程内改动、omlx 不可动、提交格式、git 纪律）：`2026-07-22-agent-server-p3-candidate-tasks.md` 的"通用约束"一节，后续任务书均为引用。
@@ -144,6 +144,7 @@
 | 2026-08-04-agent-server-c3-amendment-and-r2-evolution-input-changes-and-decisions.md | **C 决策 3 修正【用户批准】**：失败经验三层化（原始文本不入库/败局作归因输入/蒸馏验证 Guard 卡入库）+ R2 进料三路合并（学生+老师胜局+败局对照）+ 触发器门控→局级胜负迁移（27B 升级率 0% 使门控断粮）+ 教训卡必须程序化提取禁自由诊断（2605.29463 红线） |
 | 2026-08-05-agent-server-injection-toggle-and-eval-preflight-changes-and-decisions.md | **注入开关 + preflight 门禁【用户重申目标驱动】**：`AGENT_SERVER_INJECTION=off` + 请求级 `injection` 覆盖，关时跳注入但 session/trace 照录（`disabled:true` 区分关与未命中）；**控制臂跑法变更=8789+injection off 同路径对照取代物理旁路**（基线轨迹进学习回路）；eval/preflight.py 按端口推导依赖链探活+nohup 自动拉起 8789/8787/8899 |
 | 2026-08-14-agent-server-c-campaign-final-report.md | **C 阶段收口报告【判据双达标】**：①重复任务升级率 D7 0%≤5% ②新任务 0%<20%；七日 U 型曲线（0.567→0.378→0.532）；归因 +10.3pp（对照臂自发劣化 -0.138 vs 实验臂 -0.035，记忆以抗劣化形态首次获对照级正证据）；诚实边界：绝对提升仍无证据、对照下滑未定性；用户四问终审回答 |
+| 2026-08-14-fix-batch-user-rulings-changes-and-decisions.md | **C 后统一修改方案用户五项裁决决策记录**：①27B 重跑取消转 9B 全量重跑 + 实验顺序决策点（office 先行→报告→确认→ALFWorld）②断点持久化翻转立项（最小断点）③SOP/SKILL 不做双轨、机制完善统一（F4）④交叉评估臂补 plan 立项 ⑤DLP 默认敏感列表（身份证号+密钥类，可扩充） |
 | 2026-08-13-agent-server-high-level-design-v2.md | **概要设计 v2（当前最新总纲）**：设计目标（含判据口径与混淆因子声明）/总体架构四视角图/核心机制六节按模块构成·运行方式·有效作用展开（现役/待建状态标注制）/关键数据流/六份演进方案（C 后逐案请示）/EWC 采纳边界/设计红线/台账摘要（含 2026-08-13 对抗式审查新增 10 项） |
 | 2026-08-13-high-level-design-v2-diagram-split-changes-and-decisions.md | **v2 架构图拆分决策记录**：单图拆为分层/时序/数据流/call graph 四视角；图中函数名与阈值均对照现役代码核实；双库分离入图；核心机制按模块构成·运行方式·有效作用三要素展开；图预渲染 2x PNG 嵌入正文（assets/2026-08-13-high-level-design-v2/，SVG 副本同目录），mermaid 源码折叠保留 |
 | 2026-08-13-high-level-design-v2-adversarial-review-changes-and-decisions.md | **v2 对抗式审查决策记录**：三 pi 审查员（实现一致性/学习机制/工程风险）+ 主会话答辩，3 轮收敛，36 条 finding 全部关闭；引入现役/待建状态标注制；新增演进方案 6（库版本交叉评估臂）与台账项 1-10；五图重渲染；SOP/SKILL 是否同过 0.5 闸留用户裁决。过程档案见 reviews/2026-08-13-v2-adversarial/ |
@@ -185,6 +186,13 @@
 | plans/2026-08-09-gate-length-issue-and-adversarial-review-plan.md | issue-003 登记 + 对抗性审查计划【已批准：仅文档交付】：issue 模板与回归测试规划、三路审查方法、39 项发现汇总、P0-P2 修复优先级、执行步骤 |
 | plans/2026-08-11-experience-schema-evolution-plan.md | 经验库 schema 演化【待评审】：SIA 论文符号表对照 → Experience 增加溯源三字段（scaffoldHash/supersedesId/verification）+ SQLite 增量迁移 + markStaleByScaffoldHash；对齐自进化路线图 R1/R3，排期待实验完成后定 |
 | plans/2026-08-11-self-improve-skill-plan.md | self-improve 回路【待评审】：支架自改两层设计（S1 仅 SKILL.md 策略层可即行 / S2 extension 机制层 reflect 工具+验证闸+evolution-log）；自反思快环+teacher 慢环分层；对齐 R3 人工审批门 |
+| plans/2026-08-13-plan-card-deliverable-fix.md | 【待启动】issue-010 主体修复：卡片 schema 加 deliverables 字段 + 验证闸门交付检查（无交付 quality 封顶 <0.5）+ 存量卡重蒸馏 + 回归测试；1-1.5 天 |
+| plans/2026-08-13-plan-outcome-attribution-reward.md | 【待启动】实战归因奖惩：retrievedIds×任务分数关联、最小样本阈值、对照臂校准、quality/confidence 二元组；1-2 天 |
+| plans/2026-08-13-plan-scenario-tags.md | 【待启动】经验卡情景维度：domain/task_pattern 标签 + 蒸馏自动打标 + 检索按域过滤；0.5-1 天，backlog 中优先 |
+| plans/2026-08-13-plan-b-rerun-pure-27b.md | 【待启动】issue-003 收口 B' 重跑：pilot 校准 max_tokens + A/B/C 三选（A 推荐：冷+热双臂 134 局 ~4 天）；验收升级率 <5% |
+| plans/2026-08-13-plan-pipeline-checkpointing.md | 【待启动】issue-002 余留：离线管线分阶段断点持久化 + --resume；附降级/关闭备选与决策数据（C 阶段 5 次进化 0 故障） |
+| plans/2026-08-14-post-c-unified-fix-batch-plan.md | **C 后统一修改方案 v3【对抗审查 3 轮共识 + 用户五项裁决落盘，待实施批准】**：实态核实表（含 requestId 碰撞实证）+ F0（归因数据通道/issue-013）→最小断点→F1（卡片交付物）→F2（归因奖惩+保守降权）→F3（情景标签含 ETL 打标）→F4（晋升机制统一）+ 台账 quick wins；用户裁决：27B 重跑取消转 9B 全量重跑、实验顺序 office 先行→报告→用户确认→ALFWorld、DLP 默认敏感列表；审查档案 reviews/2026-08-14-fix-batch-adversarial/ |
+| plans/2026-08-14-plan-library-version-cross-eval.md | 【已立项 08-14】演进方案 6 库版本交叉评估臂：冻结库/当日库 × 注入开/关 2×2 四臂，差分预注册分离库演进效应与即时注入效应（回应审查乙-F2）；与 9B 重跑批合并排期，受 office 先行顺序约束 |
 
 进度跟踪目录 `doc/design/progress/`：每个里程碑一个进度文件，多 agent 交接 + 断点恢复用；规范见 `progress/README.md`。
 
