@@ -23,8 +23,12 @@ from pathlib import Path
 
 
 def prompt_fingerprint(pairwise_template: str, reference_trajectory: str, criteria: list[str],
-                       g: int, k: int) -> str:
-    """打分 prompt 指纹：模板/参照轨迹/标准分解/G/K 任一变化即缓存失效。"""
+                       g: int, k: int, extra: str = "") -> str:
+    """打分 prompt 指纹：模板/参照轨迹/标准分解/G/K/extra 任一变化即缓存失效。
+
+    extra 供打分语义扩展使用（如 issue-010 交付检查版本）：质量语义变化时
+    递增版本号使既有打分缓存全部失效，防止旧语义产物被复用。
+    """
     h = hashlib.sha256()
     h.update(pairwise_template.encode("utf-8"))
     h.update(b"\x00")
@@ -33,7 +37,7 @@ def prompt_fingerprint(pairwise_template: str, reference_trajectory: str, criter
     for desc in criteria:
         h.update(desc.encode("utf-8"))
         h.update(b"\x00")
-    h.update(f"G={g}\x00K={k}\x00".encode("utf-8"))
+    h.update(f"G={g}\x00K={k}\x00extra={extra}\x00".encode("utf-8"))
     return h.hexdigest()[:16]
 
 

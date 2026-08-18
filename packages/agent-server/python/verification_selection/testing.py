@@ -141,6 +141,8 @@ def make_teacher_mock(G: int = 20, name: str = "teacher-mock") -> MockLLM:
                               "or rolling hash) over S. 4) Keep only positions p<n. "
                               "5) Split counts by p=0 vs p!=0 if needed. "
                               "6) Sanity-test on large n."),
+                "deliverables": ["1) the final answer listing all shift positions p<n",
+                                 "2) counts split by p=0 vs p!=0"],
                 "boundary": ("Must not contain an O(n)-length substring extraction "
                              "inside a loop over all shifts."),
                 "role": "Guard",
@@ -154,6 +156,8 @@ def make_teacher_mock(G: int = 20, name: str = "teacher-mock") -> MockLLM:
                               "and jitter. 2) Cap attempts at 4. 3) Verify the response "
                               "schema before using the payload. 4) Log each retry with "
                               "its cause."),
+                "deliverables": ["1) retry log with each attempt and its cause",
+                                 "2) the final call result after the retry loop"],
                 "boundary": ("Must not retry on 4xx client errors or on non-idempotent "
                              "POST requests without an idempotency key."),
                 "role": "Method",
@@ -166,6 +170,8 @@ def make_teacher_mock(G: int = 20, name: str = "teacher-mock") -> MockLLM:
                 "procedure": ("1) Re-read the task requirements. 2) Check each "
                               "requirement against the produced output. 3) Run available "
                               "tests. 4) Report any discrepancy explicitly."),
+                "deliverables": ["1) final answer reporting each requirement check result",
+                                 "2) test run output when tests are available"],
                 "boundary": ("Must not skip the re-read step when the task statement "
                              "contains numeric constraints."),
                 "role": "Workflow",

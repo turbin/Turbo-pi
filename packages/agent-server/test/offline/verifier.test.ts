@@ -249,6 +249,7 @@ describe("staged output mappers", () => {
 					boundary: "Must not apply to deterministic failures",
 					role: "Method",
 					evidence: { task_id: "task-1", verifier_score: 0.77 },
+					deliverables: ["1) retry log", "2) final result"],
 				},
 			},
 		]);
@@ -259,6 +260,7 @@ describe("staged output mappers", () => {
 		expect(card.quality).toBe(0.77);
 		expect(card.payload?.role).toBe("Method");
 		expect(card.payload?.taskId).toBe("task-1");
+		expect(card.payload?.deliverables).toEqual(["1) retry log", "2) final result"]);
 	});
 });
 
@@ -276,6 +278,7 @@ describe("cardsToStaged role routing (C1)", () => {
 					boundary: "Must not apply to deterministic failures",
 					role: "Method",
 					evidence,
+					deliverables: ["1) retry log", "2) final result"],
 				},
 			},
 		]);
@@ -312,6 +315,7 @@ describe("cardsToStaged role routing (C1)", () => {
 					boundary: "Must not run git push --force",
 					role: "Guard",
 					evidence: { task_id: "task-2", verifier_score: 0.6 },
+					deliverables: ["1) remote state check output"],
 				},
 			},
 		]);
@@ -396,6 +400,7 @@ describe("cardsToStaged role routing (C1)", () => {
 					boundary: "Must not regress",
 					role: "Method",
 					evidence: { task_id: "task-6", verifier_score: 0.5 },
+					deliverables: ["1) result file"],
 				},
 			},
 		]);
@@ -419,6 +424,7 @@ describe("cardsToStaged role routing (C1)", () => {
 					boundary: "Must not regress",
 					role: "Method",
 					evidence: { task_id: "task-7", verifier_score: 0.49 },
+					deliverables: ["1) result file"],
 				},
 			},
 		]);
@@ -443,6 +449,7 @@ describe("cardsToStaged role routing (C1)", () => {
 					boundary: "Must not z",
 					role: "Method",
 					evidence: { task_id: "task-8a" },
+					deliverables: ["1) result file"],
 				},
 			},
 			{
@@ -454,6 +461,7 @@ describe("cardsToStaged role routing (C1)", () => {
 					boundary: "Must not z",
 					role: "Method",
 					evidence: { task_id: "task-8b" },
+					deliverables: ["1) result file"],
 				},
 			},
 		]);
@@ -488,6 +496,7 @@ describe("cardsToStaged role routing (C1)", () => {
 				boundary: `boundary-${taskId}`,
 				role,
 				evidence: { task_id: taskId },
+				deliverables: [`1) output-${taskId}`],
 			},
 		});
 		const items = cardsToStaged([
@@ -529,6 +538,7 @@ describe("promoteStagedOutputs", () => {
 						boundary: "Must not z",
 						role: "Guard",
 						evidence: { task_id: "t-1", verifier_score: 0.8 },
+						deliverables: ["1) guard output file"],
 					},
 				},
 				{
@@ -541,6 +551,7 @@ describe("promoteStagedOutputs", () => {
 						boundary: "Must not e",
 						role: "Method",
 						evidence: { task_id: "t-2", verifier_score: 0.1 },
+						deliverables: ["1) method output file"],
 					},
 				},
 			]),

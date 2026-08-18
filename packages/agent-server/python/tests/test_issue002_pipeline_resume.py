@@ -36,16 +36,22 @@ def make_verifier() -> tuple[Verifier, MockLLM]:
 
 
 def make_trajs() -> list[TeacherTrajectory]:
-    """三组轨迹：task-a（双轨迹 PPT）+ task-b/task-c（单轨迹 vs_reference）。"""
+    """三组轨迹：task-a（双轨迹 PPT）+ task-b/task-c（单轨迹 vs_reference）。
+
+    好轨迹带交付物产出标记（bash 写文件，issue-010 交付检查通过）；
+    task-a 的首条轨迹是"分析式"过程描述（无交付产出），会被交付检查封顶。
+    """
     return [
         TeacherTrajectory(task_id="task-a", task="handle the backoff request",
                           trajectory="First check the checklist, then apply backoff with jitter and retry."),
         TeacherTrajectory(task_id="task-a", task="handle the backoff request",
                           trajectory="Guess the answer directly and skip the checklist; the run ended in error."),
         TeacherTrajectory(task_id="task-b", task="verify the fix",
-                          trajectory="Run the tests, verify the fix with a checklist and edge case coverage."),
+                          trajectory="Run the tests, verify the fix with a checklist and edge case coverage.\n"
+                                     "bash: cat > report.md <<EOF\nall green\nEOF"),
         TeacherTrajectory(task_id="task-c", task="deploy the service",
-                          trajectory="Apply backoff with jitter, then rerun to confirm the deployment."),
+                          trajectory="Apply backoff with jitter, then rerun to confirm the deployment.\n"
+                                     "bash: cat > deploy.log <<EOF\ndone\nEOF"),
     ]
 
 

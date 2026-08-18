@@ -136,6 +136,7 @@ interface StagedCard {
 		boundary?: string;
 		role?: string;
 		evidence?: Record<string, unknown>;
+		deliverables?: unknown;
 	};
 }
 
@@ -180,9 +181,28 @@ export function sopsToStaged(sops: StagedSop[]): VerifyItem[] {
 }
 
 /**
- * cards.json: [{taskId, quality, card:{五元组}}] — quality = verifier
- * continuous score. Method/Guard cards are routed to ABILITY (consumed by
- * buildInjection); Workflow, missing and unknown roles stay EVIDENCE.
+ * 交付物清单规范化（issue-010）：仅接受非空字符串数组；缺字段/空数组/
+ * 含空串或非字符串项均返回 null（Method/Guard 卡在闸门处被拦截）。
+ */
+function normalizeDeliverables(raw: unknown): string[] | null {
+	if (!Array.isArray(raw) || raw.length === 0) return null;
+	const items: string[] = [];
+	for (const item of raw) {
+		if (typeof item !== "string" || !item.trim()) return null;
+		items.push(item);
+	}
+	return items;
+}
+
+/**
+ * cards.json: [{taskId, quality, card:{五元组+deliverables}}] — quality =
+ * verifier continuous score. Method/Guard cards are routed to ABILITY (consumed
+ * by buildInjection); Workflow, missing and unknown roles stay EVIDENCE.
+ *
+ * 交付检查（issue-010）：Method/Guard（ABILITY）卡必须携带非空 deliverables
+ * 交付物清单，否则不晋升（旧模板卡 / 空清单卡在闸门处拦截——Python 打分侧
+ * 另有无交付轨迹 quality 封顶 <0.5 的第一道拦截）。SOP/SKILL/EVIDENCE 显式
+ * 豁免（SOP quality=1 预验证通道、SKILL utility、EVIDENCE 无交付物概念）。
  */
 export function cardsToStaged(cards: StagedCard[]): VerifyItem[] {
 	const items: VerifyItem[] = [];
@@ -190,6 +210,8 @@ export function cardsToStaged(cards: StagedCard[]): VerifyItem[] {
 		const card = entry.card;
 		if (!card) continue;
 		const type = card.role === "Method" || card.role === "Guard" ? "ABILITY" : "EVIDENCE";
+		const deliverables = normalizeDeliverables(card.deliverables);
+		if (type === "ABILITY" && deliverables === null) continue;
 		items.push({
 			type,
 			title: card.name ?? ((card.trigger ?? "").slice(0, 50) || "unnamed-card"),
@@ -201,6 +223,7 @@ export function cardsToStaged(cards: StagedCard[]): VerifyItem[] {
 				boundary: card.boundary ?? "",
 				role: card.role ?? "",
 				evidence: card.evidence ?? {},
+				deliverables: deliverables ?? [],
 				taskId: entry.taskId ?? "",
 				text: [card.trigger, card.procedure].filter(Boolean).join("\n"),
 			},

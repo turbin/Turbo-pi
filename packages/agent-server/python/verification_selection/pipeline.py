@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 
 from .canonicalize import CanonResult, canonicalize
 from .checkpoint import ScoreJournal, input_hash, prompt_fingerprint
+from .deliverables import DELIVERY_CAP_QUALITY, DELIVERY_CAP_VERSION, has_deliverable
 from .experience import ExperienceCard, SchemaError, parse_card_json
 from .library import ExperienceLibrary
 from .llm_client import LLMClient
@@ -40,12 +41,16 @@ Extract ONE experience card as a JSON object with exactly these fields:
 - "name": short title
 - "trigger": applicability condition starting with "Use when"
 - "procedure": numbered actionable steps, e.g. "1) ... 2) ..."
+- "deliverables": the concrete outputs the task must produce when this card is
+  applied — files, artifacts, or end state (e.g. "1) write report.md with the
+  findings", "2) update state.json"); a non-empty list of strings
 - "boundary": a narrow non-transfer condition starting with "Must not"
 - "role": one of "Method" | "Guard" | "Workflow"
 
 Self-check (all must hold): grounded in a concrete trajectory span; actionable
 operation rather than topic label or generic advice; boundary narrow enough to
-prevent spurious transfer.
+prevent spurious transfer; the final procedure step produces the deliverables
+(the task is not complete until the deliverables exist).
 
 Reply with the JSON object only."""
 
@@ -66,8 +71,9 @@ class ScoredTrajectory:
     traj: TeacherTrajectory
     quality: float           # ∈ [0,1]：PPT 归一化 win mass 或对参照轨迹的偏好概率
     method: str              # "ppt" | "vs_reference"
-    accepted: bool           # quality >= score_threshold
+    accepted: bool           # quality >= score_threshold 且未被交付检查拦截
     card: ExperienceCard | None = None
+    deliverable_capped: bool = False  # issue-010 交付检查：轨迹无交付物产出 → 封顶拦截
 
 
 @dataclass
@@ -101,12 +107,29 @@ def _extract_card(extractor: LLMClient, traj: TeacherTrajectory,
 
 
 def _prompt_fingerprint(verifier: Verifier) -> str:
-    """打分 prompt 指纹：模板/参照轨迹/标准分解/G/K 任一变化即缓存失效。"""
+    """打分 prompt 指纹：模板/参照轨迹/标准分解/G/K/交付检查版本任一变化即缓存失效。
+
+    交付检查版本（DELIVERY_CAP_VERSION）纳入指纹：封顶语义属于打分产物的一部分，
+    检测器变化时既有打分缓存（ScoreJournal）必须全部失效重打。
+    """
     return prompt_fingerprint(
         PAIRWISE_TEMPLATE, REFERENCE_TRAJECTORY,
         [c.description for c in verifier.criteria],
         verifier.scale.G, verifier.K,
+        extra=DELIVERY_CAP_VERSION,
     )
+
+
+def _apply_deliverable_cap(quality: float, traj: TeacherTrajectory) -> tuple[float, bool]:
+    """交付检查（issue-010）：轨迹无交付物产出 → quality 封顶 <0.5（物理拦截）。
+
+    返回 (封顶后 quality, 是否被封顶)。封顶值 DELIVERY_CAP_QUALITY 严格低于
+    主管线默认晋升阈值 0.5；被拦截轨迹的 accepted 恒为 False（不受
+    score_threshold 下调影响），报告原因指向交付检查而非质量分。
+    """
+    if has_deliverable(traj.trajectory):
+        return quality, False
+    return min(quality, DELIVERY_CAP_QUALITY), True
 
 
 def score_trajectories(
@@ -160,10 +183,13 @@ def score_trajectories_with_checkpoint(
         if (cached is not None and cached.get("input_hash") == h
                 and len(cached.get("qualities", [])) == len(trajs)):
             # --resume：输入哈希匹配的已完成打分直接复用（零 LLM 调用）。
+            # 交付检查在复用路径同样执行（封顶幂等；检测器版本变化已由
+            # 指纹 invalidate 全部旧缓存）。
             method = str(cached.get("method") or "vs_reference")
             for t, q in zip(trajs, cached["qualities"]):
-                qf = float(q)
-                scored.append(ScoredTrajectory(t, qf, method, qf >= score_threshold))
+                qf, capped = _apply_deliverable_cap(float(q), t)
+                scored.append(ScoredTrajectory(t, qf, method, (not capped) and qf >= score_threshold,
+                                               deliverable_capped=capped))
             continue
         if len(trajs) > 1:
             res = verifier.select_best(trajs[0].task, texts, k=k, rng=rng)
@@ -176,7 +202,9 @@ def score_trajectories_with_checkpoint(
             qualities = [ps.preference]
             method = "vs_reference"
         for t, q in zip(trajs, qualities):
-            scored.append(ScoredTrajectory(t, q, method, q >= score_threshold))
+            qf, capped = _apply_deliverable_cap(q, t)
+            scored.append(ScoredTrajectory(t, qf, method, (not capped) and qf >= score_threshold,
+                                           deliverable_capped=capped))
         journal.append(task_id, {"task_id": task_id, "input_hash": h,
                                  "method": method, "qualities": qualities})
     return scored, tournaments
@@ -219,10 +247,14 @@ def select_experiences(
             score_threshold=score_threshold,
         )
 
-    # 2) 高分轨迹结构化
+    # 2) 高分轨迹结构化（交付检查拦截的轨迹给明确原因，不抽卡）
     skipped: list[tuple[str, str]] = []
     kept: list[ScoredTrajectory] = []
     for st in scored:
+        if st.deliverable_capped:
+            skipped.append((st.traj.task_id,
+                            f"轨迹无交付物产出，质量封顶 {DELIVERY_CAP_QUALITY}（issue-010 交付检查）"))
+            continue
         if not st.accepted:
             skipped.append((st.traj.task_id, f"质量分 {st.quality:.3f} < 阈值 {score_threshold}"))
             continue

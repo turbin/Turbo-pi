@@ -66,6 +66,7 @@ const STAGED_CARDS = [
 			boundary: "Must not apply to deterministic failures",
 			role: "Method",
 			evidence: { task_id: "t-1", verifier_score: 0.8 },
+			deliverables: ["1) retry log", "2) final result"],
 		},
 	},
 	{
@@ -78,6 +79,7 @@ const STAGED_CARDS = [
 			boundary: "Must not e",
 			role: "Guard",
 			evidence: { task_id: "t-2", verifier_score: 0.1 },
+			deliverables: ["1) guard output"],
 		},
 	},
 ];

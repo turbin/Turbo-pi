@@ -1,14 +1,16 @@
-"""ExperienceCard 五元组 schema（EvoAgentBench §3.2.2）。
+"""ExperienceCard schema（EvoAgentBench §3.2.2 + issue-010 交付物维度）。
 
-五元组 a = (γ, π, E, ∂, ρ)：
+五元组 a = (γ, π, E, ∂, ρ) + deliverables（交付物清单）：
 - trigger   触发条件（"Use when ..." 句式，适用性条件而非主题标签）
 - procedure 可复用程序（编号步骤，actionable operation）
+- deliverables 任务最终必须产出的文件/产物/状态（非空字符串数组，issue-010）
 - evidence  支撑证据 {task_id, backbone, trace_span_ref, verifier_score, target_ref}
 - boundary  适用边界（"Must not ..." 句式，防止虚假迁移链接）
 - role      Method | Guard | Workflow 三分类
 
 提供 JSON 序列化 + 一个 stdlib 实现的 JSON Schema 子集校验器
-（支持 type/required/properties/enum/minLength/pattern，覆盖 CARD_SCHEMA 所需）。
+（支持 type/required/properties/enum/minLength/pattern/minItems/items，
+覆盖 CARD_SCHEMA 所需）。
 """
 from __future__ import annotations
 
@@ -30,11 +32,13 @@ ROLES = ("Method", "Guard", "Workflow")
 
 CARD_SCHEMA: dict[str, Any] = {
     "type": "object",
-    "required": ["trigger", "procedure", "evidence", "boundary", "role"],
+    "required": ["trigger", "procedure", "evidence", "boundary", "role", "deliverables"],
     "properties": {
         "name": {"type": "string"},
         "trigger": {"type": "string", "minLength": 8},
         "procedure": {"type": "string", "minLength": 8},
+        # 交付物清单（issue-010）：任务最终必须产出的文件/产物/状态，非空字符串数组。
+        "deliverables": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
         "boundary": {"type": "string", "minLength": 9, "pattern": "^Must not"},
         "role": {"type": "string", "enum": list(ROLES)},
         "evidence": {
@@ -91,9 +95,12 @@ def validate_schema(data: Any, schema: dict, path: str = "$") -> list[str]:
             if key in data:
                 errors.extend(validate_schema(data[key], sub, f"{path}.{key}"))
 
-    if t == "array" and "items" in schema:
-        for i, item in enumerate(data):
-            errors.extend(validate_schema(item, schema["items"], f"{path}[{i}]"))
+    if t == "array":
+        if "minItems" in schema and len(data) < schema["minItems"]:
+            errors.append(f"{path}: 长度 {len(data)} < minItems {schema['minItems']}")
+        if "items" in schema:
+            for i, item in enumerate(data):
+                errors.extend(validate_schema(item, schema["items"], f"{path}[{i}]"))
 
     return errors
 
@@ -104,7 +111,7 @@ def validate_schema(data: Any, schema: dict, path: str = "$") -> list[str]:
 
 @dataclass
 class ExperienceCard:
-    """经验卡五元组。name 为可选标题，不参与五元组语义。"""
+    """经验卡五元组 + deliverables 交付物清单。name 为可选标题，不参与五元组语义。"""
 
     trigger: str
     procedure: str
@@ -112,6 +119,8 @@ class ExperienceCard:
     boundary: str
     role: str
     name: str = ""
+    # 交付物清单（issue-010）：任务最终必须产出的文件/产物/状态。
+    deliverables: list = field(default_factory=list)
 
     # -- 校验 ---------------------------------------------------------------
     def validate(self) -> list[str]:
@@ -131,6 +140,7 @@ class ExperienceCard:
             "procedure": self.procedure,
             "boundary": self.boundary,
             "role": self.role,
+            "deliverables": list(self.deliverables),
             "evidence": dict(self.evidence),
         }
 
@@ -146,6 +156,7 @@ class ExperienceCard:
             boundary=data.get("boundary", ""),
             role=data.get("role", ""),
             name=data.get("name", ""),
+            deliverables=list(data.get("deliverables", [])),
         )
         if strict:
             card.validate_strict()
