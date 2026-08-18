@@ -253,7 +253,7 @@ describe("T3: rescore self-re-evaluation exclusion (loop breaker)", () => {
 		await runDailyEvolution(store, {
 			inputDir: sessionDir,
 			outputDir,
-			etlFn: async () => 0,
+			etlFn: async () => ({ inserted: 0, isolated: [] }),
 			pipelineFn: async () => ({ skills: 0, sops: 0, cards: 0 }),
 			promoteFn: async () => 0,
 			rescoreFn,

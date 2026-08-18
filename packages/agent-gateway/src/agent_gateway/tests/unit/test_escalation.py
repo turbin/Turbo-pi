@@ -202,7 +202,8 @@ async def test_accepted_response_carries_x_gateway_marker(
     resp = await client.post("/v1/chat/completions", json=cloud_payload(), headers=auth(KEY_2))
     assert resp.status_code == 200
     marker = json.loads(resp.headers["x-gateway"])
-    assert marker == {"escalated": False, "reason": None, "provider": "omlx", "local_provider": "omlx"}
+    assert marker["escalated"] is False and marker["provider"] == "omlx"
+    assert marker["trace_id"].startswith("chatcmpl-")  # 台账 2 对账键
     # issue-004: body 字段与 header 一致。
     assert resp.json()["x_gateway"] == marker
 
@@ -243,7 +244,8 @@ async def test_sse_accepted_emits_x_gateway_comment(
     marker_lines = [l for l in lines if l.startswith(": x-gateway ")]
     assert len(marker_lines) == 1
     marker = json.loads(marker_lines[0].split(": x-gateway ", 1)[1])
-    assert marker == {"escalated": False, "reason": None, "provider": "omlx", "local_provider": "omlx"}
+    assert marker["escalated"] is False and marker["provider"] == "omlx"
+    assert marker["trace_id"].startswith("chatcmpl-")  # 台账 2 对账键
 
 
 # ── C4：升级结果不过闸的观测——云端仍 length 时必须显式标记/告警 ──────────
@@ -578,3 +580,48 @@ def test_escalation_body_fixture_shape() -> None:
     assert data["usage"]["total_tokens"] == data["usage"]["prompt_tokens"] + data["usage"]["completion_tokens"]
     assert "PLACEHOLDER" in data["id"]
     assert "placeholder" in data["choices"][0]["message"]["content"].lower()
+
+
+# ── 台账 2（T6）：x-gateway marker 携带 trace_id（跨库对账键）──────────────
+
+
+async def test_escalated_marker_carries_trace_id_matching_response_id(
+    client: httpx.AsyncClient, app: FastAPI, fake_provider: FakeProvider, fake_cloud: FakeProvider
+) -> None:
+    """台账 2：marker 必须携带 trace_id——agent-server session 条目与 gateway
+    model_runs 的逐请求对账键（双印证无对账键缺陷）。"""
+    fake_provider.push(text_result("length"))
+    fake_cloud.push(cloud_result())
+    resp = await client.post("/v1/chat/completions", json=cloud_payload(), headers=auth(KEY_2))
+    assert resp.status_code == 200
+    marker = json.loads(resp.headers["x-gateway"])
+    assert marker["trace_id"] == resp.json()["id"]
+    assert marker["trace_id"].startswith("chatcmpl-")
+
+
+async def test_accepted_marker_carries_trace_id(
+    client: httpx.AsyncClient, app: FastAPI, fake_provider: FakeProvider, fake_cloud: FakeProvider
+) -> None:
+    fake_provider.push(text_result())
+    resp = await client.post("/v1/chat/completions", json=cloud_payload(), headers=auth(KEY_2))
+    assert resp.status_code == 200
+    marker = json.loads(resp.headers["x-gateway"])
+    assert marker["trace_id"] == resp.json()["id"]
+
+
+async def test_sse_marker_carries_trace_id(
+    client: httpx.AsyncClient, app: FastAPI, fake_provider: FakeProvider, fake_cloud: FakeProvider
+) -> None:
+    """SSE 注释路径同键：agent-server 消费侧从注释恢复 marker 时能拿到 trace_id。"""
+    fake_provider.push(text_result("length"))
+    fake_cloud.push(cloud_result())
+    resp = await client.post(
+        "/v1/chat/completions",
+        json=cloud_payload(stream=True),
+        headers=auth(KEY_2),
+    )
+    assert resp.status_code == 200
+    marker_lines = [l for l in resp.text.splitlines() if l.startswith(": x-gateway ")]
+    assert len(marker_lines) == 1
+    marker = json.loads(marker_lines[0].split(": x-gateway ", 1)[1])
+    assert marker["trace_id"].startswith("chatcmpl-")

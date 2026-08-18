@@ -116,3 +116,80 @@ def test_redacted_payload_contains_no_matched_text() -> None:
     payload = redacted_finding_payload(findings)
     assert payload == [{"pattern": "aws_access_key_id", "location": "messages[0].content"}]
     assert secret not in repr(payload)
+
+
+# ── 台账 3（T6）：tools[] schema 盲区 + 身份证号默认模式 ──────────────────
+
+
+def test_secret_in_tool_description_found() -> None:
+    """tools[] 出网盲区：function description 内的密钥必须被扫到。"""
+    envelope = make_envelope(
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "send_report",
+                    "description": "uses api_key = sk-abcdefghij1234567890 to send",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ]
+    )
+    findings = scan_envelope(envelope, DEFAULT_DLP_PATTERNS)
+    assert [(f.pattern, f.location) for f in findings] == [
+        ("api_key_assignment", "tools[0].function.description")
+    ]
+
+
+def test_secret_in_tool_parameters_schema_found() -> None:
+    """tools[] 出网盲区：parameters JSON schema 内的密钥必须被扫到。"""
+    envelope = make_envelope(
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "ssh",
+                    "description": "run a remote command",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "host": {"type": "string"},
+                            "pem": {
+                                "type": "string",
+                                "default": "-----BEGIN PRIVATE KEY-----\nMIIBOg...",
+                            },
+                        },
+                    },
+                },
+            }
+        ]
+    )
+    findings = scan_envelope(envelope, DEFAULT_DLP_PATTERNS)
+    assert [(f.pattern, f.location) for f in findings] == [
+        ("private_key_pem", "tools[0].function.parameters")
+    ]
+
+
+def test_clean_tool_schema_has_no_findings() -> None:
+    envelope = make_envelope(
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "ls",
+                    "description": "list files",
+                    "parameters": {"type": "object", "properties": {"path": {"type": "string"}}},
+                },
+            }
+        ]
+    )
+    assert scan_envelope(envelope, DEFAULT_DLP_PATTERNS) == []
+
+
+def test_chinese_id_number_is_a_default_pattern() -> None:
+    """用户 08-14 裁决 5：身份证号（18 位）为内置默认敏感模式。"""
+    envelope = make_envelope(messages=[{"role": "user", "content": "我的身份证是 110101199003078888"}])
+    findings = scan_envelope(envelope, DEFAULT_DLP_PATTERNS)
+    assert [(f.pattern, f.location) for f in findings] == [
+        ("chinese_id_number", "messages[0].content")
+    ]

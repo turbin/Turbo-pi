@@ -49,6 +49,7 @@ function writeSessionFile(dir: string): void {
 				timestamp: 2,
 			},
 		},
+		{ type: "custom", customType: "response_completed" },
 	];
 	writeFileSync(join(dir, "session-a.jsonl"), `${entries.map((e) => JSON.stringify(e)).join("\n")}\n`);
 }

@@ -36,9 +36,56 @@ interface ExtractedMessage {
 	text: string;
 }
 
-export async function etlSessionFiles(paths: string[], store: ExperienceStore): Promise<number> {
+/**
+ * ETL 结果（台账 7/T6）：inserted = 摄入条数；isolated = 因 session 完整性
+ * 校验失败而被整体隔离的文件路径列表（半截 session 不摄入）。
+ */
+export interface EtlResult {
+	inserted: number;
+	/** 不完整（半截）session 文件路径——有 session 头但无流闭合标记。 */
+	isolated: string[];
+}
+
+/**
+ * 完整性判据（pi-native）：session 头 + 流闭合标记（response_completed /
+ * error / aborted custom entry）齐全 = 完整；有头无闭合 = 半截（落盘中断）；
+ * 无头文件（legacy P0 格式）无完整性信号，返回 (true, legacy)。
+ */
+export function sessionCompleteness(path: string): { complete: boolean; reason: string } {
+	let hasHeader = false;
+	for (const line of readFileSync(path, "utf-8").split("\n")) {
+		if (!line.trim()) continue;
+		let entry: Record<string, unknown>;
+		try {
+			entry = JSON.parse(line) as Record<string, unknown>;
+		} catch {
+			continue; // malformed 行跳过（行级语义不变）
+		}
+		if (entry.type === "session") {
+			hasHeader = true;
+			continue;
+		}
+		if (entry.type === "custom") {
+			const kind = entry.customType;
+			if (kind === "response_completed" || kind === "error" || kind === "aborted") {
+				return { complete: true, reason: "" };
+			}
+		}
+	}
+	if (!hasHeader) return { complete: true, reason: "legacy-format-without-session-header" };
+	return { complete: false, reason: "missing closure marker (response_completed/error/aborted)" };
+}
+
+export async function etlSessionFiles(paths: string[], store: ExperienceStore): Promise<EtlResult> {
 	let inserted = 0;
+	const isolated: string[] = [];
 	for (const path of paths) {
+		// 台账 7（T6）：摄入前完整性校验——半截 session 整体隔离不摄入。
+		const completeness = sessionCompleteness(path);
+		if (!completeness.complete) {
+			isolated.push(path);
+			continue;
+		}
 		// F3 (T4): ETL 打标路径——EVIDENCE 直插不经蒸馏，摄入时按 session 所属
 		// 任务打域（复用 M1 task_id 透传 + 任务→域注册表）。
 		const domain = domainForTask(sessionTaskId(path));
@@ -75,7 +122,7 @@ export async function etlSessionFiles(paths: string[], store: ExperienceStore): 
 			}
 		}
 	}
-	return inserted;
+	return { inserted, isolated };
 }
 
 /** 读 session 头 metadata.task_id（F0 透传的任务归属键）。 */

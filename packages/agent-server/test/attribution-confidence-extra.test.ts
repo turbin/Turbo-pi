@@ -74,7 +74,7 @@ describe("T3: rescore exclusion full lifecycle (N=3 countdown to eligibility)", 
 			runDailyEvolution(store, {
 				inputDir: join(dir, "sessions"),
 				outputDir: join(dir, "evolution"),
-				etlFn: async () => 0,
+				etlFn: async () => ({ inserted: 0, isolated: [] }),
 				pipelineFn: async () => ({ skills: 0, sops: 0, cards: 0 }),
 				promoteFn: async () => 0,
 				rescoreFn,

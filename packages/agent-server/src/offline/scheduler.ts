@@ -101,7 +101,7 @@ export async function runDailyEvolution(store: ExperienceStore, options: DailyEv
 		.sort()
 		.map((name) => join(inputDir, name));
 
-	const etlInserted = await etlFn(sessionFiles, store);
+	const etl = await etlFn(sessionFiles, store);
 	const benchmarkPath =
 		options.pipelineOptions?.benchmarkPath ?? options.benchmarkPath ?? process.env.AGENT_SERVER_BENCHMARK;
 	const pipeline = await pipelineFn(inputDir, outputDir, {
@@ -164,7 +164,9 @@ export async function runDailyEvolution(store: ExperienceStore, options: DailyEv
 		epoch: now(),
 		metric: promoted + promotedFromDormant,
 		snapshot: JSON.stringify({
-			etlInserted,
+			etlInserted: etl.inserted,
+			// 台账 7（T6）：半截 session 隔离计数（完整性校验失败的文件）。
+			etlIsolated: etl.isolated.length,
 			pipeline,
 			promoted,
 			rescored,

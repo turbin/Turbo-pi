@@ -145,6 +145,10 @@ export async function handleStream(
 			onEvent: (event) => {
 				recordStreamEvent(writer, streamEvents, body.model, event);
 				if (event.type === "done") {
+					// T6 (台账 2): gateway x-gateway marker（含 trace_id 对账键）作为
+					// 独立 custom entry 落库——与 /v1 流式内联路径同契约；trace_id
+					// 把会话条目与 gateway model_runs 逐请求对账（双印证）。
+					if (event.x_gateway) writer.writeCustomEntry("gateway_marker", event.x_gateway);
 					// 与 server.ts 非流式路径同口径：toolUse → tool_calls；usage 为
 					// pi-ai 形态（input/output/cacheRead/cacheWrite），与 gateway 的
 					// prompt_tokens/completion_tokens 数字等价（cache 字段恒 0）。

@@ -27,6 +27,7 @@ from openai import OpenAI
 
 from campaign_metrics import check_criteria, daily_summary
 from campaign_plan import daily_batch, load_tasks
+import campaign_cross
 from preflight import ensure_for_base_url
 
 EVAL_DIR = Path(__file__).resolve().parent
@@ -203,6 +204,18 @@ def main() -> None:
     ap.add_argument("--run-id", default=f"campaign-{time.strftime('%Y%m%d')}")
     ap.add_argument("--model", default="agent-auto")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument(
+        "--arms",
+        default="",
+        help="T7 交叉臂模式：x1,x2,x3,x4（冻结库×注入开 / 当日库×开 / 当日库×关 / 冻结库×关）；"
+        "每臂跑当日重复集。缺省 = 旧双臂（experiment/control）。",
+    )
+    ap.add_argument(
+        "--frozen-base-url",
+        default="",
+        help="T7 冻结臂（X1/X4）的评估实例 base URL（加载 D1 快照且全程不换载）；"
+        "缺省回退 AGENT_SERVER（单实例模式，真实跑批必须显式指定）。",
+    )
     ap.add_argument("--metrics", default="", help="核算既有结果 JSONL 的判据，不跑批")
     ap.add_argument(
         "--gateway-db",
@@ -219,7 +232,12 @@ def main() -> None:
         gateway_db = Path(args.gateway_db or "../../agent-gateway/var/agent_gateway.db")
         if gateway_db.exists():
             rows = annotate_escalation(rows, gateway_db)
-        print(json.dumps({"daily": daily_summary(rows), "criteria": check_criteria(rows)}, indent=2, ensure_ascii=False))
+        report = {"daily": daily_summary(rows), "criteria": check_criteria(rows)}
+        # T7：结果含四臂时附加交叉差分核算（库演进 / 即时注入 / sanity）。
+        if all(any(r.get("arm") == arm for r in rows) for arm in campaign_cross.CROSS_ARMS):
+            report["cross"] = {"diffs": campaign_cross.cross_arm_diffs(rows),
+                               "sanity": campaign_cross.check_sanity(rows)}
+        print(json.dumps(report, indent=2, ensure_ascii=False))
         return
 
     if not args.day:
@@ -227,11 +245,19 @@ def main() -> None:
 
     tasks = load_tasks()
     batch = daily_batch(tasks, args.day)
-    arms = {"experiment": batch["repeat"] + batch["new"]}
-    if args.day in (1, 7):
-        arms["control"] = batch["repeat"]
-
-    print(f"day {args.day}: repeat={len(batch['repeat'])} new={len(batch['new'])}")
+    if args.arms:
+        # T7 交叉臂模式：每臂跑当日重复集（四臂 = 库版本 × 注入开关 2×2）。
+        arms = {arm: batch["repeat"] for arm in args.arms.split(",")}
+        frozen_base = args.frozen_base_url or AGENT_SERVER
+        client_frozen = OpenAI(base_url=frozen_base, api_key="lobster-local-key", timeout=1800.0)
+        print(f"day {args.day}: cross arms {sorted(arms)} repeat={len(batch['repeat'])} each"
+              f" (frozen base: {frozen_base})")
+    else:
+        arms = {"experiment": batch["repeat"] + batch["new"]}
+        if args.day in (1, 7):
+            arms["control"] = batch["repeat"]
+        client_frozen = None
+        print(f"day {args.day}: repeat={len(batch['repeat'])} new={len(batch['new'])}")
     if args.dry_run:
         for arm, ids in arms.items():
             print(f"  [{arm}] {len(ids)} tasks")
@@ -258,10 +284,20 @@ def main() -> None:
                 kind = "repeat" if task_id in set(batch["repeat"]) else "new"
                 meta = next(t for t in tasks if t.id == task_id)
                 ws = setup_workspace(task_id, out_dir / f"day{args.day}" / arm)
-                # 同路径对照：control 臂注入关闭（body 级覆盖，trace 仍落库）。
+                # T7 交叉臂（m5-test-review 缺陷-1 修复）：注入按臂接线
+                # （ARM_INJECTION：x1/x2 开、x3/x4 关）、冻结臂走冻结实例
+                # （client_frozen，锁库不换载）、library 维度按臂取值。
+                if args.arms:
+                    arm_client = client_frozen if campaign_cross.ARM_LIBRARY[arm] == "frozen" else client
+                    injection = campaign_cross.ARM_INJECTION[arm]
+                    library = campaign_cross.ARM_LIBRARY[arm]
+                else:
+                    arm_client = client
+                    injection = arm == "experiment"
+                    library = ""
                 execution = run_agent(
-                    client, args.model, task_prompt(task_id), ws, meta.timeout_seconds,
-                    injection=arm == "experiment", task_id=task_id, domain="office",
+                    arm_client, args.model, task_prompt(task_id), ws, meta.timeout_seconds,
+                    injection=injection, task_id=task_id, domain="office",
                 )
                 g = safe_grade(task_id, execution, ws)
                 # 轨迹落盘（夜间进化的原料）：每任务一份完整 transcript，
@@ -288,6 +324,8 @@ def main() -> None:
                     "arm": arm,
                     "score": g["score"],
                     "passed": g["score"] >= PASS_THRESHOLD,
+                    # T7：四臂落库附库版本维度（frozen/daily），差分核算按臂取值。
+                    **({"library": library} if args.arms else {}),
                     # C2：升级标记来自网关 x-gateway 头（M1），trace_ids 供
                     # model_runs 回填核对；不再硬编码 False。
                     "escalated": execution["escalated"],

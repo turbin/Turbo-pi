@@ -84,10 +84,12 @@ describe("etlSessionFiles", () => {
 					timestamp: 3,
 				},
 			},
+			// 台账 7（T6）：完整 session 必须有流闭合标记。
+			{ type: "custom", customType: "response_completed" },
 		]);
 		const store = await makeStore();
-		const count = await etlSessionFiles([path], store);
-		expect(count).toBeGreaterThan(0);
+		const result = await etlSessionFiles([path], store);
+		expect(result.inserted).toBeGreaterThan(0);
 
 		const candidates = await dormantMatching(store, "mock");
 		expect(candidates.length).toBeGreaterThan(0);
@@ -147,8 +149,8 @@ describe("etlSessionFiles", () => {
 			{ type: "response_completed", data: {} },
 		]);
 		const store = await makeStore();
-		const count = await etlSessionFiles([path], store);
-		expect(count).toBeGreaterThan(0);
+		const result = await etlSessionFiles([path], store);
+		expect(result.inserted).toBeGreaterThan(0);
 
 		const fromRequest = await dormantMatching(store, "migration");
 		expect(fromRequest.length).toBeGreaterThan(0);
@@ -208,8 +210,8 @@ describe("etlSessionFiles", () => {
 			},
 		]);
 		const store = await makeStore();
-		const count = await etlSessionFiles([path], store);
-		expect(count).toBeGreaterThan(0);
+		const result = await etlSessionFiles([path], store);
+		expect(result.inserted).toBeGreaterThan(0);
 		const fromStream = await dormantMatching(store, "Deployment");
 		expect(fromStream.length).toBeGreaterThan(0);
 		store.close();
@@ -264,8 +266,8 @@ describe("etlSessionFiles", () => {
 		const store = await makeStore();
 		// Two sentences, mined from the message entry only — the stream_event
 		// customs of the same reply must not be mined a second time.
-		const count = await etlSessionFiles([path], store);
-		expect(count).toBe(2);
+		const result = await etlSessionFiles([path], store);
+		expect(result.inserted).toBe(2);
 		const fromMessage = await dormantMatching(store, "Deployment");
 		expect(fromMessage).toHaveLength(1);
 		expect(fromMessage[0].sourceEntryId).toBe("m-2");
@@ -293,8 +295,8 @@ describe("etlSessionFiles", () => {
 		const store = await makeStore();
 		const first = await etlSessionFiles([path], store);
 		const second = await etlSessionFiles([path], store);
-		expect(first).toBeGreaterThan(0);
-		expect(second).toBe(0);
+		expect(first.inserted).toBeGreaterThan(0);
+		expect(second.inserted).toBe(0);
 		store.close();
 	});
 
@@ -320,8 +322,8 @@ describe("etlSessionFiles", () => {
 			].join("\n"),
 		);
 		const store = await makeStore();
-		const count = await etlSessionFiles([path], store);
-		expect(count).toBe(1);
+		const result = await etlSessionFiles([path], store);
+		expect(result.inserted).toBe(1);
 		const found = await dormantMatching(store, "cache");
 		expect(found).toHaveLength(1);
 		expect(found[0].payload.text).toContain("cache must be invalidated");
@@ -347,8 +349,8 @@ describe("etlSessionFiles", () => {
 			},
 		]);
 		const store = await makeStore();
-		const count = await etlSessionFiles([path], store);
-		expect(count).toBe(1);
+		const result = await etlSessionFiles([path], store);
+		expect(result.inserted).toBe(1);
 		expect(await dormantMatching(store, "restart the gateway")).toHaveLength(1);
 		expect(await dormantMatching(store, "hidden reasoning")).toHaveLength(0);
 		store.close();
@@ -373,7 +375,7 @@ describe("etlSessionFiles", () => {
 			},
 		]);
 		const store = await makeStore();
-		expect(await etlSessionFiles([path], store)).toBe(0);
+		expect((await etlSessionFiles([path], store)).inserted).toBe(0);
 		expect(await store.listDormant("EVIDENCE", 10)).toHaveLength(0);
 		store.close();
 	});

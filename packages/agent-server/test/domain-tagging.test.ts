@@ -133,6 +133,7 @@ describe("T4: ETL domain tagging (EVIDENCE 直插路径)", () => {
 						"The compliance checklist marks CTL-002 as implemented but the incident log shows it failed twice.",
 				},
 			},
+			{ type: "custom", customType: "response_completed" },
 		]);
 		const store = await makeStore();
 		await etlSessionFiles([path], store);
@@ -161,6 +162,7 @@ describe("T4: ETL domain tagging (EVIDENCE 直插路径)", () => {
 					content: "Cross-checking the compliance checklist against the incident log now.",
 				},
 			},
+			{ type: "custom", customType: "response_completed" },
 		]);
 		const store = await makeStore();
 		await etlSessionFiles([path], store);
@@ -179,6 +181,7 @@ describe("T4: ETL domain tagging (EVIDENCE 直插路径)", () => {
 				id: "m-1",
 				message: { role: "assistant", content: "A plain production session with no campaign task id." },
 			},
+			{ type: "custom", customType: "response_completed" },
 		]);
 		const store = await makeStore();
 		await etlSessionFiles([path], store);

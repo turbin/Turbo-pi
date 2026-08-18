@@ -89,11 +89,17 @@ class GatewayMarker:
     the final answer, without querying model_runs. Also carries
     cloud_finish_reason on escalation so a cloud-side length truncation
     (the same flaw recurring invisibly upstream, C4) stays observable.
+
+    T6 (台账 2): ``trace_id`` — the gateway-side request trace id (response
+    body id, chatcmpl-...) — joins this marker to model_runs, giving the
+    agent-server session marker entry and the gateway trace store a
+    per-request reconciliation key (双印证无对账键缺陷).
     """
 
     escalated: bool
     reason: str | None
     provider: str
+    trace_id: str
     local_provider: str = "omlx"
     cloud_finish_reason: str | None = None
 
@@ -102,6 +108,7 @@ class GatewayMarker:
             "escalated": self.escalated,
             "reason": self.reason,
             "provider": self.provider,
+            "trace_id": self.trace_id,
             "local_provider": self.local_provider,
         }
         if self.cloud_finish_reason is not None:
@@ -498,6 +505,7 @@ async def escalate_to_cloud(
         escalated=True,
         reason=reason,
         provider=decision.provider_name,
+        trace_id=trace_id,
         cloud_finish_reason=result.finish_reason,
     )
 
@@ -549,7 +557,7 @@ async def execute_with_escalation(
     )
     gate = evaluate_quality(envelope, result)
     if not gate.escalate:
-        return result, GatewayMarker(escalated=False, reason=None, provider=route.provider_name)
+        return result, GatewayMarker(escalated=False, reason=None, provider=route.provider_name, trace_id=trace_id)
     assert gate.reason is not None
     return await escalate_to_cloud(
         request=request,
@@ -676,10 +684,11 @@ async def stream_traced_events(
             escalated=True,
             reason=reason,
             provider=decision.provider_name,
+            trace_id=trace_id,
             cloud_finish_reason=result.finish_reason,
         )
     else:
-        marker = GatewayMarker(escalated=False, reason=None, provider=route.provider_name)
+        marker = GatewayMarker(escalated=False, reason=None, provider=route.provider_name, trace_id=trace_id)
 
     response_started = await start_response_transition(store, trace_id, running)
     # Escalation marker as an SSE comment (M1): transparent to OpenAI SSE

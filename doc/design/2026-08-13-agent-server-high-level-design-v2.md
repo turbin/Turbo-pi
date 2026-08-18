@@ -345,4 +345,13 @@ EWC 借鉴的采纳边界：采纳重要性加权、合并蒸馏、双时间尺�
 9. 教师升级步骤在蒸馏输入中无 provider 标注（parseSessionFile 不消费 gateway_marker），是三路合并（胜局/败局分流）的先决缺口。
 10. 晋升闸门 0.5 阈值未经校准数据验证，鉴别轴（对参照轨迹的偏好概率）与任务成败正交的风险（issue-010 关联，随演进方案 2 修复）。
 
+2026-08-14 统一修复批次落地标注（台账项 → 状态）：
+- 台账 1（归因奖惩/置信度）→ F2/T3 已落地（`doc/design/2026-08-14-m3-t3-changes-and-decisions.md`）
+- 台账 2（双印证无对账键）→ **T6 已落地**：GatewayMarker 增 trace_id（跨库对账键），agent-server handleStream 路径补 gateway_marker 会话条目落库
+- 台账 3（DLP tools[] 盲区 + 敏感列表）→ **T6 已落地**：scan_envelope 扩扫 tools[] schema；默认敏感列表 = 密钥类 3 条 + 身份证号（config.security.dlp_patterns 追加即生效）
+- 台账 4（快照无留存/回滚）→ **T6 已落地**：snapshot_store 每日快照模式（--snapshots-dir，保留 N=7）+ 回滚 runbook
+- 台账 5（SOP/SKILL 绕过晋升闸）→ F4/T5 已落地（SKILL 暂缓入库、SOP 预验证标记、红线 3 修订）
+- 台账 6（判据小样本无功效分析）→ 随 T7 交叉臂预注册：n=20 功效声明、配对设计（`doc/design/2026-08-14-m5-t6-t7-changes-and-decisions.md`）
+- 台账 7（ETL 半截 session 摄入）→ **T6 已落地**：摄入前完整性校验（流闭合标记），半截 session 整体隔离
+
 Refer：doc/design/2026-08-13-agent-server-system-design-and-issue-inventory.md；doc/design/plans/；doc/issues-snapshot/
