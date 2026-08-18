@@ -193,6 +193,7 @@
 | plans/2026-08-13-plan-pipeline-checkpointing.md | 【待启动】issue-002 余留：离线管线分阶段断点持久化 + --resume；附降级/关闭备选与决策数据（C 阶段 5 次进化 0 故障） |
 | plans/2026-08-14-post-c-unified-fix-batch-plan.md | **C 后统一修改方案 v3【对抗审查 3 轮共识 + 用户五项裁决落盘，待实施批准】**：实态核实表（含 requestId 碰撞实证）+ F0（归因数据通道/issue-013）→最小断点→F1（卡片交付物）→F2（归因奖惩+保守降权）→F3（情景标签含 ETL 打标）→F4（晋升机制统一）+ 台账 quick wins；用户裁决：27B 重跑取消转 9B 全量重跑、实验顺序 office 先行→报告→用户确认→ALFWorld、DLP 默认敏感列表；审查档案 reviews/2026-08-14-fix-batch-adversarial/ |
 | plans/2026-08-14-plan-library-version-cross-eval.md | 【已立项 08-14】演进方案 6 库版本交叉评估臂：冻结库/当日库 × 注入开/关 2×2 四臂，差分预注册分离库演进效应与即时注入效应（回应审查乙-F2）；与 9B 重跑批合并排期，受 office 先行顺序约束 |
+| plans/2026-08-14-fix-batch-dev-tasks.md | **开发任务拆分与里程碑计划【用户 08-14 批准方向】**：T0-T7 八任务（单任务 ≤700 行，满足 ≤3000 行硬约束）、TDD 双人组协议（pi-dev 红先绿后 / pi-test 独立复核 / 主会话里程碑门禁）、token 估算 ~2.8-4.4M、M1-M5 里程碑与门禁五条、环境约束（Node25/test.sh/不 commit） |
 
 进度跟踪目录 `doc/design/progress/`：每个里程碑一个进度文件，多 agent 交接 + 断点恢复用；规范见 `progress/README.md`。
 
