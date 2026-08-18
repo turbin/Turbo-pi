@@ -39,6 +39,11 @@ CARD_SCHEMA: dict[str, Any] = {
         "procedure": {"type": "string", "minLength": 8},
         # 交付物清单（issue-010）：任务最终必须产出的文件/产物/状态，非空字符串数组。
         "deliverables": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        # 情景标签（F3/T4，issue-012 采纳项 5）：可选字符串，空串 = 无标签
+        # （检索不过滤，向后兼容存量卡）。domain 由轨迹来源自动打标，
+        # task_pattern 由蒸馏 LLM 提取。
+        "domain": {"type": "string"},
+        "task_pattern": {"type": "string"},
         "boundary": {"type": "string", "minLength": 9, "pattern": "^Must not"},
         "role": {"type": "string", "enum": list(ROLES)},
         "evidence": {
@@ -111,7 +116,11 @@ def validate_schema(data: Any, schema: dict, path: str = "$") -> list[str]:
 
 @dataclass
 class ExperienceCard:
-    """经验卡五元组 + deliverables 交付物清单。name 为可选标题，不参与五元组语义。"""
+    """经验卡五元组 + deliverables 交付物清单 + domain/task_pattern 情景标签。
+
+    name 为可选标题，不参与五元组语义；domain/task_pattern 为可选情景标签
+    （F3/T4），空串 = 无标签。
+    """
 
     trigger: str
     procedure: str
@@ -121,6 +130,9 @@ class ExperienceCard:
     name: str = ""
     # 交付物清单（issue-010）：任务最终必须产出的文件/产物/状态。
     deliverables: list = field(default_factory=list)
+    # 情景标签（F3/T4）：domain 由轨迹来源自动打标；task_pattern 由 LLM 提取。
+    domain: str = ""
+    task_pattern: str = ""
 
     # -- 校验 ---------------------------------------------------------------
     def validate(self) -> list[str]:
@@ -141,6 +153,8 @@ class ExperienceCard:
             "boundary": self.boundary,
             "role": self.role,
             "deliverables": list(self.deliverables),
+            "domain": self.domain,
+            "task_pattern": self.task_pattern,
             "evidence": dict(self.evidence),
         }
 
@@ -157,6 +171,8 @@ class ExperienceCard:
             role=data.get("role", ""),
             name=data.get("name", ""),
             deliverables=list(data.get("deliverables", [])),
+            domain=str(data.get("domain", "") or ""),
+            task_pattern=str(data.get("task_pattern", "") or ""),
         )
         if strict:
             card.validate_strict()

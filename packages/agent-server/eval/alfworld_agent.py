@@ -188,6 +188,7 @@ def main() -> None:
                     max_tokens=args.max_tokens,
                     extra_body={
                         "thinking": {"type": "disabled"},
+                        "domain": "alfworld",
                         **({"injection": args.injection == "on"} if args.injection else {}),
                     },
                 )

@@ -51,6 +51,8 @@ def synthesize_game(game: dict, out_path: Path, prefix: str = "alfworld") -> Non
                         "gamefile": game["gamefile"],
                         "pool_size": game.get("pool_size"),
                         "pool_hash": game.get("pool_hash"),
+                        # F3 (T4): 情景域透传（alfworld 域，检索跨域排除）。
+                        "domain": "alfworld",
                     },
                 },
                 ensure_ascii=False,

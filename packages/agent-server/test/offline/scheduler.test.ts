@@ -119,8 +119,8 @@ describe("runDailyEvolution", () => {
 		expect(checkpoint).not.toBeNull();
 		expect(checkpoint?.kind).toBe("evolution");
 		expect(checkpoint?.epoch).toBe(now);
-		// skill (0.9) + sop (pre-vetted) + one card (0.8); the 0.1 card is gated out.
-		expect(checkpoint?.metric).toBe(3);
+		// SKILL 暂缓入库（T5 闸门）；sop (pre-vetted) + one card (0.8)；0.1 卡被质量闸挡下。
+		expect(checkpoint?.metric).toBe(2);
 
 		const snapshot = JSON.parse(checkpoint?.snapshot ?? "{}") as {
 			etlInserted: number;
@@ -128,12 +128,11 @@ describe("runDailyEvolution", () => {
 			promoted: number;
 		};
 		expect(snapshot.pipeline).toEqual({ skills: 1, sops: 1, cards: 2 });
-		expect(snapshot.promoted).toBe(3);
+		expect(snapshot.promoted).toBe(2);
 		expect(snapshot.etlInserted).toBeGreaterThanOrEqual(1);
 
-		// Promoted experiences are active in the store. The promoted card is
-		// role Method, so it is stored as ABILITY, not EVIDENCE.
-		expect(await store.listActive("SKILL", 10)).toHaveLength(1);
+		// Promoted experiences are active in the store; SKILL 暂缓（T5）。
+		expect(await store.listActive("SKILL", 10)).toHaveLength(0);
 		expect(await store.listActive("SOP", 10)).toHaveLength(1);
 		expect((await store.listActive("ABILITY", 10)).some((e) => e.title === "isolate before retry")).toBe(true);
 

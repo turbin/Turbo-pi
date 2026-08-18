@@ -29,6 +29,13 @@ import { contentHashFor, dedupeCandidates } from "./canonicalize.ts";
 
 export const PROMOTION_THRESHOLD = 0.5;
 
+/**
+ * F4 (T5): SOP 预验证通过标记——quality=1 不再是"绕过闸门的直通"，而是
+ * SOP 生命周期管线（python/sop_lifecycle：构造→合并→重执行）预验证通过的
+ * 语义标记（plans §4.5：实质强于自评闸）。行为不变，语义文档化。
+ */
+export const SOP_PREVETTED_QUALITY = 1;
+
 export interface VerifyItem {
 	/** Store id; defaults to `exp-<hash16>`. */
 	id?: string;
@@ -54,10 +61,16 @@ export interface VerifyItem {
  * are active because of this call (new inserts + dormant rows promoted).
  * The whole batch runs in one transaction: a mid-batch failure rolls back
  * every insert/promotion of this call instead of leaving a half-promoted batch.
+ *
+ * F4 (T5) 晋升统一闸（台账 5 / 红线 3 修订）：SKILL 暂缓入库——skill evolution
+ * 的 utility 分当前无验证对象（benchmark 恒为空），不满足"晋升必须过与任务
+ * 结果挂钩的可执行验证判据"；待验证通道建立（utility→可验证任务映射）后
+ * 解除。SOP 走预验证标记（SOP_PREVETTED_QUALITY=1），EVIDENCE/ABILITY 走
+ * 0.5 闸 + F1 交付物检查 + F2 实战归因信号。
  */
 export async function verifyAndCanonicalize(items: VerifyItem[], store: ExperienceStore): Promise<number> {
 	const candidates = dedupeCandidates(
-		items.filter((item) => item.quality >= PROMOTION_THRESHOLD),
+		items.filter((item) => item.type !== "SKILL").filter((item) => item.quality >= PROMOTION_THRESHOLD),
 		(item) => item.contentHash ?? contentHashFor(normalizeItem(item)),
 	);
 
@@ -140,6 +153,9 @@ interface StagedCard {
 		role?: string;
 		evidence?: Record<string, unknown>;
 		deliverables?: unknown;
+		/** F3 (T4): 情景标签——domain（alfworld/office/...）与 task_pattern（场景模式）。 */
+		domain?: unknown;
+		task_pattern?: unknown;
 	};
 }
 
@@ -227,6 +243,9 @@ export function cardsToStaged(cards: StagedCard[]): VerifyItem[] {
 				role: card.role ?? "",
 				evidence: card.evidence ?? {},
 				deliverables: deliverables ?? [],
+				// F3 (T4): 情景标签——空串 = 无标签（检索不过滤，向后兼容存量卡）。
+				domain: typeof card.domain === "string" ? card.domain : "",
+				task_pattern: typeof card.task_pattern === "string" ? card.task_pattern : "",
 				taskId: entry.taskId ?? "",
 				text: [card.trigger, card.procedure].filter(Boolean).join("\n"),
 			},

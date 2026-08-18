@@ -14,12 +14,27 @@ const TOKEN_RE = /[一-鿿]+|[a-zA-Z0-9]+/g;
  * while rewarded cards surface (plan §3-3 降权落地形态). bm25 candidate
  * fetch in store.search stays confidence-free on purpose: it only selects
  * the candidate pool; the weight applies at the re-rank step.
+ *
+ * F3 (T4): domain filter — when `domain` is given, tagged candidates from
+ * other domains are excluded (跨域注入为零), untagged cards (domain 空串,
+ * 存量卡) always pass; a missing `domain` argument disables filtering.
  */
-export async function retrieve(store: ExperienceStore, query: string, limit: number): Promise<RetrievedExperience[]> {
+export async function retrieve(
+	store: ExperienceStore,
+	query: string,
+	limit: number,
+	domain?: string,
+): Promise<RetrievedExperience[]> {
 	const ftsQuery = buildFtsQuery(query);
 	if (!ftsQuery) return [];
 	const candidates = await store.search(ftsQuery, Math.min(limit * 3, 24));
-	const scored = candidates.map((experience) => ({
+	const inDomain = domain
+		? candidates.filter((experience) => {
+				const cardDomain = (experience.payload as Record<string, unknown>).domain;
+				return typeof cardDomain !== "string" || cardDomain === "" || cardDomain === domain;
+			})
+		: candidates;
+	const scored = inDomain.map((experience) => ({
 		experience,
 		score: cosineScore(query, `${experience.title} ${JSON.stringify(experience.payload)}`) * experience.confidence,
 	}));

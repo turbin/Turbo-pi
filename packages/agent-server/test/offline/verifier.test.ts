@@ -157,7 +157,7 @@ describe("verifyAndCanonicalize", () => {
 		expect((await store.getById(removed.id))?.status).toBe("removed");
 	});
 
-	it("offline-promoted skills render a non-empty description in the online skill catalog", async () => {
+	it("SKILL items are suspended from promotion until a verification channel exists (T5)", async () => {
 		const store = await makeStore();
 		const count = await verifyAndCanonicalize(
 			skillsToStaged([
@@ -170,10 +170,9 @@ describe("verifyAndCanonicalize", () => {
 			]),
 			store,
 		);
-		expect(count).toBe(1);
-
+		expect(count).toBe(0);
 		const { catalog } = await buildSkillCatalog(store, 10);
-		expect(catalog).toContain('<skill name="retry-with-backoff">Retry flaky steps with exponential backoff</skill>');
+		expect(catalog).not.toContain("retry-with-backoff");
 	});
 
 	it("rolls back the whole batch when one item fails mid-promotion", async () => {
@@ -561,8 +560,9 @@ describe("promoteStagedOutputs", () => {
 
 		const store = await makeStore();
 		const count = await promoteStagedOutputs(dir, store);
-		expect(count).toBe(3); // skill + sop + one card; the 0.1 card is gated out
-		expect(await store.listActive("SKILL", 10)).toHaveLength(1);
+		// SKILL 暂缓入库（T5 闸门）；sop + 一张 Guard 卡晋升；0.1 卡被质量闸挡下。
+		expect(count).toBe(2);
+		expect(await store.listActive("SKILL", 10)).toHaveLength(0);
 		expect(await store.listActive("SOP", 10)).toHaveLength(1);
 		// The promoted card is role Guard, so it is stored as ABILITY, not EVIDENCE.
 		expect(await store.listActive("EVIDENCE", 10)).toHaveLength(0);

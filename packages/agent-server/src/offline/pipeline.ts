@@ -3,6 +3,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { domainForTask } from "./task-domain.ts";
 
 /**
  * Offline pipeline (SPEC §4.2 step 3): spawn the three vendored Python handoff
@@ -45,6 +46,12 @@ export interface SessionTrajectory {
 	task: string;
 	text: string;
 	toolCalls: TrajectoryToolCall[];
+	/**
+	 * F3 (T4): 轨迹所属 domain（alfworld/office/...）。来自 session 头元数据
+	 * metadata.domain，缺省按任务→域注册表（domainForTask）推导；空串 = 无标签
+	 * （蒸馏出的卡 domain 为空 → 检索不过滤，向后兼容）。
+	 */
+	domain: string;
 }
 
 export interface OfflinePipelineOptions {
@@ -96,6 +103,8 @@ export async function runOfflinePipeline(
 	const tempDir = mkdtempSync(join(tmpdir(), "agent-server-pipeline-"));
 	try {
 		const trajPath = join(tempDir, "trajectories.json");
+		// F3 (T4): SessionTrajectory 携带 domain，wire 全量序列化（sop_lifecycle
+		// 消费 toolCalls；蒸馏管线消费 taskId/task/text/domain）。
 		writeFileSync(trajPath, JSON.stringify(trajectories));
 
 		const skillsPath = join(tempDir, "skills.json");
@@ -209,6 +218,7 @@ export function collectTrajectories(inputDir: string): SessionTrajectory[] {
 
 function parseSessionFile(path: string, taskId: string): SessionTrajectory {
 	let task = "";
+	let domain = "";
 	const texts: string[] = [];
 	const toolCalls: TrajectoryToolCall[] = [];
 	const callById = new Map<string, TrajectoryToolCall>();
@@ -252,6 +262,15 @@ function parseSessionFile(path: string, taskId: string): SessionTrajectory {
 		} catch {
 			continue; // skip malformed lines instead of aborting the whole file
 		}
+		if (entry.type === "session") {
+			// F3 (T4): session 头元数据携带任务归属（M1 task_id 透传）与 domain。
+			const meta = (entry.metadata ?? {}) as Record<string, unknown>;
+			const metaDomain = typeof meta.domain === "string" ? meta.domain : "";
+			const metaTaskId =
+				typeof meta.task_id === "string" ? meta.task_id : typeof meta.taskId === "string" ? meta.taskId : "";
+			domain = metaDomain || domainForTask(metaTaskId || taskId);
+			continue;
+		}
 		if (entry.type === "message") {
 			// Pi-native: message payload is nested under `message`; tolerate flat.
 			recordMessage((entry.message ?? entry) as Record<string, unknown>);
@@ -264,7 +283,7 @@ function parseSessionFile(path: string, taskId: string): SessionTrajectory {
 			for (const message of contextMessages) recordMessage(message as Record<string, unknown>);
 		}
 	}
-	return { taskId, task, text: texts.join("\n"), toolCalls };
+	return { taskId, task, text: texts.join("\n"), toolCalls, domain };
 }
 
 function extractText(content: unknown): string {

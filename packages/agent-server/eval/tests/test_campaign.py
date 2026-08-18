@@ -319,9 +319,9 @@ def test_run_agent_accepts_injection_kwarg_and_records_marker(tmp_path):
     client = types.SimpleNamespace(chat=types.SimpleNamespace(completions=Completions()))
 
     result = campaign.run_agent(
-        client, "agent-auto", "do the thing", tmp_path, timeout_s=60, injection=False, task_id="task_00042"
+        client, "agent-auto", "do the thing", tmp_path, timeout_s=60, injection=False, task_id="task_00042", domain="office"
     )
-    assert seen["extra_body"] == {"injection": False, "task_id": "task_00042"}
+    assert seen["extra_body"] == {"injection": False, "task_id": "task_00042", "domain": "office"}
     assert result["status"] == "completed"
     assert result["trace_ids"] == ["chatcmpl-fake-1"]
     assert result["escalated"] is True
@@ -360,7 +360,7 @@ def test_run_agent_retries_transient_api_errors(tmp_path):
             return Resp()
 
     client = types.SimpleNamespace(chat=types.SimpleNamespace(completions=Completions()))
-    result = campaign.run_agent(client, "agent-auto", "t", tmp_path, timeout_s=60, injection=False, task_id="task_x")
+    result = campaign.run_agent(client, "agent-auto", "t", tmp_path, timeout_s=60, injection=False, task_id="task_x", domain="office")
     assert calls["n"] == 3
     assert result["status"] == "completed"
 
@@ -379,7 +379,7 @@ def test_run_agent_gives_up_after_max_retries(tmp_path):
 
     client = types.SimpleNamespace(chat=types.SimpleNamespace(completions=Completions()))
     with pytest.raises(Exception):
-        campaign.run_agent(client, "agent-auto", "t", tmp_path, timeout_s=60, injection=False, task_id="task_x")
+        campaign.run_agent(client, "agent-auto", "t", tmp_path, timeout_s=60, injection=False, task_id="task_x", domain="office")
 
 
 def test_run_agent_tool_timeout_returns_observation_not_crash(tmp_path):
@@ -426,7 +426,7 @@ def test_run_agent_tool_timeout_returns_observation_not_crash(tmp_path):
             return Resp(MsgWithCall() if self.n == 1 else MsgFinal())
 
     client = types.SimpleNamespace(chat=types.SimpleNamespace(completions=Completions()))
-    result = campaign.run_agent(client, "agent-auto", "t", tmp_path, timeout_s=60, injection=False, task_id="task_x")
+    result = campaign.run_agent(client, "agent-auto", "t", tmp_path, timeout_s=60, injection=False, task_id="task_x", domain="office")
     assert result["status"] == "completed"
     # 工具超时被转换为 toolResult 观察而不是异常
     tool_results = [

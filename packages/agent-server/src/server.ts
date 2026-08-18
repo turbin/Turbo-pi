@@ -147,6 +147,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 		const requestId = randomUUID();
 		reply.header("x-request-id", requestId);
 		const taskId = typeof body.taskId === "string" && body.taskId.trim() ? body.taskId : undefined;
+		const domain = typeof body.domain === "string" && body.domain.trim() ? body.domain : undefined;
 		const sessionPath = join(sessionDir, `${Date.now()}-${randomUUID()}.jsonl`);
 		try {
 			const stream = await handleStream(body, {
@@ -156,6 +157,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 				injection: injectionDefault,
 				requestId,
 				...(taskId !== undefined ? { taskId } : {}),
+				...(domain !== undefined ? { domain } : {}),
 			});
 			reply.header("content-type", "text/event-stream");
 			return reply.send(Readable.fromWeb(stream as unknown as NodeReadableStream<Uint8Array>));
@@ -180,6 +182,10 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 		// F0 (issue-013): harness-supplied task id (eval/campaign.py extra_body)
 		// joins task scores to requests; absent for plain pi clients → nullable.
 		const taskId = typeof body.task_id === "string" && body.task_id.trim() ? body.task_id : undefined;
+		// F3 (T4): harness-supplied domain (eval/campaign.py extra_body) filters
+		// retrieval and lands in session header metadata; absent for plain pi
+		// clients → unfiltered retrieval (untagged-card backward compatibility).
+		const domain = typeof body.domain === "string" && body.domain.trim() ? body.domain : undefined;
 		// Opt-in request dump for debugging; off by default so user prompts and
 		// code are not written outside var/ (review finding: fixed /tmp path).
 		if (process.env.AGENT_SERVER_DEBUG_DUMP === "1") {
@@ -257,6 +263,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 						provider: model.provider,
 						requestId,
 						...(taskId !== undefined ? { taskId } : {}),
+						...(domain !== undefined ? { domain } : {}),
 					},
 				});
 				try {
@@ -267,7 +274,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 							.filter((content: string) => !content.startsWith("<system-reminder>"))
 							.pop() ?? "";
 					console.log("[agent-server] stream query:", query);
-					const retrieved = injectionOn ? await retrieve(store, query, 8) : [];
+					const retrieved = injectionOn ? await retrieve(store, query, 8, domain) : [];
 					// O spec observability point 1 (retrieval): local experience content.
 					const kinds = kindsOf(retrieved);
 					await store.recordRequestTrace({
@@ -357,8 +364,16 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 					context,
 					options: { ...options, injection: injectionOn },
 					...(taskId !== undefined ? { taskId } : {}),
+					...(domain !== undefined ? { domain } : {}),
 				},
-				{ store, gatewayUrl, sessionPath, requestId, ...(taskId !== undefined ? { taskId } : {}) },
+				{
+					store,
+					gatewayUrl,
+					sessionPath,
+					requestId,
+					...(taskId !== undefined ? { taskId } : {}),
+					...(domain !== undefined ? { domain } : {}),
+				},
 			);
 			const reader = stream.getReader();
 			const chunks: string[] = [];

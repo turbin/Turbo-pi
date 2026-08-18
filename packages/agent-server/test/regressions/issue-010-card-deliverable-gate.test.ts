@@ -124,7 +124,7 @@ describe("issue-010: Method/Guard cards without a non-empty deliverables list ar
 });
 
 describe("issue-010: SOP/SKILL/EVIDENCE are explicitly exempt from the deliverable check", () => {
-	it("promotes SKILL and SOP items with no deliverables concept at all", async () => {
+	it("keeps SOP promotion without deliverables while SKILL stays suspended (T5 gate)", async () => {
 		const store = await makeStore();
 		const items = [
 			...skillsToStaged([{ name: "skill-010", summary: "retry", utility: 0.9, content: "# Skill" }]),
@@ -132,8 +132,9 @@ describe("issue-010: SOP/SKILL/EVIDENCE are explicitly exempt from the deliverab
 		];
 		expect(items).toHaveLength(2);
 		const count = await verifyAndCanonicalize(items, store);
-		expect(count).toBe(2);
-		expect(await store.listActive("SKILL", 10)).toHaveLength(1);
+		// SOP 预验证直通照常晋升（豁免交付检查）；SKILL 被 T5 统一闸暂缓。
+		expect(count).toBe(1);
+		expect(await store.listActive("SKILL", 10)).toHaveLength(0);
 		expect(await store.listActive("SOP", 10)).toHaveLength(1);
 	});
 

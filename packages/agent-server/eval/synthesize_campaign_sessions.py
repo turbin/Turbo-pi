@@ -39,6 +39,9 @@ def synthesize_task(record: dict, out_path: Path, prefix: str) -> None:
                         "arm": record.get("arm"),
                         "day": record.get("day"),
                         "score": record.get("score"),
+                        # F3 (T4): 情景域透传——office campaign 语料（蒸馏按轨迹
+                        # 来源自动打标；collectTrajectories 透传到蒸馏管线）。
+                        "domain": "office",
                     },
                 },
                 ensure_ascii=False,

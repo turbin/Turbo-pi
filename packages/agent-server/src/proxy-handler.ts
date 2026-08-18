@@ -19,6 +19,8 @@ export interface ProxyHandlerOptions {
 	requestId?: string;
 	/** F0 (issue-013): caller-supplied task id, threaded into session metadata + trace rows. */
 	taskId?: string;
+	/** F3 (T4): caller-supplied domain, threaded into session metadata + retrieval filter. */
+	domain?: string;
 	/** Server-level injection default; `StreamRequest.options.injection` overrides per-request. */
 	injection?: boolean;
 }
@@ -61,6 +63,7 @@ export async function handleStream(
 			provider: body.model.provider,
 			requestId: opts.requestId,
 			...(opts.taskId ? { taskId: opts.taskId } : {}),
+			...(opts.domain ? { domain: opts.domain } : {}),
 		},
 	});
 
@@ -70,7 +73,9 @@ export async function handleStream(
 		// sessions/traces still land in the store), while retrieval, the
 		// evidence block, the skill catalog, and SOP schemas are all skipped.
 		const injectionOn = body.options?.injection ?? opts.injection ?? true;
-		const retrieved = injectionOn ? await retrieve(opts.store, lastUserText(body.context), RETRIEVAL_LIMIT) : [];
+		const retrieved = injectionOn
+			? await retrieve(opts.store, lastUserText(body.context), RETRIEVAL_LIMIT, opts.domain)
+			: [];
 		if (opts.requestId) {
 			// O spec observability point 1 (retrieval): local experience content.
 			const kinds = kindsOf(retrieved);

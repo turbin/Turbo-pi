@@ -270,7 +270,7 @@ flowchart LR
 
 - **模块构成**：`verifyAndCanonicalize()` 与 `PROMOTION_THRESHOLD=0.5`（offline/verifier.ts）管晋升，`runDormantRescore()`（offline/pipeline.ts）管复评，`removeDormantBefore()` 管 TTL 与容量淘汰，`writeCheckpoint()`（offline/checkpoint.ts）管幂等落账。
 - **运行方式**：晋升阈值为准入奖励（≥0.5 且 sha256 去重后事务写入）；dormant 为留观（每批次最老 200 条复评，过线原地晋升，不过线留待下批）；TTL 30 天与容量上限 10000 为淘汰（仅作用于 dormant）；quality 当前为裁判自评点估计，随归因机制演进。
-- **有效作用**：经验库有入有出、规模有界；checkpoint 幂等（ckpt-sha256[:16]）保证批次失败可安全重跑。局限声明：(1) 0.5 阈值仅适用 EVIDENCE/ABILITY——SOP 经生命周期管线预验证以 quality=1 准入，SKILL 以 utility 另尺度晋升（是否统一收编待裁决）；(2) "rescore 降级"未实现：现役 rescore 仅复评 dormant，active 卡无降级/淘汰通道，一旦晋升即长期滞留（§7 台账）；(3) 晋升闸门对单轨迹任务是对硬编码参照轨迹的偏好概率，不验任务成败与交付物（issue-010 根因，随演进 2 修复）。
+- **有效作用**：经验库有入有出、规模有界；checkpoint 幂等（ckpt-sha256[:16]）保证批次失败可安全重跑。局限声明：(1) 晋升统一过验证闸（红线 3 修订，台账 5 闭环）——EVIDENCE/ABILITY 0.5 闸（ABILITY 另含 F1 交付物检查 + F2 实战归因 confidence 信号），SOP 生命周期管线预验证 quality=1（语义 = 预验证通过标记，非绕过闸门的直通），SKILL 暂缓入库（utility 无验证对象，待 utility→可验证任务映射建立后解除）；(2) "rescore 降级"未实现：现役 rescore 仅复评 dormant，active 卡无降级/淘汰通道，一旦晋升即长期滞留（§7 台账）；(3) 晋升闸门对单轨迹任务是对硬编码参照轨迹的偏好概率，不验任务成败与交付物（issue-010 根因，随演进 2 修复）。
 
 ### 3.4 检索与注入
 
@@ -322,7 +322,7 @@ EWC 借鉴的采纳边界：采纳重要性加权、合并蒸馏、双时间尺�
 
 1. 原始轨迹从不直接注入，只有蒸馏并验证后的卡片可进入 prompt。
 2. 失败文本不入库，失败轨迹仅作离线归因输入，教训以程序化提取的 Guard 卡沉淀。
-3. 晋升阈值 0.5 统一（适用范围：EVIDENCE/ABILITY；SOP 预验证 quality=1 准入、SKILL utility 另尺度，是否收编待裁决），dormant 在 SQL 层不可见。
+3. 晋升统一过验证闸（F4，2026-08-14 修订）：每类卡晋升必须过"与任务结果挂钩的可执行验证判据"，阈值/尺度可按类标定，但不存在绕过验证的通道——EVIDENCE/ABILITY 过 0.5 闸（ABILITY 另含 F1 交付物检查与 F2 实战归因信号）；SOP 以生命周期管线预验证通过标记（quality=1）准入；SKILL 暂缓入库直至 utility 分有可验证任务映射；dormant 在 SQL 层不可见。
 4. 评估库与生产库物理隔离。
 5. 批次层异常隔离：局部失败降级为观察，永不穿透批次层。
 6. 核心指标以 model_runs 与 request_traces 全量为准，拒绝小样本外推。

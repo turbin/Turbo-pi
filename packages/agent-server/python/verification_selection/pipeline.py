@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from .canonicalize import CanonResult, canonicalize
 from .checkpoint import ScoreJournal, input_hash, prompt_fingerprint
 from .deliverables import DELIVERY_CAP_QUALITY, DELIVERY_CAP_VERSION, has_deliverable
+from .domains import task_domain
 from .experience import ExperienceCard, SchemaError, parse_card_json
 from .library import ExperienceLibrary
 from .llm_client import LLMClient
@@ -44,6 +45,8 @@ Extract ONE experience card as a JSON object with exactly these fields:
 - "deliverables": the concrete outputs the task must produce when this card is
   applied — files, artifacts, or end state (e.g. "1) write report.md with the
   findings", "2) update state.json"); a non-empty list of strings
+- "task_pattern": a short reusable scenario label for the task type this card
+  applies to (e.g. "compliance audit", "report generation", "migration")
 - "boundary": a narrow non-transfer condition starting with "Must not"
 - "role": one of "Method" | "Guard" | "Workflow"
 
@@ -57,12 +60,17 @@ Reply with the JSON object only."""
 
 @dataclass
 class TeacherTrajectory:
-    """大模型（teacher）轨迹。curator_label 仅用于 Anchor oracle routing，不进卡片文本。"""
+    """大模型（teacher）轨迹。curator_label 仅用于 Anchor oracle routing，不进卡片文本。
+
+    domain（F3/T4）：轨迹所属情景域（alfworld/office/...），由合成器元数据透传
+    或按 task_id 注册表推导；空串 = 无标签。
+    """
 
     task_id: str
     task: str
     trajectory: str
     curator_label: str | None = None
+    domain: str = ""
     meta: dict = field(default_factory=dict)
 
 
@@ -89,7 +97,11 @@ class PipelineReport:
 
 def _extract_card(extractor: LLMClient, traj: TeacherTrajectory,
                   quality: float, backbone: str) -> ExperienceCard:
-    """让大模型把高分轨迹结构化为五元组，evidence 由管线注入（不信任 LLM 自报）。"""
+    """让大模型把高分轨迹结构化为五元组，evidence 由管线注入（不信任 LLM 自报）。
+
+    domain/task_pattern 情景标签（F3/T4）：domain 由轨迹来源自动打标（管线
+    写入，不信任 LLM）；task_pattern 由 LLM 在抽取时产出。
+    """
     prompt = EXTRACTION_PROMPT.format(task=traj.task, trajectory=traj.trajectory,
                                       quality=quality)
     # LLM 只产内容字段，evidence 由管线注入，故先非严格解析、注入后再严格校验
@@ -102,6 +114,7 @@ def _extract_card(extractor: LLMClient, traj: TeacherTrajectory,
         "verifier_score": round(quality, 6),
         "target_ref": traj.curator_label or "",
     }
+    card.domain = traj.domain  # 轨迹来源自动打标（合成器元数据/注册表），不信任 LLM
     card.validate_strict()
     return card
 
@@ -407,11 +420,15 @@ def _cli(argv: list[str] | None = None) -> int:
         text = str(item.get("trajectory") or item.get("text") or "")
         if not text.strip():
             continue
+        task_id = str(item.get("taskId") or item.get("task_id") or f"task-{i}")
+        # F3 (T4): wire domain 优先（collectTrajectories 透传），缺省按注册表回退。
+        domain = str(item.get("domain") or "")
         trajs.append(
             TeacherTrajectory(
-                task_id=str(item.get("taskId") or item.get("task_id") or f"task-{i}"),
+                task_id=task_id,
                 task=str(item.get("task") or ""),
                 trajectory=text,
+                domain=domain or task_domain(task_id),
             )
         )
 

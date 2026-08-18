@@ -36,8 +36,20 @@ import os
 from pathlib import Path
 
 from .deliverables import DELIVERY_CAP_QUALITY
+from .domains import task_domain
 from .pipeline import TeacherTrajectory, _extract_card, score_trajectories_with_checkpoint
 from .verifier import LetterScale, Verifier
+
+
+def _session_domain(entries: list[dict], task_id: str) -> str:
+    """session 头元数据 domain 优先（合成器透传），缺省按任务→域注册表回退。"""
+    for entry in entries:
+        if entry.get("type") == "session":
+            meta = entry.get("metadata") or {}
+            if isinstance(meta.get("domain"), str) and meta["domain"]:
+                return meta["domain"]
+            break
+    return task_domain(task_id)
 
 
 def reduce_session(entries: list[dict]) -> tuple[str, str]:
@@ -182,7 +194,11 @@ def restill_cli(
                     key = (task_id, text)
                     if key not in seen:
                         seen.add(key)
-                        trajs.append(TeacherTrajectory(task_id=task_id, task=task, trajectory=text))
+                        # F3 (T4): 重蒸顺带打标——session 元数据 domain 优先，
+                        # 注册表回退（C 库默认 office，存量卡不单独回填）。
+                        domain = _session_domain(_read_session_lines(path), task_id)
+                        trajs.append(TeacherTrajectory(task_id=task_id, task=task,
+                                                       trajectory=text, domain=domain))
                     rec["status"] = "pending"
         cards.append(rec)
 

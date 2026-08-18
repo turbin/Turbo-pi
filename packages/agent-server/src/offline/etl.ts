@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { ExperienceStore } from "../experience-store.ts";
+import { domainForTask } from "./task-domain.ts";
 
 /**
  * Offline ETL (SPEC §4.2 step 1 / §5.2): parse session JSONL files and insert
@@ -38,6 +39,9 @@ interface ExtractedMessage {
 export async function etlSessionFiles(paths: string[], store: ExperienceStore): Promise<number> {
 	let inserted = 0;
 	for (const path of paths) {
+		// F3 (T4): ETL 打标路径——EVIDENCE 直插不经蒸馏，摄入时按 session 所属
+		// 任务打域（复用 M1 task_id 透传 + 任务→域注册表）。
+		const domain = domainForTask(sessionTaskId(path));
 		for (const message of extractMessages(path)) {
 			if (message.role !== "assistant" && message.role !== "toolResult") continue;
 			const sentences = splitSentences(message.text);
@@ -55,6 +59,8 @@ export async function etlSessionFiles(paths: string[], store: ExperienceStore): 
 						sourceEntryId: message.entryId,
 						charStart: 0,
 						charEnd: text.length,
+						// F3 (T4): domain 空串 = 无标签（检索不过滤，向后兼容存量卡）。
+						domain,
 					},
 					quality: 0,
 					confidence: 0.5,
@@ -70,6 +76,26 @@ export async function etlSessionFiles(paths: string[], store: ExperienceStore): 
 		}
 	}
 	return inserted;
+}
+
+/** 读 session 头 metadata.task_id（F0 透传的任务归属键）。 */
+function sessionTaskId(path: string): string {
+	for (const line of readFileSync(path, "utf-8").split("\n")) {
+		if (!line.trim()) continue;
+		let entry: Record<string, unknown>;
+		try {
+			entry = JSON.parse(line) as Record<string, unknown>;
+		} catch {
+			continue;
+		}
+		if (entry.type === "session") {
+			const meta = (entry.metadata ?? {}) as Record<string, unknown>;
+			const taskId =
+				typeof meta.task_id === "string" ? meta.task_id : typeof meta.taskId === "string" ? meta.taskId : "";
+			return taskId;
+		}
+	}
+	return "";
 }
 
 function extractMessages(path: string): ExtractedMessage[] {

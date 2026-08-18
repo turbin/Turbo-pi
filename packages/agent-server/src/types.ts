@@ -8,6 +8,13 @@ export interface StreamRequest {
 	options: ProxyStreamOptions;
 	/** F0 (issue-013): caller-supplied task id, threaded into session metadata + request_traces. Optional. */
 	taskId?: string;
+	/**
+	 * F3 (T4): caller-supplied domain (alfworld/office/...), threaded into
+	 * session header metadata and used to filter retrieval (cross-domain
+	 * tagged cards are excluded; untagged cards always pass). Optional —
+	 * plain pi clients without a domain see unfiltered retrieval.
+	 */
+	domain?: string;
 }
 
 export interface ProxyStreamOptions extends Partial<SimpleStreamOptions> {

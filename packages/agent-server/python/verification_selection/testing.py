@@ -143,6 +143,8 @@ def make_teacher_mock(G: int = 20, name: str = "teacher-mock") -> MockLLM:
                               "6) Sanity-test on large n."),
                 "deliverables": ["1) the final answer listing all shift positions p<n",
                                  "2) counts split by p=0 vs p!=0"],
+                "task_pattern": "substring matching with cyclic shifts",
+                "domain": "office",
                 "boundary": ("Must not contain an O(n)-length substring extraction "
                              "inside a loop over all shifts."),
                 "role": "Guard",
@@ -158,6 +160,8 @@ def make_teacher_mock(G: int = 20, name: str = "teacher-mock") -> MockLLM:
                               "its cause."),
                 "deliverables": ["1) retry log with each attempt and its cause",
                                  "2) the final call result after the retry loop"],
+                "task_pattern": "flaky api retry",
+                "domain": "office",
                 "boundary": ("Must not retry on 4xx client errors or on non-idempotent "
                              "POST requests without an idempotency key."),
                 "role": "Method",
@@ -172,6 +176,8 @@ def make_teacher_mock(G: int = 20, name: str = "teacher-mock") -> MockLLM:
                               "tests. 4) Report any discrepancy explicitly."),
                 "deliverables": ["1) final answer reporting each requirement check result",
                                  "2) test run output when tests are available"],
+                "task_pattern": "final requirements cross-check",
+                "domain": "office",
                 "boundary": ("Must not skip the re-read step when the task statement "
                              "contains numeric constraints."),
                 "role": "Workflow",
