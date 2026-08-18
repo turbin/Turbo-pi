@@ -10,10 +10,11 @@ import random
 from dataclasses import dataclass, field
 
 from .canonicalize import CanonResult, canonicalize
+from .checkpoint import ScoreJournal, input_hash, prompt_fingerprint
 from .experience import ExperienceCard, SchemaError, parse_card_json
 from .library import ExperienceLibrary
 from .llm_client import LLMClient
-from .verifier import TournamentResult, Verifier
+from .verifier import PAIRWISE_TEMPLATE, TournamentResult, Verifier
 
 # 单轨迹任务的对照参照：无策略、无验证的最小尝试（质量低于任何合格轨迹）
 REFERENCE_TRAJECTORY = (
@@ -99,6 +100,88 @@ def _extract_card(extractor: LLMClient, traj: TeacherTrajectory,
     return card
 
 
+def _prompt_fingerprint(verifier: Verifier) -> str:
+    """打分 prompt 指纹：模板/参照轨迹/标准分解/G/K 任一变化即缓存失效。"""
+    return prompt_fingerprint(
+        PAIRWISE_TEMPLATE, REFERENCE_TRAJECTORY,
+        [c.description for c in verifier.criteria],
+        verifier.scale.G, verifier.K,
+    )
+
+
+def score_trajectories(
+    teacher_trajectories: list[TeacherTrajectory],
+    *,
+    verifier: Verifier,
+    score_threshold: float = 0.5,
+    k: int = 3,
+    rng: random.Random | None = None,
+) -> tuple[list[ScoredTrajectory], dict[str, TournamentResult]]:
+    """纯打分（无断点）：按任务组 PPT / vs_reference，返回 (scored, tournaments)。"""
+    return score_trajectories_with_checkpoint(
+        teacher_trajectories, verifier=verifier, run_dir=None,
+        score_threshold=score_threshold, k=k, rng=rng,
+    )
+
+
+def score_trajectories_with_checkpoint(
+    teacher_trajectories: list[TeacherTrajectory],
+    *,
+    verifier: Verifier,
+    run_dir: str | None = None,
+    score_threshold: float = 0.5,
+    k: int = 3,
+    rng: random.Random | None = None,
+) -> tuple[list[ScoredTrajectory], dict[str, TournamentResult]]:
+    """打分 + 断点（最小断点，2026-08-14 立项）：每任务组打分后立即落盘。
+
+    run_dir 给定时读既有 journal：输入哈希（轨迹内容 + prompt 指纹）匹配的
+    组直接复用（--resume 跳过已完成打分），不匹配/缺失的组重打并增量追加
+    ——中途崩溃不丢已完成部分。run_dir 为 None 时零 IO，与纯打分一致。
+
+    PPT 组在 resume 时不再重跑锦标赛，tournaments 只含本轮实际重打的组；
+    mock 打分对输入确定性，resume 产物与全新跑一致。
+    """
+    rng = rng or random.Random(0)
+    fp = _prompt_fingerprint(verifier)
+    journal = ScoreJournal(run_dir, "scores.jsonl")
+    cache = journal.load()
+
+    groups: dict[str, list[TeacherTrajectory]] = {}
+    for t in teacher_trajectories:
+        groups.setdefault(t.task_id, []).append(t)
+
+    scored: list[ScoredTrajectory] = []
+    tournaments: dict[str, TournamentResult] = {}
+    for task_id, trajs in groups.items():
+        texts = [t.trajectory for t in trajs]
+        h = input_hash(fp, trajs[0].task, *texts)
+        cached = cache.get(task_id)
+        if (cached is not None and cached.get("input_hash") == h
+                and len(cached.get("qualities", [])) == len(trajs)):
+            # --resume：输入哈希匹配的已完成打分直接复用（零 LLM 调用）。
+            method = str(cached.get("method") or "vs_reference")
+            for t, q in zip(trajs, cached["qualities"]):
+                qf = float(q)
+                scored.append(ScoredTrajectory(t, qf, method, qf >= score_threshold))
+            continue
+        if len(trajs) > 1:
+            res = verifier.select_best(trajs[0].task, texts, k=k, rng=rng)
+            tournaments[task_id] = res
+            qualities = list(res.normalized)
+            method = "ppt"
+        else:
+            t = trajs[0]
+            ps = verifier.score_pair(t.task, t.trajectory, REFERENCE_TRAJECTORY)
+            qualities = [ps.preference]
+            method = "vs_reference"
+        for t, q in zip(trajs, qualities):
+            scored.append(ScoredTrajectory(t, q, method, q >= score_threshold))
+        journal.append(task_id, {"task_id": task_id, "input_hash": h,
+                                 "method": method, "qualities": qualities})
+    return scored, tournaments
+
+
 def select_experiences(
     teacher_trajectories: list[TeacherTrajectory],
     *,
@@ -112,6 +195,7 @@ def select_experiences(
     backbone: str = "teacher",
     rng: random.Random | None = None,
     return_report: bool = False,
+    prescored: tuple[list[ScoredTrajectory], dict[str, TournamentResult]] | None = None,
 ):
     """大模型轨迹 → 经验知识库。
 
@@ -120,30 +204,20 @@ def select_experiences(
     - quality >= score_threshold 的轨迹才被结构化为经验卡；
     - 全部卡片过保守 canonicalize 后入库（FTS5）。
     judges 缺省时复用 extractor 做 3 次投票（单模型×3 采样的简化方案）。
+    prescored 由 CLI 断点路径（score_trajectories_with_checkpoint）提供时跳过打分。
     """
     lib = library or ExperienceLibrary(":memory:")
     judge_list = judges or [extractor, extractor, extractor]
     rng = rng or random.Random(0)
 
-    # 1) 按任务分组打分
-    groups: dict[str, list[TeacherTrajectory]] = {}
-    for t in teacher_trajectories:
-        groups.setdefault(t.task_id, []).append(t)
-
-    scored: list[ScoredTrajectory] = []
-    tournaments: dict[str, TournamentResult] = {}
-    for task_id, trajs in groups.items():
-        if len(trajs) > 1:
-            res = verifier.select_best(trajs[0].task, [t.trajectory for t in trajs],
-                                       k=k, rng=rng)
-            tournaments[task_id] = res
-            for t, q in zip(trajs, res.normalized):
-                scored.append(ScoredTrajectory(t, q, "ppt", q >= score_threshold))
-        else:
-            t = trajs[0]
-            ps = verifier.score_pair(t.task, t.trajectory, REFERENCE_TRAJECTORY)
-            scored.append(ScoredTrajectory(t, ps.preference, "vs_reference",
-                                           ps.preference >= score_threshold))
+    # 1) 按任务分组打分（prescored 提供时跳过——CLI 已在断点路径打过）
+    if prescored is not None:
+        scored, tournaments = prescored
+    else:
+        scored, tournaments = score_trajectories(
+            teacher_trajectories, verifier=verifier, k=k, rng=rng,
+            score_threshold=score_threshold,
+        )
 
     # 2) 高分轨迹结构化
     skipped: list[tuple[str, str]] = []
@@ -183,7 +257,13 @@ def select_experiences(
 # agent-server offline CLI（ vendored into pi 时新增；handoff 原始代码以上为准 ）
 #
 #   python -m verification_selection.pipeline --input trajectories.json --output cards.json
-#   python -m verification_selection.pipeline --rescore --input candidates.json --output scores.json
+#   python -m verification_selection.pipeline --input trajectories.json --output cards.json --run-dir var/offline/runs/<ts>
+#   python -m verification_selection.pipeline --rescore --input candidates.json --output scores.json [--run-dir <dir>]
+#
+# --run-dir（最小断点，2026-08-14）：打分结果按 run 目录增量落盘（scores.jsonl /
+# rescore_scores.jsonl，带输入哈希 = 轨迹内容 + 打分 prompt 指纹）；再次以同一
+# run-dir 运行（resume）时输入哈希匹配的已完成打分直接跳过，只补未完成部分。
+# 中途崩溃不丢已完成部分（逐条 fsync）。
 #
 # input:  [{ "taskId": str, "task": str, "text": str, ... }]（agent-server 会话轨迹）
 # output: [{ "taskId": str, "quality": float, "card": {五元组} }]
@@ -197,11 +277,12 @@ def select_experiences(
 # ---------------------------------------------------------------------------
 
 
-def _rescore_cli(input_path: str, output_path: str) -> int:
+def _rescore_cli(input_path: str, output_path: str, run_dir: str | None = None) -> int:
     """对 dormant ETL 候选逐条重打分：候选文本 vs REFERENCE_TRAJECTORY 的偏好概率。
 
     复用主管线单轨迹任务的打分通路（Verifier.score_pair + vs_reference 口径），
     不引入新的打分框架；空候选数组输出 [] 并以 0 退出。
+    run_dir 给定时按候选（content_hash）落盘 + resume 跳过（rescore_scores.jsonl）。
     """
     import json
     import os
@@ -232,9 +313,21 @@ def _rescore_cli(input_path: str, output_path: str) -> int:
 
             student = make_scoring_mock()
         verifier = Verifier(student, scale=LetterScale(20), K=2)
+        fp = _prompt_fingerprint(verifier)
+        journal = ScoreJournal(run_dir, "rescore_scores.jsonl")
+        cache = journal.load()
         for c in candidates:
+            key = c["content_hash"]
+            h = input_hash(fp, c["task"], c["text"])
+            cached = cache.get(key)
+            if cached is not None and cached.get("input_hash") == h:
+                # --resume：输入哈希匹配的已打分候选直接复用。
+                scores.append({"content_hash": key, "quality": float(cached["quality"])})
+                continue
             ps = verifier.score_pair(c["task"], c["text"], REFERENCE_TRAJECTORY)
-            scores.append({"content_hash": c["content_hash"], "quality": round(ps.preference, 6)})
+            quality = round(ps.preference, 6)
+            scores.append({"content_hash": key, "quality": quality})
+            journal.append(key, {"content_hash": key, "input_hash": h, "quality": quality})
 
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(scores, f, ensure_ascii=False, indent=2)
@@ -256,10 +349,12 @@ def _cli(argv: list[str] | None = None) -> int:
     parser.add_argument("--score-threshold", type=float, default=0.5)
     parser.add_argument("--rescore", action="store_true",
                         help="dormant 候选重打分模式：输入 [{task, text, content_hash}]，输出 [{content_hash, quality}]")
+    parser.add_argument("--run-dir", default=None,
+                        help="打分断点目录：scores.jsonl 增量落盘；resume 时输入哈希匹配的已完成打分直接跳过")
     args = parser.parse_args(argv)
 
     if args.rescore:
-        return _rescore_cli(args.input, args.output)
+        return _rescore_cli(args.input, args.output, run_dir=args.run_dir)
 
     with open(args.input, encoding="utf-8") as f:
         raw = json.load(f)
@@ -289,6 +384,14 @@ def _cli(argv: list[str] | None = None) -> int:
         judges = [make_judge_mock(f"judge-{i}") for i in range(3)]
 
     verifier = Verifier(student, scale=LetterScale(20), K=2)
+    # 断点路径（--run-dir）：打分带增量落盘 + resume 跳过；否则纯打分。
+    prescored = None
+    if args.run_dir:
+        scored, tournaments = score_trajectories_with_checkpoint(
+            trajs, verifier=verifier, run_dir=args.run_dir,
+            score_threshold=args.score_threshold, rng=random.Random(0),
+        )
+        prescored = (scored, tournaments)
     library, report = select_experiences(
         trajs,
         verifier=verifier,
@@ -297,6 +400,7 @@ def _cli(argv: list[str] | None = None) -> int:
         score_threshold=args.score_threshold,
         rng=random.Random(0),
         return_report=True,
+        prescored=prescored,
     )
     out = [
         {

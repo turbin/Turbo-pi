@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -23,6 +23,7 @@ function makeDeps(overrides: Partial<RunEvolutionDeps> = {}): RunEvolutionDeps {
 		now: () => 0,
 		log: vi.fn(),
 		logError: vi.fn(),
+		runDirRoot: mkdtempSync(join(tmpdir(), "agent-server-runroot-")),
 		...overrides,
 	};
 }
@@ -144,14 +145,28 @@ describe("run-evolution cmdRun", () => {
 		} finally {
 			delete process.env.AGENT_SERVER_SESSION_DIR;
 		}
-		expect(runDailyEvolutionFn).toHaveBeenCalledWith(store, { inputDir: "/tmp/custom-sessions" });
+		expect(runDailyEvolutionFn).toHaveBeenCalledWith(store, {
+			inputDir: "/tmp/custom-sessions",
+			runDir: expect.stringContaining("1970-01-01T00-00-00-000Z"),
+		});
 	});
 
-	it("passes empty options when AGENT_SERVER_SESSION_DIR is unset", async () => {
+	it("creates a timestamped run dir under runDirRoot when AGENT_SERVER_SESSION_DIR is unset", async () => {
 		const runDailyEvolutionFn = vi.fn().mockResolvedValue("ckpt-x");
 		const deps = makeDeps({ store, runDailyEvolutionFn });
 		delete process.env.AGENT_SERVER_SESSION_DIR;
 		await cmdRun(deps);
-		expect(runDailyEvolutionFn).toHaveBeenCalledWith(store, {});
+		const expected = join(deps.runDirRoot, "1970-01-01T00-00-00-000Z");
+		expect(runDailyEvolutionFn).toHaveBeenCalledWith(store, { runDir: expected });
+		expect(existsSync(expected)).toBe(true);
+	});
+
+	it("--resume reuses the given run dir instead of creating a new one", async () => {
+		const runDailyEvolutionFn = vi.fn().mockResolvedValue("ckpt-x");
+		const deps = makeDeps({ store, runDailyEvolutionFn });
+		const resumeDir = join(deps.runDirRoot, "2026-08-14T03-00-00-000Z");
+		await cmdRun(deps, { resumeDir });
+		expect(runDailyEvolutionFn).toHaveBeenCalledWith(store, { runDir: resumeDir });
+		expect(existsSync(resumeDir)).toBe(true);
 	});
 });

@@ -96,6 +96,20 @@ export interface RequestTraceInput {
 	retrievedIds?: string[];
 	retrievedKinds?: string[];
 	hit?: boolean;
+	/**
+	 * F0 (issue-013): the card ids actually injected into the prompt
+	 * (buildInjection's EVIDENCE pool + Method/Guard top-5 after truncation;
+	 * SKILL/SOP live on separate channels and are excluded). Written in a
+	 * phase-1.5 upsert after injection assembly; COALESCE merge keeps it
+	 * from clobbering or being clobbered by the other phases.
+	 */
+	injectedIds?: string[];
+	/**
+	 * F0 (issue-013): caller-supplied task id (eval/campaign.py extra_body)
+	 * joining task scores to requests; nullable — production pi clients that
+	 * do not send one stay unaffected.
+	 */
+	taskId?: string;
 	finishReason?: string;
 	promptTokens?: number;
 	completionTokens?: number;
@@ -185,6 +199,8 @@ export class ExperienceStore {
 			CREATE INDEX IF NOT EXISTS idx_checkpoints_kind_epoch ON checkpoints(kind, epoch DESC);
 			-- Per-request observability trace (O spec R1): one row per proxied chat
 			-- request, written in two phases (after retrieval, then at completion).
+			-- F0 (issue-013): injected_ids = card ids actually injected into the
+			-- prompt; task_id = harness-supplied task id for attribution joins.
 			CREATE TABLE IF NOT EXISTS request_traces (
 				request_id TEXT PRIMARY KEY,
 				ts TEXT NOT NULL,
@@ -194,6 +210,8 @@ export class ExperienceStore {
 				retrieved_ids TEXT NOT NULL DEFAULT '[]',
 				retrieved_kinds TEXT NOT NULL DEFAULT '[]',
 				hit INTEGER NOT NULL DEFAULT 0,
+				injected_ids TEXT NOT NULL DEFAULT '[]',
+				task_id TEXT,
 				finish_reason TEXT,
 				prompt_tokens INTEGER,
 				completion_tokens INTEGER,
@@ -202,6 +220,20 @@ export class ExperienceStore {
 			);
 			CREATE INDEX IF NOT EXISTS idx_request_traces_ts ON request_traces(ts);
 		`);
+		// F0 (issue-013): minimal migration for pre-F0 databases — the C-stage
+		// request_traces lacks injected_ids/task_id. PRAGMA table_info check +
+		// ALTER TABLE ADD COLUMN keeps old stores compatible; the NOT NULL
+		// DEFAULT '[]' backfills existing rows so readers never see NULL. Only
+		// the live db is migrated: initSchema never touches the snapshot db
+		// (opened readonly, snapshot semantics preserved).
+		const traceCols = this.db.prepare("PRAGMA table_info(request_traces)").all() as { name: string }[];
+		const hasTraceCol = (name: string) => traceCols.some((c) => c.name === name);
+		if (!hasTraceCol("injected_ids")) {
+			this.db.exec("ALTER TABLE request_traces ADD COLUMN injected_ids TEXT NOT NULL DEFAULT '[]'");
+		}
+		if (!hasTraceCol("task_id")) {
+			this.db.exec("ALTER TABLE request_traces ADD COLUMN task_id TEXT");
+		}
 	}
 
 	async insert(exp: Experience): Promise<void> {
@@ -381,20 +413,35 @@ export class ExperienceStore {
 	 * Record a request trace (O spec R1). Two-phase upsert: phase 1 (retrieval)
 	 * inserts the row, phase 2 (completion) updates the same row by request_id
 	 * without touching phase-1 fields. Later phases may omit any field.
+	 *
+	 * F0 (issue-013): phase-1.5 (injection) writes injected_ids through the same
+	 * upsert; the ON CONFLICT merge now also covers injected_ids/task_id via
+	 * COALESCE, so no phase clobbers another and phase-1 fields (ts/model/
+	 * retrieved_ids/hit) stay first-write-wins — the merge sentinel that
+	 * prevents cross-day/cross-instance request_id collisions from silently
+	 * discarding retrieval records.
 	 */
 	async recordRequestTrace(input: RequestTraceInput): Promise<void> {
+		// injected_ids is NOT NULL with DEFAULT '[]', so the INSERT path binds the
+		// empty-set default — but the ON CONFLICT path must distinguish "field
+		// omitted" (phase-2 completion call) from "explicitly empty" (control arm
+		// injection off): the former keeps the phase-1.5 value, the latter sets [].
+		// A dedicated NULL-sentinel parameter in the DO UPDATE clause does that.
+		const injectedIdsUpdate = input.injectedIds === undefined ? null : JSON.stringify(input.injectedIds);
 		this.db
 			.prepare(`
 				INSERT INTO request_traces
 					(request_id, ts, model, stream, retrieved_count, retrieved_ids, retrieved_kinds, hit,
-					 finish_reason, prompt_tokens, completion_tokens, latency_ms, error)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+					 injected_ids, task_id, finish_reason, prompt_tokens, completion_tokens, latency_ms, error)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT(request_id) DO UPDATE SET
 					finish_reason = COALESCE(excluded.finish_reason, request_traces.finish_reason),
 					prompt_tokens = COALESCE(excluded.prompt_tokens, request_traces.prompt_tokens),
 					completion_tokens = COALESCE(excluded.completion_tokens, request_traces.completion_tokens),
 					latency_ms = COALESCE(excluded.latency_ms, request_traces.latency_ms),
-					error = COALESCE(excluded.error, request_traces.error)
+					error = COALESCE(excluded.error, request_traces.error),
+					injected_ids = COALESCE(?, request_traces.injected_ids),
+					task_id = COALESCE(excluded.task_id, request_traces.task_id)
 			`)
 			.run(
 				input.requestId,
@@ -405,11 +452,14 @@ export class ExperienceStore {
 				JSON.stringify(input.retrievedIds ?? []),
 				JSON.stringify(input.retrievedKinds ?? []),
 				input.hit ? 1 : 0,
+				JSON.stringify(input.injectedIds ?? []),
+				input.taskId ?? null,
 				input.finishReason ?? null,
 				input.promptTokens ?? null,
 				input.completionTokens ?? null,
 				input.latencyMs ?? null,
 				input.error ?? null,
+				injectedIdsUpdate,
 			);
 	}
 
@@ -426,7 +476,7 @@ export class ExperienceStore {
 			.all(cutoff) as { day: string; total: number; hits: number }[];
 		const recent = this.db
 			.prepare(
-				"SELECT request_id AS requestId, ts, model, stream, retrieved_count AS retrievedCount, retrieved_ids AS retrievedIds, hit, finish_reason AS finishReason, prompt_tokens AS promptTokens, completion_tokens AS completionTokens, latency_ms AS latencyMs, error FROM request_traces WHERE ts >= ? ORDER BY ts DESC LIMIT 20",
+				"SELECT request_id AS requestId, ts, model, stream, retrieved_count AS retrievedCount, retrieved_ids AS retrievedIds, COALESCE(injected_ids, '[]') AS injectedIds, COALESCE(task_id, '') AS taskId, hit, finish_reason AS finishReason, prompt_tokens AS promptTokens, completion_tokens AS completionTokens, latency_ms AS latencyMs, error FROM request_traces WHERE ts >= ? ORDER BY ts DESC LIMIT 20",
 			)
 			.all(cutoff) as Record<string, unknown>[];
 		// byKind: expand the JSON retrieved_kinds arrays in JS (window is small).

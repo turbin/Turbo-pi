@@ -140,9 +140,23 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 
 	fastify.post("/api/stream", async (request, reply) => {
 		const body = request.body as StreamRequest;
+		// F0 (issue-013): /api/stream is included in the trace attribution path
+		// (same two-phase upsert as /v1) — requestId is a randomUUID so it never
+		// collides across days/instances, and the x-request-id header, session
+		// header metadata, and trace row stay consistent (O spec R4 contract).
+		const requestId = randomUUID();
+		reply.header("x-request-id", requestId);
+		const taskId = typeof body.taskId === "string" && body.taskId.trim() ? body.taskId : undefined;
 		const sessionPath = join(sessionDir, `${Date.now()}-${randomUUID()}.jsonl`);
 		try {
-			const stream = await handleStream(body, { store, gatewayUrl, sessionPath, injection: injectionDefault });
+			const stream = await handleStream(body, {
+				store,
+				gatewayUrl,
+				sessionPath,
+				injection: injectionDefault,
+				requestId,
+				...(taskId !== undefined ? { taskId } : {}),
+			});
 			reply.header("content-type", "text/event-stream");
 			return reply.send(Readable.fromWeb(stream as unknown as NodeReadableStream<Uint8Array>));
 		} catch (err) {
@@ -157,9 +171,15 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 	fastify.post("/v1/chat/completions", async (request, reply) => {
 		const body = request.body as Record<string, unknown>;
 		// O spec R4: request id ties logs, trace rows, session, and response header.
-		const requestId = String(request.id);
+		// F0 (issue-013): randomUUID instead of the Fastify per-process base-36
+		// counter — the counter resets on restart and collides across days and
+		// instances, silently merging distinct requests into one trace row.
+		const requestId = randomUUID();
 		const startedAt = Date.now();
 		reply.header("x-request-id", requestId);
+		// F0 (issue-013): harness-supplied task id (eval/campaign.py extra_body)
+		// joins task scores to requests; absent for plain pi clients → nullable.
+		const taskId = typeof body.task_id === "string" && body.task_id.trim() ? body.task_id : undefined;
 		// Opt-in request dump for debugging; off by default so user prompts and
 		// code are not written outside var/ (review finding: fixed /tmp path).
 		if (process.env.AGENT_SERVER_DEBUG_DUMP === "1") {
@@ -232,7 +252,12 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 				writer.writeSessionHeader({
 					id: basename(sessionPath, ".jsonl"),
 					cwd: process.cwd(),
-					metadata: { model: model.id, provider: model.provider, requestId },
+					metadata: {
+						model: model.id,
+						provider: model.provider,
+						requestId,
+						...(taskId !== undefined ? { taskId } : {}),
+					},
 				});
 				try {
 					const query =
@@ -253,6 +278,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 						retrievedIds: retrieved.map((r) => r.experience.id),
 						retrievedKinds: kinds,
 						hit: retrieved.length > 0,
+						...(taskId !== undefined ? { taskId } : {}),
 					});
 					logTrace(requestId, "retrieval", {
 						hit: retrieved.length > 0 ? 1 : 0,
@@ -265,6 +291,12 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 					const injected = injectionOn
 						? await buildInjection(context as any, retrieved, { store })
 						: (context as any);
+					// F0 (issue-013) phase 1.5: actual injection set (COALESCE merge
+					// keeps it from clobbering phase-1 retrieved fields).
+					await store.recordRequestTrace({
+						requestId,
+						injectedIds: injectionOn ? injected.injectedIds : [],
+					});
 					const openaiReq = toOpenAIRequest(injected, model as any);
 
 					for (const message of messages) {
@@ -320,8 +352,13 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 			}
 
 			const stream = await handleStream(
-				{ model, context, options: { ...options, injection: injectionOn } },
-				{ store, gatewayUrl, sessionPath, requestId },
+				{
+					model,
+					context,
+					options: { ...options, injection: injectionOn },
+					...(taskId !== undefined ? { taskId } : {}),
+				},
+				{ store, gatewayUrl, sessionPath, requestId, ...(taskId !== undefined ? { taskId } : {}) },
 			);
 			const reader = stream.getReader();
 			const chunks: string[] = [];

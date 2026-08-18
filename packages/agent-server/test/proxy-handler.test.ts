@@ -119,7 +119,13 @@ describe("POST /api/stream", () => {
 		expect(entries[0].type).toBe("session");
 		expect(entries[0].version).toBe(3);
 		expect(typeof entries[0].id).toBe("string");
-		expect(entries[0].metadata).toEqual({ model: "agent-auto", provider: "local" });
+		expect(entries[0].metadata).toEqual({
+			model: "agent-auto",
+			provider: "local",
+			// F0 (issue-013): /api/stream 纳入 trace 落库——session 头携带
+			// requestId，与 x-request-id 响应头、request_traces 行三处一致。
+			requestId: expect.any(String),
+		});
 		const messages = entries.filter((e) => e.type === "message");
 		expect(messages).toHaveLength(2);
 		expect(messages[0].message).toEqual({ role: "user", content: "你好" });

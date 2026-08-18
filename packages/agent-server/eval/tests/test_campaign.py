@@ -289,7 +289,10 @@ def test_gate_length_escalation_last_hours(tmp_path):
 
 def test_run_agent_accepts_injection_kwarg_and_records_marker(tmp_path):
     """C1 回归：committed 代码中 run_agent 无 injection 参数，首个真实任务即
-    TypeError。现在必须显式接收并转发到 extra_body，且记录升级标记与 trace_ids。"""
+    TypeError。现在必须显式接收并转发到 extra_body，且记录升级标记与 trace_ids。
+
+    F0（issue-013）：task_id 同为必选关键字参数——extra_body 必须携带
+    {"injection", "task_id"}，缺归因键静默丢失 F2 join 链。"""
     import types
 
     import campaign
@@ -316,9 +319,9 @@ def test_run_agent_accepts_injection_kwarg_and_records_marker(tmp_path):
     client = types.SimpleNamespace(chat=types.SimpleNamespace(completions=Completions()))
 
     result = campaign.run_agent(
-        client, "agent-auto", "do the thing", tmp_path, timeout_s=60, injection=False
+        client, "agent-auto", "do the thing", tmp_path, timeout_s=60, injection=False, task_id="task_00042"
     )
-    assert seen["extra_body"] == {"injection": False}
+    assert seen["extra_body"] == {"injection": False, "task_id": "task_00042"}
     assert result["status"] == "completed"
     assert result["trace_ids"] == ["chatcmpl-fake-1"]
     assert result["escalated"] is True
@@ -357,7 +360,7 @@ def test_run_agent_retries_transient_api_errors(tmp_path):
             return Resp()
 
     client = types.SimpleNamespace(chat=types.SimpleNamespace(completions=Completions()))
-    result = campaign.run_agent(client, "agent-auto", "t", tmp_path, timeout_s=60, injection=False)
+    result = campaign.run_agent(client, "agent-auto", "t", tmp_path, timeout_s=60, injection=False, task_id="task_x")
     assert calls["n"] == 3
     assert result["status"] == "completed"
 
@@ -376,7 +379,7 @@ def test_run_agent_gives_up_after_max_retries(tmp_path):
 
     client = types.SimpleNamespace(chat=types.SimpleNamespace(completions=Completions()))
     with pytest.raises(Exception):
-        campaign.run_agent(client, "agent-auto", "t", tmp_path, timeout_s=60, injection=False)
+        campaign.run_agent(client, "agent-auto", "t", tmp_path, timeout_s=60, injection=False, task_id="task_x")
 
 
 def test_run_agent_tool_timeout_returns_observation_not_crash(tmp_path):
@@ -423,7 +426,7 @@ def test_run_agent_tool_timeout_returns_observation_not_crash(tmp_path):
             return Resp(MsgWithCall() if self.n == 1 else MsgFinal())
 
     client = types.SimpleNamespace(chat=types.SimpleNamespace(completions=Completions()))
-    result = campaign.run_agent(client, "agent-auto", "t", tmp_path, timeout_s=60, injection=False)
+    result = campaign.run_agent(client, "agent-auto", "t", tmp_path, timeout_s=60, injection=False, task_id="task_x")
     assert result["status"] == "completed"
     # 工具超时被转换为 toolResult 观察而不是异常
     tool_results = [

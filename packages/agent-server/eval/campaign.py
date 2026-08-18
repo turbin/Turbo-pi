@@ -75,12 +75,16 @@ def _gateway_marker(resp: object) -> dict:
         return {}
 
 
-def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int, *, injection: bool) -> dict:
-    """Minimal bash-tool agent loop (E1 harness 同源形态)。
+def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int, *, injection: bool, task_id: str) -> dict:
+    """Minimal bash-tool agent loop (E1 harness 同源形态）。
 
     C1（2026-08-09 对抗审查）：`injection` 是必选关键字参数——实验/对照臂
     必须显式声明注入开关，而不是靠未定义变量 NameError。每条响应记录
     trace_id 与 x-gateway 升级标记（C2/M1），供判据核算与 model_runs 回填。
+
+    F0（issue-013）：`task_id` 同为必选关键字参数——随请求透传到
+    request_traces.task_id（extra_body），补上 任务分数↔请求↔注入集 的
+    join 链；缺省会静默丢失归因键，故不允许缺省。
     """
     transcript: list[dict] = []
     messages = [
@@ -112,7 +116,7 @@ def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int,
                     model=model,
                     messages=messages,
                     tools=[BASH_TOOL],
-                    extra_body={"injection": injection},
+                    extra_body={"injection": injection, "task_id": task_id},
                 )
                 break
             except Exception as e:  # noqa: BLE001 - APITimeout/Connection/5xx 均为瞬时
@@ -252,7 +256,8 @@ def main() -> None:
                 ws = setup_workspace(task_id, out_dir / f"day{args.day}" / arm)
                 # 同路径对照：control 臂注入关闭（body 级覆盖，trace 仍落库）。
                 execution = run_agent(
-                    client, args.model, task_prompt(task_id), ws, meta.timeout_seconds, injection=arm == "experiment"
+                    client, args.model, task_prompt(task_id), ws, meta.timeout_seconds,
+                    injection=arm == "experiment", task_id=task_id,
                 )
                 g = safe_grade(task_id, execution, ws)
                 # 轨迹落盘（夜间进化的原料）：每任务一份完整 transcript，

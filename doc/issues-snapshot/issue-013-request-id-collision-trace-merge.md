@@ -1,6 +1,6 @@
 # issue-013: requestId 碰撞致 request_traces 跨日静默合并（C 库 D2-D7 检索记录全失）
 
-- 状态：open（修复已规划：统一修改方案 F0 批次，9B 重跑起跑前完成）
+- 状态：fixed（2026-08-14 F0 批次实施完成，待观察；closed 判定需一个发布周期无复发）
 - 报告：2026-08-14（对抗式审查 round-1 F-1，审查员与答辩方双侧独立复核一致）
 - 影响面：`packages/agent-server` request_traces 表及派生看板（hit-rate `/api/stats/hit-rate`、stats 页）；凡依赖 request_traces 的归因分析
 
@@ -22,6 +22,6 @@ C 判据结论不受污染：升级率口径为 gateway model_runs 全量 + x-ga
 
 ## 回归测试
 
-`packages/agent-server/test/regressions/issue-013-*.test.ts`（requestId 唯一性/碰撞合并哨兵，先红后绿，随 F0 实施落地）。
+`packages/agent-server/test/regressions/issue-013-request-id-collision.test.ts`（7 例，先红后绿，2026-08-14 F0 实施落地）：requestId 唯一性/非计数器序列、两阶段 upsert 不覆盖 retrieved/injected 字段、同 id 冲突阶段一字段保持首写（合并哨兵）、真实链路 injected_ids ⊆ retrieved_ids、task_id 透传（session 头 + trace 行，可空）、/api/stream 纳入 trace 落库、旧库迁移补列。实现与决策详见 `doc/design/2026-08-14-m1-t0-t1-changes-and-decisions.md`。
 
-Refer：doc/design/reviews/2026-08-14-fix-batch-adversarial/round-1.md F-1；doc/design/plans/2026-08-14-post-c-unified-fix-batch-plan.md §1
+Refer：doc/design/reviews/2026-08-14-fix-batch-adversarial/round-1.md F-1；doc/design/plans/2026-08-14-post-c-unified-fix-batch-plan.md §1；doc/design/2026-08-14-m1-t0-t1-changes-and-decisions.md

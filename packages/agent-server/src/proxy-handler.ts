@@ -17,6 +17,8 @@ export interface ProxyHandlerOptions {
 	sessionPath: string;
 	/** O spec R3: request id propagated into trace rows/logs/session header. */
 	requestId?: string;
+	/** F0 (issue-013): caller-supplied task id, threaded into session metadata + trace rows. */
+	taskId?: string;
 	/** Server-level injection default; `StreamRequest.options.injection` overrides per-request. */
 	injection?: boolean;
 }
@@ -49,11 +51,17 @@ export async function handleStream(
 	opts: ProxyHandlerOptions,
 ): Promise<ReadableStream<Uint8Array>> {
 	mkdirSync(dirname(opts.sessionPath), { recursive: true });
+	const startedAt = Date.now();
 	const writer = new SessionWriter(opts.sessionPath);
 	writer.writeSessionHeader({
 		id: body.options?.sessionId ?? basename(opts.sessionPath, ".jsonl"),
 		cwd: process.cwd(),
-		metadata: { model: body.model.id, provider: body.model.provider, requestId: opts.requestId },
+		metadata: {
+			model: body.model.id,
+			provider: body.model.provider,
+			requestId: opts.requestId,
+			...(opts.taskId ? { taskId: opts.taskId } : {}),
+		},
 	});
 
 	try {
@@ -74,6 +82,7 @@ export async function handleStream(
 				retrievedIds: retrieved.map((r) => r.experience.id),
 				retrievedKinds: kinds,
 				hit: retrieved.length > 0,
+				...(opts.taskId ? { taskId: opts.taskId } : {}),
 			});
 			logTrace(opts.requestId, "retrieval", {
 				hit: retrieved.length > 0 ? 1 : 0,
@@ -89,8 +98,16 @@ export async function handleStream(
 					messages: body.context.messages,
 					systemPrompt: body.context.systemPrompt,
 					tools: body.context.tools,
+					injectedIds: [],
 				};
-		const gatewayReq = toGatewayRequest(injected, body.model, body.options ?? {});
+		if (opts.requestId) {
+			// F0 (issue-013) phase 1.5: actual injection set lands in the same
+			// upsert (COALESCE merge keeps it from clobbering phase-1 fields).
+			await opts.store.recordRequestTrace({
+				requestId: opts.requestId,
+				injectedIds: injectionOn ? injected.injectedIds : [],
+			});
+		}
 
 		for (const message of body.context.messages) {
 			writer.writeMessage(message);
@@ -107,22 +124,72 @@ export async function handleStream(
 			systemPrompt: injected.systemPrompt,
 			tools: injected.tools,
 		});
+		const gatewayReq = toGatewayRequest(injected, body.model, body.options ?? {});
 
 		const gateway = new GatewayClient(opts.gatewayUrl);
 		const stream = await gateway.stream(gatewayReq);
 		writer.writeCustomEntry("response_started");
 		const streamEvents: StreamEvent[] = [];
+		// O spec R1 阶段二（completion）数据收集：done/error 事件带 reason + usage。
+		let completion: { finishReason?: string; error?: string; promptTokens?: number; completionTokens?: number } = {};
 		const validated = validateToolCallStream(stream, {
 			// Validate against the merged tool list: request tools plus any SOP
 			// schemas merged in by buildInjection (SPEC §4.1). Validating against
 			// body.context.tools alone would reject legitimate SOP toolCalls.
 			tools: injected.tools,
-			onEvent: (event) => recordStreamEvent(writer, streamEvents, body.model, event),
+			onEvent: (event) => {
+				recordStreamEvent(writer, streamEvents, body.model, event);
+				if (event.type === "done") {
+					// 与 server.ts 非流式路径同口径：toolUse → tool_calls；usage 为
+					// pi-ai 形态（input/output/cacheRead/cacheWrite），与 gateway 的
+					// prompt_tokens/completion_tokens 数字等价（cache 字段恒 0）。
+					completion = {
+						finishReason: event.reason === "toolUse" ? "tool_calls" : event.reason,
+						promptTokens: (event.usage.input ?? 0) + (event.usage.cacheRead ?? 0) + (event.usage.cacheWrite ?? 0),
+						completionTokens: event.usage.output ?? 0,
+					};
+				} else if (event.type === "error") {
+					completion = {
+						finishReason: "error",
+						error: event.errorMessage,
+						promptTokens: (event.usage.input ?? 0) + (event.usage.cacheRead ?? 0) + (event.usage.cacheWrite ?? 0),
+						completionTokens: event.usage.output ?? 0,
+					};
+				}
+			},
 		});
-		return teeWithSessionClose(validated, writer);
+		return teeWithSessionClose(validated, writer, async (customType) => {
+			// O spec R1 阶段二（completion）：/api/stream 与 /v1 同契约——trace 行
+			// 补齐 finish_reason/tokens/latency（修复前这三列永远 NULL）。
+			if (!opts.requestId) return;
+			const latencyMs = Date.now() - startedAt;
+			if (customType === "response_completed") {
+				await opts.store.recordRequestTrace({
+					requestId: opts.requestId,
+					finishReason: completion.finishReason ?? "stop",
+					promptTokens: completion.promptTokens,
+					completionTokens: completion.completionTokens,
+					latencyMs,
+					...(completion.error !== undefined ? { error: completion.error } : {}),
+				});
+			} else if (customType === "error") {
+				// 底层流异常：与 traceStreamCompletion 的 catch 分支同口径。
+				await opts.store.recordRequestTrace({ requestId: opts.requestId, finishReason: "error", latencyMs });
+			}
+			// aborted（客户端取消）：不写阶段二（与 traceStreamCompletion cancel 分支一致）。
+		});
 	} catch (err) {
 		writer.writeCustomEntry("error", { message: String(err) });
 		await writer.close();
+		// 阶段二 error 兜底（gateway 建流失败等）：与 /v1 路径的 catch 分支同口径。
+		if (opts.requestId) {
+			await opts.store.recordRequestTrace({
+				requestId: opts.requestId,
+				finishReason: "error",
+				latencyMs: Date.now() - startedAt,
+				error: String(err),
+			});
+		}
 		throw err;
 	}
 }
@@ -181,9 +248,14 @@ function toGatewayRequest(
 /**
  * Pass `source` through unchanged while guaranteeing the session writer is
  * closed with a terminal custom entry on completion, mid-stream error, or
- * cancel.
+ * cancel. `onClosed(customType, data)` runs after the writer is closed — the
+ * O spec R1 phase-2 (completion) trace write hooks in there for /api/stream.
  */
-function teeWithSessionClose(source: ReadableStream<Uint8Array>, writer: SessionWriter): ReadableStream<Uint8Array> {
+function teeWithSessionClose(
+	source: ReadableStream<Uint8Array>,
+	writer: SessionWriter,
+	onClosed?: (customType: string, data?: unknown) => Promise<void> | void,
+): ReadableStream<Uint8Array> {
 	const reader = source.getReader();
 	let closed = false;
 	const closeWriter = async (customType: string, data?: unknown) => {
@@ -191,6 +263,7 @@ function teeWithSessionClose(source: ReadableStream<Uint8Array>, writer: Session
 		closed = true;
 		writer.writeCustomEntry(customType, data);
 		await writer.close();
+		if (onClosed) await onClosed(customType, data);
 	};
 	return new ReadableStream<Uint8Array>({
 		async pull(controller) {

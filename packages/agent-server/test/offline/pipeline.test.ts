@@ -246,6 +246,55 @@ describe("runOfflinePipeline", () => {
 		}
 	});
 
+	it("forwards --run-dir to verification_selection for scoring checkpoints", async () => {
+		// 最小断点（2026-08-14）：主抽取与 rescore 两个打分入口都要收到
+		// --run-dir，Python 侧才做产物落盘与 resume 跳过。
+		const inputDir = makeTempDir("pipeline-rundir-in-");
+		const outputDir = join(makeTempDir("pipeline-rundir-out-"), "out");
+		writeJsonl(inputDir, "session-a.jsonl", piNativeSession());
+
+		const seenArgs: string[][] = [];
+		const outputs: Record<string, unknown[]> = {
+			"skill_evolution.pipeline": [],
+			sop_lifecycle: [],
+			"verification_selection.pipeline": [],
+		};
+		const spawnFn = ((_command: string, args: readonly string[], _options: unknown) => {
+			const proc = new EventEmitter() as EventEmitter & { stderr: EventEmitter };
+			proc.stderr = new EventEmitter();
+			process.nextTick(() => {
+				const module = String(args[1]);
+				const outIdx = args.indexOf("--output");
+				if (outIdx >= 0 && outputs[module])
+					writeFileSync(String(args[outIdx + 1]), JSON.stringify(outputs[module]));
+				seenArgs.push([...args]);
+				proc.emit("close", 0, null);
+			});
+			return proc;
+		}) as unknown as SpawnFn;
+
+		const runDir = join(makeTempDir("pipeline-runs-"), "2026-08-14T03-00-00-000Z");
+		await runOfflinePipeline(inputDir, outputDir, { spawnFn, runDir });
+		const cardArgs = seenArgs.find((a) => a[1] === "verification_selection.pipeline");
+		expect(cardArgs).toBeDefined();
+		expect(cardArgs).toEqual(expect.arrayContaining(["--run-dir", runDir]));
+
+		let rescoreArgs: readonly string[] = [];
+		const rescoreSpawn = ((_command: string, args: readonly string[], _options: unknown) => {
+			rescoreArgs = args;
+			const proc = new EventEmitter() as EventEmitter & { stderr: EventEmitter };
+			proc.stderr = new EventEmitter();
+			process.nextTick(() => {
+				const outIdx = args.indexOf("--output");
+				writeFileSync(String(args[outIdx + 1]), JSON.stringify([]));
+				proc.emit("close", 0, null);
+			});
+			return proc;
+		}) as unknown as SpawnFn;
+		await runDormantRescore([{ task: "t", text: "x", content_hash: "h" }], { spawnFn: rescoreSpawn, runDir });
+		expect(rescoreArgs).toEqual(expect.arrayContaining(["--run-dir", runDir]));
+	});
+
 	it("rejects with the stderr tail when a stage exits non-zero", async () => {
 		const inputDir = makeTempDir("pipeline-fail-in-");
 		const outputDir = join(makeTempDir("pipeline-fail-out-"), "out");

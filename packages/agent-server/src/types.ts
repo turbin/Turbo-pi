@@ -6,6 +6,8 @@ export interface StreamRequest {
 	model: Model<any>;
 	context: Context;
 	options: ProxyStreamOptions;
+	/** F0 (issue-013): caller-supplied task id, threaded into session metadata + request_traces. Optional. */
+	taskId?: string;
 }
 
 export interface ProxyStreamOptions extends Partial<SimpleStreamOptions> {
@@ -47,4 +49,12 @@ export interface InjectionPayload {
 	messages: Context["messages"];
 	systemPrompt?: string;
 	tools?: Context["tools"];
+	/**
+	 * F0 (issue-013): ids of the cards actually injected into the prompt —
+	 * EVIDENCE texts that entered the pool plus Method/Guard entries surviving
+	 * the top-5 truncation. SKILL/SOP live on separate channels (catalog /
+	 * tool schemas) and are explicitly excluded from this attribution set.
+	 * Empty when nothing was spliced into the messages.
+	 */
+	injectedIds: string[];
 }

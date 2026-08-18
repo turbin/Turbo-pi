@@ -23,6 +23,13 @@ const GUARD_LIMIT = 5;
  * `ExperienceStore.search` already filters to `status='active'` at the SQL
  * level (P2 Task 2); the belt-and-suspenders filter below also drops any
  * non-active rows a caller passed in directly.
+ *
+ * F0 (issue-013): the returned payload carries `injectedIds` — the card ids
+ * that actually entered the prompt: EVIDENCE texts in the pool plus
+ * Method/Guard entries surviving the top-5 truncation. SKILL/SOP live on
+ * separate channels (catalog / tool schemas) and are explicitly excluded
+ * from the attribution set. When no blocks were assembled (or there is no
+ * user message to splice before), nothing is injected and the list is empty.
  */
 export async function buildInjection(
 	context: Context,
@@ -33,37 +40,35 @@ export async function buildInjection(
 	const active = retrieved.filter((r) => r.experience.status === "active");
 
 	const evidence: string[] = [];
-	const methods: { quality: number; text: string }[] = [];
-	const guards: { quality: number; text: string }[] = [];
+	const evidenceIds: string[] = [];
+	const methods: { quality: number; text: string; id: string }[] = [];
+	const guards: { quality: number; text: string; id: string }[] = [];
 	for (const r of active) {
 		const { type, payload } = r.experience;
 		if (type === "EVIDENCE") {
-			if (typeof payload.text === "string" && payload.text) evidence.push(payload.text);
+			if (typeof payload.text === "string" && payload.text) {
+				evidence.push(payload.text);
+				evidenceIds.push(r.experience.id);
+			}
 		} else if (type === "ABILITY" && payload.role === "Method") {
 			if (typeof payload.procedure === "string" && payload.procedure)
-				methods.push({ quality: r.experience.quality, text: payload.procedure });
+				methods.push({ quality: r.experience.quality, text: payload.procedure, id: r.experience.id });
 		} else if (type === "ABILITY" && payload.role === "Guard") {
 			if (typeof payload.boundary === "string" && payload.boundary)
-				guards.push({ quality: r.experience.quality, text: `注意：${payload.boundary}` });
+				guards.push({ quality: r.experience.quality, text: `注意：${payload.boundary}`, id: r.experience.id });
 		}
 	}
 
 	// Filter (in the loop above) before ranking before capping: malformed
 	// entries must not consume limit slots. Array.prototype.sort is stable,
 	// so quality ties keep the retrieval order.
-	const topMethods = methods
-		.sort((a, b) => b.quality - a.quality)
-		.slice(0, METHOD_LIMIT)
-		.map((m) => m.text);
-	const topGuards = guards
-		.sort((a, b) => b.quality - a.quality)
-		.slice(0, GUARD_LIMIT)
-		.map((g) => g.text);
+	const topMethods = methods.sort((a, b) => b.quality - a.quality).slice(0, METHOD_LIMIT);
+	const topGuards = guards.sort((a, b) => b.quality - a.quality).slice(0, GUARD_LIMIT);
 
 	const blocks: string[] = [];
 	if (evidence.length) blocks.push(`<Extra Info>\n${evidence.join("\n")}\n</Extra Info>`);
-	if (topMethods.length) blocks.push(topMethods.join("\n"));
-	if (topGuards.length) blocks.push(topGuards.join("\n"));
+	if (topMethods.length) blocks.push(topMethods.map((m) => m.text).join("\n"));
+	if (topGuards.length) blocks.push(topGuards.map((g) => g.text).join("\n"));
 
 	const messages = [...context.messages];
 	let lastUserIdx = -1;
@@ -73,8 +78,10 @@ export async function buildInjection(
 			break;
 		}
 	}
+	const injectedIds: string[] = [];
 	if (blocks.length && lastUserIdx >= 0) {
 		messages.splice(lastUserIdx, 0, { role: "user", content: blocks.join("\n\n"), timestamp: Date.now() });
+		injectedIds.push(...evidenceIds, ...topMethods.map((m) => m.id), ...topGuards.map((g) => g.id));
 	}
 
 	let systemPrompt = context.systemPrompt;
@@ -101,5 +108,5 @@ export async function buildInjection(
 		}
 	}
 
-	return { messages, systemPrompt, tools };
+	return { messages, systemPrompt, tools, injectedIds };
 }

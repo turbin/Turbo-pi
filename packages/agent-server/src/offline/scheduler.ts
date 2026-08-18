@@ -47,6 +47,13 @@ export interface DailyEvolutionOptions {
 	benchmarkPath?: string;
 	/** Extra options forwarded to runOfflinePipeline and runDormantRescore. */
 	pipelineOptions?: OfflinePipelineOptions;
+	/**
+	 * Run directory for scoring checkpoints (最小断点, 2026-08-14): passed to
+	 * the pipeline and rescore stages as --run-dir so interrupted runs can be
+	 * resumed (`run-evolution --resume <dir>`) without re-scoring completed
+	 * groups. Default: none (no checkpointing, pre-2026-08-14 behavior).
+	 */
+	runDir?: string;
 	/** Max dormant EVIDENCE rows re-scored per run (oldest first). Default: 200. */
 	rescoreLimit?: number;
 	/** TTL for dormant rows in days; older rows are marked 'removed'. Default: env AGENT_SERVER_DORMANT_TTL_DAYS, else 30. */
@@ -97,7 +104,11 @@ export async function runDailyEvolution(store: ExperienceStore, options: DailyEv
 	const etlInserted = await etlFn(sessionFiles, store);
 	const benchmarkPath =
 		options.pipelineOptions?.benchmarkPath ?? options.benchmarkPath ?? process.env.AGENT_SERVER_BENCHMARK;
-	const pipeline = await pipelineFn(inputDir, outputDir, { ...options.pipelineOptions, benchmarkPath });
+	const pipeline = await pipelineFn(inputDir, outputDir, {
+		...options.pipelineOptions,
+		benchmarkPath,
+		runDir: options.runDir,
+	});
 	const promoted = await promoteFn(outputDir, store);
 
 	// Stage 4: re-verify dormant ETL candidates (SPEC §6 Stage 3). Scores below
@@ -115,7 +126,7 @@ export async function runDailyEvolution(store: ExperienceStore, options: DailyEv
 				text: String(row.payload.text),
 				content_hash: row.contentHash,
 			})),
-			options.pipelineOptions ?? {},
+			{ ...options.pipelineOptions, runDir: options.runDir },
 		);
 		rescored = scores.size;
 		const items: VerifyItem[] = [];

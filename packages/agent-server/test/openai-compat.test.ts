@@ -58,6 +58,7 @@ describe("toOpenAIRequest", () => {
 			messages: [userMsg("hello")],
 			systemPrompt: "You are helpful.",
 			tools: [{ name: "get_weather", description: "Get weather", parameters: {} }],
+			injectedIds: [],
 		};
 		const req = toOpenAIRequest(payload, model);
 		expect(req.model).toBe("gemma-4-12B-it-4bit");
@@ -71,7 +72,7 @@ describe("toOpenAIRequest", () => {
 	});
 
 	it("omits the system message and tools when absent", () => {
-		const req = toOpenAIRequest({ messages: [userMsg("hi")] }, model);
+		const req = toOpenAIRequest({ messages: [userMsg("hi")], injectedIds: [] }, model);
 		expect(req.messages).toHaveLength(1);
 		expect(req.messages[0].role).toBe("user");
 		expect(req.tools).toBeUndefined();
@@ -86,6 +87,7 @@ describe("toOpenAIRequest", () => {
 						{ type: "image", data: "aW1hZ2U=", mimeType: "image/png" },
 					]),
 				],
+				injectedIds: [],
 			},
 			model,
 		);
@@ -105,6 +107,7 @@ describe("toOpenAIRequest", () => {
 						{ type: "toolCall", id: "call-1", name: "get_weather", arguments: { city: "Berlin" } },
 					]),
 				],
+				injectedIds: [],
 			},
 			model,
 		);
@@ -121,7 +124,7 @@ describe("toOpenAIRequest", () => {
 	});
 
 	it("maps tool results to tool messages keyed by tool_call_id", () => {
-		const req = toOpenAIRequest({ messages: [toolResultMsg()] }, model);
+		const req = toOpenAIRequest({ messages: [toolResultMsg()], injectedIds: [] }, model);
 		expect(req.messages[0]).toEqual({ role: "tool", content: "sunny", tool_call_id: "call-1" });
 	});
 
@@ -135,6 +138,7 @@ describe("toOpenAIRequest", () => {
 				{ role: "system", content: "You are Kimi Code." },
 				userMsg("帮我 review 代码"),
 			] as InjectionPayload["messages"],
+			injectedIds: [],
 		};
 		const req = toOpenAIRequest(payload, model);
 		expect(req.messages[0]).toEqual({ role: "system", content: "You are Kimi Code." });
@@ -155,6 +159,7 @@ describe("toOpenAIRequest", () => {
 				userMsg("do the task"),
 			] as InjectionPayload["messages"],
 			systemPrompt: "<available_skills>\n- skill-a\n</available_skills>",
+			injectedIds: [],
 		};
 		const req = toOpenAIRequest(payload, model);
 		const systemMessages = req.messages.filter((m) => m.role === "system");
@@ -176,6 +181,7 @@ describe("toOpenAIRequest", () => {
 				},
 				{ role: "tool", content: "12:00", tool_call_id: "call-9" },
 			] as unknown as InjectionPayload["messages"],
+			injectedIds: [],
 		};
 		const req = toOpenAIRequest(payload, model);
 		expect(req.messages[0].role).toBe("assistant");
@@ -195,6 +201,7 @@ describe("toOpenAIRequest", () => {
 				},
 				{ role: "tool", content: "12:00", tool_call_id: "call-7" },
 			] as unknown as InjectionPayload["messages"],
+			injectedIds: [],
 		};
 		const req = toOpenAIRequest(payload, model);
 		expect(req.messages[0]).toEqual({

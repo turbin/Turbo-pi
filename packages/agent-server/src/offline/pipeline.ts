@@ -58,6 +58,13 @@ export interface OfflinePipelineOptions {
 	timeoutMs?: number;
 	/** Injectable for tests. Default: node:child_process spawn. */
 	spawnFn?: typeof spawn;
+	/**
+	 * Run directory for verification_selection scoring checkpoints (最小断点,
+	 * 2026-08-14): forwarded as `--run-dir`; the Python side persists per-group
+	 * scores there (scores.jsonl / rescore_scores.jsonl, input-hash keyed) and
+	 * a resumed run with the same dir skips already-completed scoring.
+	 */
+	runDir?: string;
 }
 
 const DEFAULT_TIMEOUT_MS = 300_000;
@@ -105,7 +112,9 @@ export async function runOfflinePipeline(
 		if (options.benchmarkPath) skillArgs.push("--benchmark", options.benchmarkPath);
 		await run("skill_evolution.pipeline", skillArgs);
 		await run("sop_lifecycle", ["--input", trajPath, "--output", sopsPath]);
-		await run("verification_selection.pipeline", ["--input", trajPath, "--output", cardsPath]);
+		const cardArgs = ["--input", trajPath, "--output", cardsPath];
+		if (options.runDir) cardArgs.push("--run-dir", options.runDir);
+		await run("verification_selection.pipeline", cardArgs);
 
 		const skills = readJsonArray(skillsPath);
 		const sops = readJsonArray(sopsPath);
@@ -162,14 +171,9 @@ export async function runDormantRescore(
 			...process.env,
 			PYTHONPATH: process.env.PYTHONPATH ? `${pythonDir}${delimiter}${process.env.PYTHONPATH}` : pythonDir,
 		};
-		await runPython(
-			spawnFn,
-			pythonBin,
-			"verification_selection.pipeline",
-			["--rescore", "--input", inputPath, "--output", outputPath],
-			env,
-			timeoutMs,
-		);
+		const args = ["--rescore", "--input", inputPath, "--output", outputPath];
+		if (options.runDir) args.push("--run-dir", options.runDir);
+		await runPython(spawnFn, pythonBin, "verification_selection.pipeline", args, env, timeoutMs);
 
 		for (const entry of readJsonArray(outputPath)) {
 			const e = entry as { content_hash?: unknown; quality?: unknown };
