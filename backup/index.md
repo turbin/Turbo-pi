@@ -16,4 +16,5 @@
 
 | 日期 | 目录 | 内容 | 状态 |
 |---|---|---|---|
+| 2026-08-19 | `27b-experience-20260819/` | 27B 终态经验库（116,056 experiences + 995 request_traces）+ c-d2..d6 每日快照；9B 切换裁决后空库起跑前的唯一完整副本（口径见该目录 README） | ✅ 完成 |
 | 2026-08-14 | `c-campaign-20260814/` | C campaign D1-D7 全量：run.jsonl 267 任务 + transcripts + 终态经验库与每日快照 + 920 条 active 卡导出 + 跑批/进化日志（口径见该目录 README） | ✅ 完成 |
