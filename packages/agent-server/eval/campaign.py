@@ -77,6 +77,28 @@ def _gateway_marker(resp: object) -> dict:
         return {}
 
 
+def _body_marker(resp: object) -> dict:
+    """issue-004：非流式升级标记内嵌在 body 的 x_gateway 字段（openai SDK 的
+    ChatCompletion 无 .headers，extra="allow" 使其穿透为同名属性）。"""
+    m = getattr(resp, "x_gateway", None)
+    return m if isinstance(m, dict) else {}
+
+
+def _response_marker(resp: object) -> dict:
+    """body 内嵌标记优先，header 标记回落。"""
+    return _body_marker(resp) or _gateway_marker(resp)
+
+
+def _response_trace_id(resp: object) -> str:
+    """对账键 = gateway trace_id（marker），回落 body id。
+
+    issue-015（M1/F0 回归）：F0 后 agent-server 把响应 body id 覆写为自己的
+    请求 id（UUID 带横线），不再是 gateway trace_id——run.jsonl.trace_ids
+    与 model_runs 的 join 静默断裂（pilot 暴露）。必须取 marker.trace_id。
+    """
+    return _response_marker(resp).get("trace_id") or getattr(resp, "id", "")
+
+
 # --- Langfuse 监视（2026-08-19，可选） ---
 # LANGFUSE_PUBLIC_KEY/SECRET_KEY 存在且 langfuse 包已安装时启用；缺省/异常
 # 只告警降级，绝不杀死批次（issue-008/009/011 教训：可观测性不得炸批）。
@@ -190,8 +212,8 @@ def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int,
                 time.sleep(wait)
         if resp is None:
             raise RuntimeError(f"llm failed after 4 attempts: {last_err}")
-        trace_ids.append(getattr(resp, "id", ""))
-        escalated = escalated or bool(_gateway_marker(resp).get("escalated"))
+        trace_ids.append(_response_trace_id(resp))
+        escalated = escalated or bool(_response_marker(resp).get("escalated"))
         msg = resp.choices[0].message
         # transcript 采用 QCB lib_grading 的 OpenClaw 事件形态
         # （{type:"message", message:{role, content:[parts]}}），

@@ -90,6 +90,7 @@ npm run check                  # biome check --write + pinned-deps + ts-imports 
 
 ## Testing Instructions
 
+- **跑批前置核验（2026-08-19 用户新增约束）**：启动任何跑批/测试（campaign、pilot、eval 批次）前，必须按 `doc/design/2026-08-19-run-batch-preflight-checklist.md` 逐项核验测试环境与条件全部就绪（模型层 / gateway / agent-server / judge / Langfuse / 跑批进程 / 判据门七类）。探针类项目必须看真实响应或真实数据——"进程在"不算证据（27B/9B 配置进程错位事故教训）。任何一项不过，停下来报告用户，不得开跑。
 - `./test.sh` moves `~/.pi/agent/auth.json` aside, unsets all provider API keys, sets `PI_NO_LOCAL_LLM=1`, then runs `npm test` across workspaces. Tests that need real providers skip themselves without keys.
 - For `packages/coding-agent/test/suite/`, use `test/suite/harness.ts` + the faux provider (`registerFauxProvider` from `@earendil-works/pi-ai/compat`). No real provider APIs, keys, or paid tokens.
 - Put issue-specific regressions under `packages/coding-agent/test/suite/regressions/` named `<issue-number>-<short-slug>.test.ts`.
