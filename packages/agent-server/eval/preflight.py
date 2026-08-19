@@ -168,6 +168,9 @@ def ensure_gateway(base_url: str = GATEWAY_URL) -> None:
             sys.exit("preflight FAIL: gateway answers but /v1/models is not a JSON model list (M11 fingerprint)")
         dotenv = _load_dotenv()
         env = {**os.environ, **{k: v for k, v in dotenv.items() if k.startswith(("DEEPSEEK_", "LANGFUSE_"))}}
+        # macOS 系统代理会被 gateway httpx trust_env 拾取且不 bypass 回环
+        # （omlx 127.0.0.1:8000 经代理 502）——回环必须显式 NO_PROXY。
+        env.setdefault("NO_PROXY", "127.0.0.1,localhost")
         if "DEEPSEEK_API_KEY" not in env:
             sys.exit(
                 "preflight FAIL: agent-gateway down and no DEEPSEEK_API_KEY in "

@@ -30,7 +30,7 @@
 
 ## 4. 环境陷阱（登记）
 
-macOS 系统代理（ApexCore 127.0.0.1:7890）被 httpx/urllib `trust_env` 经 `getproxies()` 拾取且**不 bypass 回环**——gateway→stub 冒烟首灭于 proxy 502。回环 HTTP 进程需显式 `NO_PROXY=127.0.0.1,localhost`（smoke 脚本内置；生产 gateway→omlx :8000 依赖 ApexCore 规则放行，现役可用）。
+macOS 系统代理（ApexCore 127.0.0.1:7890）被 httpx/urllib `trust_env` 经 `getproxies()` 拾取且**不 bypass 回环**——gateway→stub 冒烟首灭于 proxy 502；随后**生产 gateway 实锤同坑**（重启后首请求 omlx :8000 经代理 502，旧进程幸存纯属 ApexCore 历史规则）。回环 HTTP 进程必须显式 `NO_PROXY=127.0.0.1,localhost`：preflight.py 拉起 gateway 的 env 已固化 `setdefault("NO_PROXY", ...)`（2026-08-19 补），smoke 脚本内置，手工启动命令同加。
 
 ## 测试与冒烟
 
