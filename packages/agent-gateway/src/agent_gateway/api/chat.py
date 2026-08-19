@@ -50,6 +50,7 @@ from agent_gateway.channel import ChannelContext
 from agent_gateway.config import GatewayConfig
 from agent_gateway.envelope import ChatCompletionEnvelopeV1, NamedToolChoice
 from agent_gateway.errors import GatewayError
+from agent_gateway.observability import current_trace_id
 from agent_gateway.providers.base import ModelResult, Provider
 from agent_gateway.quality import evaluate_quality
 from agent_gateway.routing import RouteDecision, select_escalation_provider, select_provider
@@ -586,6 +587,10 @@ async def stream_traced_events(
     heartbeat_seconds: float,
 ) -> AsyncIterator[bytes]:
     """Delayed SSE replay with the same trace handling as the non-streaming path."""
+    # Langfuse: the generator runs after the route returns, so the trace id
+    # context is (re)set here — provider calls below observe it (see
+    # observability.current_trace_id).
+    current_trace_id.set(trace_id)
     bytes_sent = False
 
     def _mark_sent() -> None:
@@ -853,6 +858,9 @@ async def chat_completions(
             )
         )
 
+    # Langfuse: provider calls scheduled below observe this context (see
+    # observability.current_trace_id); one request per task, no reset needed.
+    current_trace_id.set(trace_id)
     try:
         result, marker = await execute_with_escalation(
             request=request,

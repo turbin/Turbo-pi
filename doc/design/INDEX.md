@@ -1,7 +1,7 @@
 # design 目录索引（INDEX）
 
 维护说明：本索引概述 `doc/design/`（目录名带前导空格）下每份文档的内容，并记录从 agent-server P0 起各阶段决策的变化时间线。**新增设计文档时请同步更新本索引。**
-最后更新：2026-08-14（C 后统一修改方案 v3：用户五项裁决落盘；新增交叉评估臂 plan 与裁决决策记录）。
+最后更新：2026-08-19（Langfuse 跑批监视部署+全链路接入决策记录；issue-003 关闭重跑裁决）。
 
 阅读指引：
 - **通用约束 canonical 版本**（工程内改动、omlx 不可动、提交格式、git 纪律）：`2026-07-22-agent-server-p3-candidate-tasks.md` 的"通用约束"一节，后续任务书均为引用。
@@ -149,6 +149,7 @@
 | 2026-08-14-m2-t2-changes-and-decisions.md | **M2（T2）开发决策记录【实施完成，测试全绿】**：F1 卡片交付物维度（issue-010 主体）——EXTRACTION_PROMPT/CARD_SCHEMA/cardsToStaged schema 三处加 deliverables（非空字符串数组）；交付检查双闸（Python 打分侧无交付轨迹 quality 封顶 0.49 且 accepted 强制 False、TS 闸门 Method/Guard 非空校验）；SOP/SKILL/EVIDENCE 显式豁免；检测器保守启发式（C 语料实证 4/98 误封顶安全方向）；DELIVERY_CAP_VERSION 入打分指纹；存量卡重蒸脚本 restill 交付（断点复用 ScoreJournal，冒烟 83 卡全链路通过，**全量重蒸待用户排期**）；issue-010 转 fixed（待观察） |
 | 2026-08-14-m3-t3-changes-and-decisions.md | **M3（T3）开发决策记录【实施完成，测试全绿】**：F2 实战归因奖惩——eval/attribution.py 离线归因（样本单位=任务日、多卡共注入仅记数、≥3 失败任务日降权 min(c*0.5,0.3)、成功加分封顶 1.0、常量全部预注册）；experiences 增 confidence/rescore_excluded_batches 列（M1 迁移模式 + user_version 版本化 + 旧快照 readonly 兼容）；检索排序加权 cosine×confidence（quality 不动）；复升排除 N=3 批（阻断自评复升循环）；降级人工确认通道（--demote 清单）；PPT 混合组修复（m2 finding ①：无交付轨迹不参与锦标赛，DELIVERY_CAP_VERSION v2）；C 回放显式清单 + 逐行证据 provenance，后验标出 issue-010 致降分卡（confidence 0.5→0.25） |
 | 2026-08-14-m4-t4-t5-changes-and-decisions.md | **M4（T4+T5）开发决策记录【实施完成，测试全绿】**：T4=F3 情景标签（issue-012 采纳项 5 落地）——payload 加 domain/task_pattern（可选，无标签不过滤）；写入双路径（蒸馏：合成器元数据透传 + 注册表回退；ETL：session task_id → 注册表打域）；在线 domain 通道（campaign.py/alfworld 必选 domain → session 元数据 + 检索过滤）；检索 bm25 后跨域排除、无标签放行；T5=F4 晋升统一——SKILL 定案**暂缓入库**（utility 无验证对象）、SOP quality=1 语义=预验证通过标记（SOP_PREVETTED_QUALITY）、红线 3 修订为"晋升统一过验证闸" + §3.3 局限声明更新（台账 5 闭环）；五类卡过闸/拦截/豁免回归 |
+| 2026-08-19-langfuse-monitoring-changes-and-decisions.md | **Langfuse 跑批监视部署+接入决策记录【实施完成，测试全绿+端到端冒烟 PASS】**：官方 v4 compose 栈落 eval/langfuse/（项目 exp-9b-campaign，密钥 gitignore）；colima 代理失效修复（8898→7890 备份可回滚）；gateway observability.py provider 包装单点埋点（[langfuse] 缺省关闭，密钥 env 引用）；对账键=create_trace_id(seed=chatcmpl id) 与 model_runs/run.jsonl/session marker 1:1 join；campaign 任务级 span+qcb_score 上报（不用 langfuse.openai drop-in）；可观测性绝不炸批（建 span 失败回落不重跑/update 吞掉/env 缺省全链 no-op）；v4 读口径=v2/observations（旧 traces API 404）；macOS 系统代理不回 bypass 回环陷阱登记（NO_PROXY） |
 | 2026-08-14-m5-t6-t7-changes-and-decisions.md | **M5（T6+T7）开发决策记录【实施完成，测试全绿】**：T6=台账 quick wins 四项——GatewayMarker 增 trace_id 跨库对账键 + agent-server handleStream 路径补 gateway_marker 会话条目（台账 2）；ETL 摄入前完整性校验（流闭合标记，半截 session 整体隔离 + 快照 etlIsolated 计数，台账 7）；DLP 扩扫 tools[] schema + 身份证号默认模式（裁决 5，config 追加即生效，台账 3）；snapshot_store 每日快照模式（--snapshots-dir 保留 N=7）+ 回滚 runbook（台账 4）；T7=交叉臂 harness——campaign.py --arms x1-x4（库版本×注入 2×2，冻结臂走 --frozen-base-url）+ campaign_cross.py 差分核算（库演进 X2−X1/注入 X1−X4/sanity X3−X4，n=20 功效声明 + sanity 容差 0.05 预注册）；只交付能力+冒烟，真实跑批待 9B pilot 确认 |
 | 2026-08-13-agent-server-high-level-design-v2.md | **概要设计 v2（当前最新总纲）**：设计目标（含判据口径与混淆因子声明）/总体架构四视角图/核心机制六节按模块构成·运行方式·有效作用展开（现役/待建状态标注制）/关键数据流/六份演进方案（C 后逐案请示）/EWC 采纳边界/设计红线/台账摘要（含 2026-08-13 对抗式审查新增 10 项） |
 | 2026-08-13-high-level-design-v2-diagram-split-changes-and-decisions.md | **v2 架构图拆分决策记录**：单图拆为分层/时序/数据流/call graph 四视角；图中函数名与阈值均对照现役代码核实；双库分离入图；核心机制按模块构成·运行方式·有效作用三要素展开；图预渲染 2x PNG 嵌入正文（assets/2026-08-13-high-level-design-v2/，SVG 副本同目录），mermaid 源码折叠保留 |

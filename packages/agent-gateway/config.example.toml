@@ -66,3 +66,12 @@ allowed_models = ["agent-auto", "agent-local", "agent-cloud"]
 cloud_egress_allowed = true
 # Per-(channel, month) cloud spend cap; omit for uncapped.
 # monthly_budget_micro_usd = 5000000
+
+# Optional Langfuse export of provider generations (disabled by default).
+# Keys come from the named env vars, never from this file.
+# [langfuse]
+# enabled = false
+# host = "http://localhost:3000"
+# public_key_env = "LANGFUSE_PUBLIC_KEY"
+# secret_key_env = "LANGFUSE_SECRET_KEY"
+# environment = "default"

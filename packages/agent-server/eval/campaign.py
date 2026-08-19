@@ -15,6 +15,7 @@
 """
 
 import argparse
+import contextlib
 import json
 import os
 import shutil
@@ -74,6 +75,64 @@ def _gateway_marker(resp: object) -> dict:
         return json.loads(raw)
     except (AttributeError, json.JSONDecodeError):
         return {}
+
+
+# --- Langfuse 监视（2026-08-19，可选） ---
+# LANGFUSE_PUBLIC_KEY/SECRET_KEY 存在且 langfuse 包已安装时启用；缺省/异常
+# 只告警降级，绝不杀死批次（issue-008/009/011 教训：可观测性不得炸批）。
+# 对账口径：任务级 trace id = create_trace_id(seed=f"{run_id}-d{day}-{arm}-{task_id}")；
+# gateway 侧每请求 generation 的 trace id = create_trace_id(seed=chatcmpl 响应 id)，
+# 与 run.jsonl.trace_ids / model_runs / agent-server session marker 同一对账键。
+
+
+class _NullObservation:
+    """langfuse 关闭时的 no-op 观察对象（与 generation.update 同形）。"""
+
+    def update(self, **_fields: object) -> None:
+        return None
+
+
+def init_langfuse():
+    """构建 Langfuse 客户端；未配置/未安装/初始化失败均返回 None。"""
+    if not (os.environ.get("LANGFUSE_PUBLIC_KEY") and os.environ.get("LANGFUSE_SECRET_KEY")):
+        return None
+    try:
+        from langfuse import Langfuse  # noqa: PLC0415 - 可选依赖，启用时才需要
+
+        return Langfuse()  # 读 LANGFUSE_PUBLIC_KEY/SECRET_KEY/HOST env
+    except Exception as e:  # noqa: BLE001 - 可选依赖初始化失败不炸批
+        print(f"langfuse disabled ({type(e).__name__}: {e})", file=sys.stderr)
+        return None
+
+
+def task_observation(lf, *, seed: str, name: str, metadata: dict):
+    """任务级 trace context；lf 为 None 时退化为 nullcontext(no-op)。"""
+    if lf is None:
+        return contextlib.nullcontext(_NullObservation())
+    from langfuse.types import TraceContext  # noqa: PLC0415 - lf 非 None 时 langfuse 必可用
+
+    return lf.start_as_current_observation(
+        trace_context=TraceContext(trace_id=lf.create_trace_id(seed=seed)),
+        name=name,
+        as_type="agent",
+        input=metadata,
+        metadata=metadata,
+    )
+
+
+def report_score(lf, *, seed: str, score: float, comment: str) -> None:
+    """QCB 分数上报；任何异常只告警。trace id 与 task_observation 同一 seed。"""
+    if lf is None:
+        return
+    try:
+        lf.create_score(
+            name="qcb_score",
+            value=score,
+            trace_id=lf.create_trace_id(seed=seed),
+            comment=comment[:500] if comment else None,
+        )
+    except Exception as e:  # noqa: BLE001 - 上报失败不炸批
+        print(f"langfuse score failed ({type(e).__name__}: {e})", file=sys.stderr)
 
 
 def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int, *, injection: bool, task_id: str, domain: str) -> dict:
@@ -266,6 +325,9 @@ def main() -> None:
         return
 
     ensure_for_base_url(AGENT_SERVER)
+    lf = init_langfuse()
+    if lf is not None:
+        print(f"langfuse: enabled (host {os.environ.get('LANGFUSE_HOST', 'https://cloud.langfuse.com')})")
     out_dir = EVAL_DIR / "results" / args.run_id
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "run.jsonl"
@@ -295,11 +357,33 @@ def main() -> None:
                     arm_client = client
                     injection = arm == "experiment"
                     library = ""
-                execution = run_agent(
-                    arm_client, args.model, task_prompt(task_id), ws, meta.timeout_seconds,
-                    injection=injection, task_id=task_id, domain="office",
-                )
-                g = safe_grade(task_id, execution, ws)
+                execution = None
+                lf_seed = f"{args.run_id}-d{args.day}-{arm}-{task_id}"
+                lf_meta = {
+                    "run_id": args.run_id,
+                    "day": args.day,
+                    "arm": arm,
+                    "task_id": task_id,
+                    "kind": kind,
+                    "model": args.model,
+                    **({"library": library} if args.arms else {}),
+                }
+                with task_observation(lf, seed=lf_seed, name=f"task:{arm}:{task_id}", metadata=lf_meta) as obs:
+                    execution = run_agent(
+                        arm_client, args.model, task_prompt(task_id), ws, meta.timeout_seconds,
+                        injection=injection, task_id=task_id, domain="office",
+                    )
+                    g = safe_grade(task_id, execution, ws)
+                    try:
+                        obs.update(output={
+                            "score": g["score"],
+                            "requests": execution["requests"],
+                            "escalated": execution["escalated"],
+                            "trace_ids": execution["trace_ids"],
+                        })
+                    except Exception as e:  # noqa: BLE001 - 上报失败不炸批
+                        print(f"langfuse update failed ({type(e).__name__}: {e})", file=sys.stderr)
+                report_score(lf, seed=lf_seed, score=g["score"], comment=str(g.get("notes", "")))
                 # 轨迹落盘（夜间进化的原料）：每任务一份完整 transcript，
                 # 缺失即无进化输入——合成器对它硬失败。
                 traj_dir = out_dir / "transcripts" / f"day{args.day}"
@@ -336,6 +420,12 @@ def main() -> None:
                 out.write(json.dumps(row, ensure_ascii=False) + "\n")
                 out.flush()
                 print(f"[{arm} {i + 1}/{len(ids)}] {task_id} score={g['score']:.2f}")
+
+    if lf is not None:
+        try:
+            lf.flush()
+        except Exception as e:  # noqa: BLE001 - flush 失败不炸批
+            print(f"langfuse flush failed ({type(e).__name__}: {e})", file=sys.stderr)
 
 
 def safe_grade(task_id: str, execution: dict, ws: Path) -> dict:

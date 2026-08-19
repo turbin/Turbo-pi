@@ -99,6 +99,20 @@ class SecurityConfig(StrictModel):
         return value
 
 
+class LangfuseConfig(StrictModel):
+    """Optional Langfuse export of provider generations (9B 跑批监视).
+
+    Disabled by default; when enabled, keys come from the env vars named
+    here (never from the config file), same convention as cloud providers.
+    """
+
+    enabled: bool = False
+    host: str = "http://localhost:3000"
+    public_key_env: str = "LANGFUSE_PUBLIC_KEY"
+    secret_key_env: str = "LANGFUSE_SECRET_KEY"
+    environment: str = "default"
+
+
 class GatewayConfig(StrictModel):
     server: ServerConfig
     database: DatabaseConfig
@@ -107,6 +121,7 @@ class GatewayConfig(StrictModel):
     routing: RoutingConfig
     memory_index: MemoryIndexConfig
     security: SecurityConfig = Field(default_factory=SecurityConfig)
+    langfuse: LangfuseConfig = Field(default_factory=LangfuseConfig)
     channels: list[ChannelConfig]
 
 

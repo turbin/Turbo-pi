@@ -13,6 +13,11 @@ from agent_gateway.api import admin, chat
 from agent_gateway.channel import ChannelRegistry
 from agent_gateway.config import GatewayConfig
 from agent_gateway.errors import GatewayError
+from agent_gateway.observability import (
+    LangfuseTracedProvider,
+    init_langfuse,
+    shutdown_langfuse,
+)
 from agent_gateway.providers.kimi import KimiProvider
 from agent_gateway.providers.omlx import OmlxProvider
 from agent_gateway.store.budget_ledger import BudgetLedger
@@ -56,6 +61,22 @@ async def create_app(config: GatewayConfig) -> FastAPI:
         concurrency=config.local_omlx.concurrency,
     )
     cloud_provider = _build_cloud_provider(config)
+    # Langfuse (optional, [langfuse] enabled=true): wrap both providers once
+    # so every call site (non-stream / SSE replay / escalation leg) exports a
+    # generation. provider_name distinguishes primary (omlx) from escalation
+    # (cloud is only ever called as the escalation leg).
+    langfuse_client = init_langfuse(config.langfuse)
+    if langfuse_client is not None:
+        provider = LangfuseTracedProvider(
+            provider, client=langfuse_client, provider_name="omlx", model=config.local_omlx.model
+        )
+        if cloud_provider is not None:
+            cloud_provider = LangfuseTracedProvider(
+                cloud_provider,
+                client=langfuse_client,
+                provider_name=config.routing.selected_cloud_provider,
+                model=cloud_provider.model,
+            )
     session_factory = create_session_factory(engine)
     trace_store = TraceStore(session_factory)
     # Lease recovery (review P0-05): traces whose lease expired while the
@@ -65,6 +86,7 @@ async def create_app(config: GatewayConfig) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         yield
+        shutdown_langfuse(langfuse_client)
         await provider.aclose()
         if cloud_provider is not None:
             await cloud_provider.aclose()

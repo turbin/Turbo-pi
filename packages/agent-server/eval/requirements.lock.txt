@@ -127,3 +127,13 @@ xmod==1.10.0
 xxhash==3.8.1
 yarl==1.24.5
 zipp==4.1.0
+backoff==2.2.1
+googleapis-common-protos==1.75.1
+langfuse==4.14.4
+opentelemetry-api==1.44.0
+opentelemetry-exporter-otlp-proto-common==1.44.0
+opentelemetry-exporter-otlp-proto-http==1.44.0
+opentelemetry-proto==1.44.0
+opentelemetry-sdk==1.44.0
+opentelemetry-semantic-conventions==0.65b0
+wrapt==2.3.0
