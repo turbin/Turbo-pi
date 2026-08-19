@@ -1,6 +1,6 @@
 # issue-003: 门控 length 缺陷致 B 阶段两臂 84-87% 请求误升级 DeepSeek（纯 27B 从未被测）
 
-- 状态：open（代码修复已落地，重跑方案 A/B/C 待用户拍板）
+- 状态：**fixed（2026-08-19 用户裁决：不再重跑方案 A/B/C——本次跑批切换 9B 模型，27B 臂结论不重测；代码修复与门控脚本已落地，按修复完成关闭观察）**
 - 报告：2026-08-09（B 阶段复盘发现，gateway model_runs 全量核验证实）
 - 修复：2026-08-09 P0 批次（见下，commit 待补）
 - 影响面：`packages/agent-server/eval/alfworld_agent.py`（harness 配置）、`packages/agent-gateway/src/agent_gateway/quality.py:90`（门控规则）、B 阶段全部结论（冷/热库 SR、升级率、云端成本）
@@ -30,10 +30,12 @@ B 阶段（27B 冷/热库 A/B）复盘发现：冷库窗口 4,991 次本地调�
 - eval：campaign runner 修复（C1）+ 判据 fail loud 与 model_runs 回填（C2）+ alfworld 池上界/`env.skip`/去重/提取正则/init_prompt/max_tokens 参数化/每步 finish_reason（C3/M14/M15/M16/M18/M3）+ 控制臂统一 8789/8790（M8）+ preflight 指纹（M11）+ 快照脚本（M10）
 - agent-server：流式 include_usage（M2）+ system 消息合并（M5）+ SSE 标记解析（M3）+ 快照检索（M10）
 
-### 待办（用户拍板后）
+### 待办（2026-08-19 用户裁决：取消）
 
-1. pilot：冷库 5 局实测 finish_reason 分布 → 定 max_tokens（800/1024）
-2. `gate_length_escalation.py` 门槛（<5%）通过后开全量（方案 A/B/C 之一）
+~~1. pilot：冷库 5 局实测 finish_reason 分布 → 定 max_tokens（800/1024）~~
+~~2. `gate_length_escalation.py` 门槛（<5%）通过后开全量（方案 A/B/C 之一）~~
+
+裁决理由：本次跑批测试切换 9B 模型，原 27B 经验不再适用，方案 A/B/C 不再执行。`gate_length_escalation.py` 门控脚本与 `x-gateway` 标记等回归资产永久保留，9B 跑批沿用同一 length 升级率监控口径。
 
 ## 回归测试
 
