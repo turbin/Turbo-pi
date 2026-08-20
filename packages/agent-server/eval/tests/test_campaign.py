@@ -9,7 +9,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from campaign_metrics import annotate_escalation, check_criteria, daily_summary, escalation_rate, load_results  # noqa: E402
-from campaign_plan import DAYS, REPEAT_N, daily_batch, load_tasks, split_tasks  # noqa: E402
+from campaign_plan import DAYS, HELD_OUT_N, REPEAT_N, daily_batch, held_out_tasks, load_tasks, split_tasks  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -41,7 +41,38 @@ def test_daily_batches_cover_new_tasks_exactly_once(tasks):
         assert len(batch["repeat"]) == REPEAT_N
         seen.extend(batch["new"])
     _, new = split_tasks(tasks)
-    assert sorted(seen) == new
+    # preview §7.2/Q8：held-out 从轮转摘除，union 覆盖除 held-out 外全部新任务。
+    held = set(held_out_tasks(tasks))
+    assert sorted(seen) == sorted(set(new) - held)
+    assert not (set(seen) & held)
+
+
+def test_held_out_selection_deterministic_exactly_eight(tasks):
+    """Q8（用户 08-19 裁决）：held-out 恰 8 个、选取确定性（纯函数、固定 seed）。"""
+    h1 = held_out_tasks(tasks)
+    h2 = held_out_tasks(tasks)
+    assert h1 == h2
+    assert len(h1) == HELD_OUT_N
+    _, new = split_tasks(tasks)
+    assert set(h1) <= set(new)  # 只从新任务集选取
+
+
+def test_held_out_excludes_day1_slice(tasks):
+    """D1 切片任务不可选（Q8 约束实现）：D1 已跑（08-19 15:00 起跑）的任务
+    可能已进 D1 夜间 evolution，不再满足"没有 exact trajectory 存在于 Memory"。"""
+    held = set(held_out_tasks(tasks))
+    _, new = split_tasks(tasks)
+    day1_slice = new[0::DAYS]
+    assert not (held & set(day1_slice))
+
+
+def test_daily_batches_exclude_held_out_from_all_slices(tasks):
+    """任何 day 的 new 切片不含 held-out（轮转摘除，preview §7.2）。"""
+    held = set(held_out_tasks(tasks))
+    for day in range(1, DAYS + 1):
+        batch = daily_batch(tasks, day)
+        assert not (set(batch["new"]) & held)
+        assert daily_batch(tasks, day) == batch  # 含 held-out 摘除后仍确定性
 
 
 def test_daily_batch_rejects_out_of_range(tasks):

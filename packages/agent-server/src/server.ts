@@ -283,6 +283,8 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 						stream: true,
 						retrievedCount: retrieved.length,
 						retrievedIds: retrieved.map((r) => r.experience.id),
+						// T4 (§9): 重排后最终分数与 retrieved_ids 按位对齐落库。
+						retrievedScores: retrieved.map((r) => r.score),
 						retrievedKinds: kinds,
 						hit: retrieved.length > 0,
 						...(taskId !== undefined ? { taskId } : {}),
@@ -303,6 +305,8 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 					await store.recordRequestTrace({
 						requestId,
 						injectedIds: injectionOn ? injected.injectedIds : [],
+						// T4 (§9): 注入 token 估计；注入关闭显式写 0（与 injectedIds=[] 同口径）。
+						injectedTokens: injectionOn ? injected.injectedTokens : 0,
 					});
 					const openaiReq = toOpenAIRequest(injected, model as any);
 

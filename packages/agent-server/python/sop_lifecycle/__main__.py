@@ -75,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     tools = {name: _echo_tool for name in tool_names}
     tool_docs = {name: f"{name}(**kwargs) -> str：会话轨迹中观测到的工具。" for name in tool_names}
     if os.environ.get("LLM_BASE_URL") and (os.environ.get("LLM_MODEL") or os.environ.get("TEACHER_MODEL")):
-        llm = OpenAICompatClient(role="teacher")
+        llm = OpenAICompatClient(role="teacher", caller="sop_lifecycle")
     else:
         llm = MockLLM()
 

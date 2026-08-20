@@ -57,8 +57,20 @@ def _mean(scores: list[float]) -> float:
     return sum(scores) / len(scores) if scores else 0.0
 
 
+def _repeat_rows(rows: list[dict]) -> list[dict]:
+    """差分核算样本集：只含 kind=="repeat" 的行；kind 缺失的旧行按 repeat
+    处理（.get 容错，旧落库行无 kind 字段）。held_out 行（kind=held_out）
+    排除——preview.html §7.2：transfer 比较独立于 cross 2×2 差分口径，
+    held_out 只挂 x2/x3 会污染 x2/x3 均值与 sanity_diff（pi-test 复核确认）。"""
+    return [r for r in rows if r.get("kind", "repeat") == "repeat"]
+
+
 def cross_arm_diffs(rows: list[dict]) -> dict:
-    """四臂差分核算（纯函数）。行需含 day/task_id/arm/score，四臂齐全。"""
+    """四臂差分核算（纯函数）。行需含 day/task_id/arm/score，四臂齐全。
+
+    preview.html §7.2：只统计 kind=="repeat" 的行（held_out 行排除，
+    kind 缺失旧行按 repeat 容错）；n_per_arm_per_day 按过滤后实际计数。"""
+    rows = _repeat_rows(rows)
     arms_present = {r["arm"] for r in rows}
     missing = set(CROSS_ARMS) - arms_present
     if missing:
@@ -66,6 +78,7 @@ def cross_arm_diffs(rows: list[dict]) -> dict:
     days = sorted({int(r["day"]) for r in rows})
 
     per_day: dict[str, dict] = {}
+    n_per_arm_per_day: dict[str, dict[str, int]] = {}
     for day in days:
         day_rows = [r for r in rows if int(r["day"]) == day]
         means = {arm: _mean([r["score"] for r in day_rows if r["arm"] == arm]) for arm in CROSS_ARMS}
@@ -75,6 +88,7 @@ def cross_arm_diffs(rows: list[dict]) -> dict:
             "injection_effect": means["x1"] - means["x4"],
             "sanity_diff": means["x3"] - means["x4"],
         }
+        n_per_arm_per_day[str(day)] = {arm: len([r for r in day_rows if r["arm"] == arm]) for arm in CROSS_ARMS}
 
     overall_means = {arm: _mean([r["score"] for r in rows if r["arm"] == arm]) for arm in CROSS_ARMS}
     overall = {
@@ -83,7 +97,24 @@ def cross_arm_diffs(rows: list[dict]) -> dict:
         "injection_effect": overall_means["x1"] - overall_means["x4"],
         "sanity_diff": overall_means["x3"] - overall_means["x4"],
     }
-    return {"per_day": per_day, "overall": overall, "n_per_arm_per_day": 20}
+    return {"per_day": per_day, "overall": overall, "n_per_arm_per_day": n_per_arm_per_day}
+
+
+def transfer_gain(rows: list[dict]) -> dict | None:
+    """Held-out transfer 增益（preview.html §7.2）：TransferGain = held_out
+    任务 x2 均分 − x3 均分（D7 memory on/off 比较）。独立于 cross 2×2 差分
+    口径（held_out 行不进 cross_arm_diffs）；附两臂计数。无 held_out 行
+    （非四臂日/旧结果）返回 None。"""
+    held = [r for r in rows if r.get("kind") == "held_out"]
+    if not held:
+        return None
+    x2 = [r["score"] for r in held if r["arm"] == "x2"]
+    x3 = [r["score"] for r in held if r["arm"] == "x3"]
+    return {
+        "transfer_gain": _mean(x2) - _mean(x3),
+        "x2_n": len(x2),
+        "x3_n": len(x3),
+    }
 
 
 def check_sanity(rows: list[dict], tolerance: float = SANITY_TOLERANCE) -> dict:

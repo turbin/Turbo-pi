@@ -85,6 +85,8 @@ export async function handleStream(
 				stream: true,
 				retrievedCount: retrieved.length,
 				retrievedIds: retrieved.map((r) => r.experience.id),
+				// T4 (preview.html §9): 重排后最终分数与 retrieved_ids 按位对齐落库。
+				retrievedScores: retrieved.map((r) => r.score),
 				retrievedKinds: kinds,
 				hit: retrieved.length > 0,
 				...(opts.taskId ? { taskId: opts.taskId } : {}),
@@ -104,6 +106,7 @@ export async function handleStream(
 					systemPrompt: body.context.systemPrompt,
 					tools: body.context.tools,
 					injectedIds: [],
+					injectedTokens: 0,
 				};
 		if (opts.requestId) {
 			// F0 (issue-013) phase 1.5: actual injection set lands in the same
@@ -111,6 +114,8 @@ export async function handleStream(
 			await opts.store.recordRequestTrace({
 				requestId: opts.requestId,
 				injectedIds: injectionOn ? injected.injectedIds : [],
+				// T4 (§9): 注入 token 估计；注入关闭显式写 0（与 injectedIds=[] 同口径）。
+				injectedTokens: injectionOn ? injected.injectedTokens : 0,
 			});
 		}
 

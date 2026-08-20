@@ -1,0 +1,1795 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>D 阶段：9B 全量重跑批实验设计（判据预注册 + Analysis Addendum）</title>
+
+  <style>
+    body {
+      font-family:
+        -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "PingFang SC", "Hiragino Sans GB",
+        "Microsoft YaHei", Arial, sans-serif;
+      line-height: 1.75;
+      color: #222;
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 40px 48px;
+      background: #fff;
+    }
+
+    h1, h2, h3, h4 {
+      line-height: 1.35;
+    }
+
+    h1 {
+      border-bottom: 3px solid #333;
+      padding-bottom: 14px;
+    }
+
+    h2 {
+      margin-top: 44px;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 8px;
+    }
+
+    h3 {
+      margin-top: 30px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 18px 0 28px;
+      font-size: 14px;
+    }
+
+    th, td {
+      border: 1px solid #bbb;
+      padding: 9px 12px;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f4f4f4;
+      font-weight: 600;
+    }
+
+    code {
+      background: #f5f5f5;
+      padding: 2px 5px;
+      border-radius: 3px;
+    }
+
+    pre {
+      background: #f6f6f6;
+      padding: 16px 20px;
+      overflow-x: auto;
+      border-left: 4px solid #888;
+      line-height: 1.55;
+    }
+
+    .meta {
+      background: #f7f7f7;
+      padding: 14px 18px;
+      border-left: 4px solid #555;
+      margin-bottom: 28px;
+    }
+
+    .important {
+      border-left: 5px solid #555;
+      padding: 12px 18px;
+      background: #fafafa;
+      margin: 18px 0;
+    }
+
+    .warning {
+      border-left: 5px solid #999;
+      padding: 12px 18px;
+      background: #f7f7f7;
+      margin: 18px 0;
+    }
+
+    .addendum {
+      border: 2px solid #777;
+      padding: 20px 24px;
+      margin: 24px 0;
+      background: #fcfcfc;
+    }
+
+    .formula {
+      font-family: "Times New Roman", serif;
+      font-size: 17px;
+      padding: 8px 12px;
+      margin: 10px 0;
+      background: #fafafa;
+      border-left: 3px solid #aaa;
+    }
+
+    .pass {
+      font-weight: bold;
+    }
+
+    .small {
+      font-size: 13px;
+      color: #555;
+    }
+  </style>
+</head>
+
+<body>
+
+<h1>D 阶段：9B 全量重跑批实验设计</h1>
+
+<div class="meta">
+  <strong>版本：</strong>D-stage preregistration + Analysis Addendum<br/>
+  <strong>日期：</strong>2026-08-19<br/>
+  <strong>状态：</strong>
+  已起跑（D1 双臂进行中，2026-08-19 15:00 启动）；
+  交叉臂排期已定案：仅 D2 / D7 跑四臂。<br/>
+  <strong>学生模型：</strong>Qwen3.5-9B-4bit（omlx 本地）<br/>
+  <strong>教师 / 主 Judge：</strong>deepseek-v4-pro
+</div>
+
+<p>
+  本设计用于验证：9B 学生模型是否能够通过教师指导产生的外部经验、
+  轨迹与计划库，在办公自动化 Agent 任务中逐渐减少无效探索、
+  提升任务质量，并降低对云端教师模型的依赖。
+</p>
+
+<div class="important">
+  <strong>预注册纪律：</strong>
+  D1 已于 2026-08-19 15:00 起跑，因此原始主判据 ①～⑤保持不变。
+  本文新增的质量、安全、因果及轨迹分析指标统一标记为
+  <strong>Analysis Addendum</strong>，用于增强解释能力，不对已启动实验进行事后改判。
+</div>
+
+
+<!-- ======================== -->
+<h2>0. 与既有文档的关系</h2>
+
+<p>
+  C 阶段已有正式设计稿；9B（D 阶段）此前由 §108 裁决、
+  交叉臂方案及修复批次任务书组成。
+  本稿作为 D 阶段整合设计。
+</p>
+
+<p>主要参考：</p>
+
+<ul>
+  <li><code>plans/2026-08-14-post-c-unified-fix-batch-plan.md</code> v5 §108</li>
+  <li><code>plans/2026-08-14-plan-library-version-cross-eval.md</code></li>
+  <li><code>2026-08-05-agent-server-c-campaign-design.md</code></li>
+  <li><code>doc/design/2026-08-13-agent-server-high-level-design-v2.md</code></li>
+  <li><code>doc/design/2026-08-19-run-batch-preflight-checklist.md</code></li>
+  <li><code>doc/issues-snapshot/issue-010/013/014/015</code></li>
+</ul>
+
+
+<!-- ======================== -->
+<h2>1. 实验目标与核心研究问题</h2>
+
+<p>
+  最终目标仍沿用 C 阶段：
+  <strong>学生模型在办公自动化域经教师少量指导及经验沉淀后逐步独立。</strong>
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>待验证问题</th>
+      <th>验证方式</th>
+      <th>预期 / 解释纪律</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>Q1</td>
+      <td><strong>记忆增益能否在 9B 上复现</strong></td>
+      <td>
+        重复集 experiment vs control；
+        D1 / D7 差值及逐日轨迹
+      </td>
+      <td>
+        核心假设为增益 &gt; 0。
+        与 C 阶段 +10.3pp 比较作为探索性参照，
+        不再由“9B baseline 更低”直接推出“提升必须 ≥10.3pp”。
+      </td>
+    </tr>
+
+    <tr>
+      <td>Q2</td>
+      <td>
+        <strong>库演进效应与即时注入效应分解</strong>
+      </td>
+      <td>2×2 库版本 × 注入交叉臂</td>
+      <td>
+        D2 主要承担零差校准和早期注入检查；
+        D7 承担真正的库演进因果比较。
+      </td>
+    </tr>
+
+    <tr>
+      <td>Q3</td>
+      <td>
+        <strong>9B Agent trajectory 是否随经验积累改善</strong>
+      </td>
+      <td>
+        MAX_TURNS 触顶率、有效回合、
+        重复 Tool、错误重试、State revisit、
+        Memory hit 后的轨迹变化
+      </td>
+      <td>
+        有效学习应体现为：
+        score ↑、cap rate ↓、重复行为 ↓。
+      </td>
+    </tr>
+
+    <tr>
+      <td>Q4</td>
+      <td>
+        <strong>F1 交付物维度修复是否消除 C 式劣化</strong>
+      </td>
+      <td>
+        重复集 score D1→D7；
+        与 C 0.567→0.404 形态对照
+      </td>
+      <td>
+        不应再次出现持续性单调退化。
+      </td>
+    </tr>
+
+    <tr>
+      <td>Q5</td>
+      <td>
+        <strong>F2/F3/F4 机制是否真实工作</strong>
+      </td>
+      <td>
+        夜间进化日志、
+        晋升 / 降权 / 域过滤 / 反证记录
+      </td>
+      <td>以机制是否按预期触发为主，不做显著性声明。</td>
+    </tr>
+
+    <tr>
+      <td>Q6</td>
+      <td>
+        <strong>学生是否降低教师依赖</strong>
+      </td>
+      <td>
+        升级率 + 自主成功率 + 漏升级分析
+      </td>
+      <td>
+        低升级率必须与足够任务质量同时成立，
+        才能解释为“独立性增强”。
+      </td>
+    </tr>
+
+    <tr>
+      <td>Q7</td>
+      <td>length 门控是否持续稳定</td>
+      <td>
+        <code>gate_length_escalation.py</code>
+      </td>
+      <td>
+        length escalation &lt; 5%；超则停批校准。
+      </td>
+    </tr>
+
+    <tr>
+      <td>Q8</td>
+      <td>
+        <strong>经验 Replay 能否迁移到未见任务</strong>
+      </td>
+      <td>
+        held-out transfer tasks；
+        不进入 evolution，再于 D7 比较 memory on/off
+      </td>
+      <td>
+        区分 Replay Gain 与 Transfer Gain。
+      </td>
+    </tr>
+
+    <tr>
+      <td>Q9</td>
+      <td>bm25 字面检索泛化上限</td>
+      <td>全部实验完成后专项分析</td>
+      <td>保持 deferred，不进入 D 主判据。</td>
+    </tr>
+  </tbody>
+</table>
+
+
+<!-- ======================== -->
+<h2>2. 原始主判据（保持预注册，不后改）</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>判据</th>
+      <th>口径</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>①</td>
+      <td>
+        <strong>重复任务升级率 D7 ≤ 5%</strong>
+      </td>
+      <td>
+        重复集 D7，实验臂，
+        model_runs 标注；沿用 C 判据。
+      </td>
+    </tr>
+
+    <tr>
+      <td>②</td>
+      <td>
+        <strong>新任务升级率全程 &lt; 20%</strong>
+      </td>
+      <td>
+        新任务集全部天数，实验臂。
+      </td>
+    </tr>
+
+    <tr>
+      <td>③</td>
+      <td>
+        <strong>
+          重复集实验臂 D7 − 对照臂 D7 &gt; 0
+        </strong>
+      </td>
+      <td>
+        作为记忆增益存在性的原始验收口径；
+        同时报 D1 gap 及 DiD。
+      </td>
+    </tr>
+
+    <tr>
+      <td>④</td>
+      <td>
+        <strong>
+          C 式劣化不复现：
+          D7 ≥ D1 − 0.05
+        </strong>
+      </td>
+      <td>
+        重复集实验臂；
+        issue-010 / Q4 可检验化。
+      </td>
+    </tr>
+
+    <tr>
+      <td>⑤</td>
+      <td>
+        升级率 / score / 成本 /
+        latency / 错误 / rounds 趋势同报
+      </td>
+      <td>
+        描述性结果，不单独作为硬 PASS。
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="warning">
+  <strong>统计口径：</strong>
+  n=20 继续保持与 C 阶段相同的重复集规模和粒度，
+  但不表述为“保证统计功效”。
+  不进行小样本显著性宣传。
+  D1～D7 重复测量不能解释为 n=140，
+  基本实验单位仍为 task。
+</div>
+
+<div class="warning">
+  <strong>升级率口径：</strong>
+  例如 D7 观察到 0/20，只代表工程验收观察值为 0%，
+  不能解释为已统计证明真实升级率小于 5%。
+</div>
+
+
+<!-- ======================== -->
+<h2>3. Analysis Addendum：质量与独立性联合判定</h2>
+
+<div class="addendum">
+
+<h3>3.1 防止“低升级率 = 假独立”</h3>
+
+<p>
+  Pilot 已出现：
+</p>
+
+<pre>
+canonical_dsl_scripts
+score      = 0.06
+round      = 30
+escalation = 0
+</pre>
+
+<p>
+  因此单独使用 escalation rate
+  无法区分“学生已独立”与“quality gate 漏升级”。
+</p>
+
+<p>新增以下报告指标：</p>
+
+<div class="formula">
+AutonomousSuccessRate =
+成功且未升级任务数 / 全部任务数
+</div>
+
+<div class="formula">
+MissedEscalationRate =
+明显失败且未升级任务数 / 明显失败任务数
+</div>
+
+<div class="formula">
+EscalatedSuccessRate =
+升级后成功任务数 / 升级任务数
+</div>
+
+<p>
+  “明显失败”用于 retrospective analysis，
+  可由以下信号组合定义：
+</p>
+
+<ul>
+  <li>Judge score 低于预定义分析阈值；</li>
+  <li>任务硬失败；</li>
+  <li>MAX_TURNS 触顶且目标未完成；</li>
+  <li>连续 validation failure；</li>
+  <li>核心交付物缺失。</li>
+</ul>
+
+<p>
+  最终独立性解释必须满足：
+</p>
+
+<div class="formula">
+低升级率 + 足够质量 + 低漏升级率
+⇒ 可解释为学生独立性增强
+</div>
+
+</div>
+
+
+<!-- ======================== -->
+<h2>4. 实验臂与任务集</h2>
+
+<h3>4.1 任务集</h3>
+
+<p>
+  沿用 QCB v1.1 共 99 任务，seed=42：
+</p>
+
+<ul>
+  <li>重复集：20 个，每日全跑；</li>
+  <li>新任务集：79 个，D1～D7 每日切片 11～12 个；</li>
+  <li>D/C 使用相同 task-level split，以保任务级比较能力。</li>
+</ul>
+
+
+<h3>4.2 日常双臂</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Arm</th>
+      <th>经验库</th>
+      <th>即时注入</th>
+      <th>用途</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>Experiment</td>
+      <td>当日热库</td>
+      <td>ON</td>
+      <td>生产候选行为</td>
+    </tr>
+
+    <tr>
+      <td>Control</td>
+      <td>不参与注入</td>
+      <td>OFF</td>
+      <td>学生模型自然 baseline</td>
+    </tr>
+  </tbody>
+</table>
+
+
+<h3>4.3 D2 / D7 四臂交叉设计</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Arm</th>
+      <th>Library</th>
+      <th>Injection</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>X1</td>
+      <td>Frozen：D1 夜间进化后快照</td>
+      <td>ON</td>
+    </tr>
+
+    <tr>
+      <td>X2</td>
+      <td>Current：当前生产热库快照</td>
+      <td>ON</td>
+    </tr>
+
+    <tr>
+      <td>X3</td>
+      <td>Current</td>
+      <td>OFF</td>
+    </tr>
+
+    <tr>
+      <td>X4</td>
+      <td>Frozen</td>
+      <td>OFF</td>
+    </tr>
+  </tbody>
+</table>
+
+
+<h3>4.4 D2 的角色重新定义</h3>
+
+<p>
+  因冻结库 = D1 夜间 evolution 后快照，
+  而 D2 current library 在 D2 起跑时与其相同：
+</p>
+
+<div class="formula">
+Library(current,D2) = Library(frozen,D1-post)
+</div>
+
+<p>
+  因此 D2 不用于估计真正的 Library Evolution Effect，
+  而定义为：
+</p>
+
+<ul>
+  <li>2×2 zero-difference calibration；</li>
+  <li>冻结 / 当前实例一致性检查；</li>
+  <li>Injection early-effect 检查；</li>
+  <li>四臂执行与隔离机制校验。</li>
+</ul>
+
+<p>D2 预期：</p>
+
+<div class="formula">
+X2 − X1 ≈ 0
+</div>
+
+<div class="formula">
+X3 − X4 ≈ 0
+</div>
+
+
+<h3>4.5 D7 才承担库演进主比较</h3>
+
+<p>
+  D7 时：
+</p>
+
+<div class="formula">
+Frozen = D1-post library
+</div>
+
+<div class="formula">
+Current = D1～D6 evolution 后 library
+</div>
+
+<p>
+  因此 D7 用于估计实际 Library Evolution Effect。
+</p>
+
+
+<!-- ======================== -->
+<h2>5. 2×2 因果分析口径</h2>
+
+<h3>5.1 Library evolution effect，在 Injection ON 条件下</h3>
+
+<div class="formula">
+E_library|on = X2 − X1
+</div>
+
+
+<h3>5.2 Library evolution effect，在 Injection OFF 条件下</h3>
+
+<div class="formula">
+E_library|off = X3 − X4
+</div>
+
+<p>
+  若 library 只能通过 injection 影响 Agent，则理论上：
+</p>
+
+<div class="formula">
+X3 − X4 ≈ 0
+</div>
+
+
+<h3>5.3 Injection effect，在 Frozen library 下</h3>
+
+<div class="formula">
+E_inject|frozen = X1 − X4
+</div>
+
+
+<h3>5.4 Injection effect，在 Current library 下</h3>
+
+<div class="formula">
+E_inject|current = X2 − X3
+</div>
+
+
+<h3>5.5 Interaction Effect</h3>
+
+<div class="formula">
+Interaction =
+(X2 − X3) − (X1 − X4)
+</div>
+
+<p>
+  该指标用于回答：
+</p>
+
+<blockquote>
+  随着经验库质量演进，
+  同样的注入机制是否变得越来越有价值？
+</blockquote>
+
+<p>
+  如果 D7 出现：
+</p>
+
+<pre>
+X1 − X4 = +0.05
+X2 − X3 = +0.20
+</pre>
+
+<p>
+  则说明主要提升不只是“有 Memory 就好”，
+  而是 Current Library 的经验质量已经发生了实质改善。
+</p>
+
+
+<!-- ======================== -->
+<h2>6. D1 / D7 差分与 DiD</h2>
+
+<p>
+  原始判据③继续使用：
+</p>
+
+<div class="formula">
+RawMemoryGap_D7 =
+Experiment_D7 − Control_D7
+</div>
+
+<p>
+  同时新增 Difference-in-Differences：
+</p>
+
+<div class="formula">
+DiD =
+(Experiment_D7 − Control_D7)
+−
+(Experiment_D1 − Control_D1)
+</div>
+
+<p>
+  D1 在空库条件下可作为两个 arm 初始差异参照。
+</p>
+
+<p>
+  最终报告同时呈现：
+</p>
+
+<ul>
+  <li>Raw D7 Gap；</li>
+  <li>D1 Baseline Gap；</li>
+  <li>DiD；</li>
+  <li>task-level paired difference distribution。</li>
+</ul>
+
+
+<!-- ======================== -->
+<h2>7. Replay Gain 与 Transfer Gain 分离</h2>
+
+<h3>7.1 Replay Gain</h3>
+
+<p>
+  20 个重复任务每天都会重新出现，
+  因而其提升主要验证：
+</p>
+
+<blockquote>
+  Student 是否能够从过去同任务 /
+  高度相似任务经验中正确检索并复用轨迹。
+</blockquote>
+
+<div class="formula">
+ReplayGain =
+Score(repeated, memory-on)
+−
+Score(repeated, memory-off)
+</div>
+
+
+<h3>7.2 Transfer Gain</h3>
+
+<p>
+  为避免把 exact-task memorization
+  解释成一般能力提升，
+  增加少量 held-out transfer tasks。
+</p>
+
+<p>要求：</p>
+
+<ul>
+  <li>任务在 D1～D6 不进入 evolution；</li>
+  <li>没有 exact trajectory 存在于 Memory；</li>
+  <li>但任务类型与已有经验具有语义 / 工作流相关性；</li>
+  <li>D7 比较 memory ON / OFF。</li>
+</ul>
+
+<div class="formula">
+TransferGain =
+Score(unseen, memory-on)
+−
+Score(unseen, memory-off)
+</div>
+
+<p>
+  Replay Gain 与 Transfer Gain 分开报告，
+  不混为单一“模型能力提升”。
+</p>
+
+
+<!-- ======================== -->
+<h2>8. Agent Trajectory 分析</h2>
+
+<h3>8.1 MAX_TURNS 保持 30 不变</h3>
+
+<p>
+  不提高 MAX_TURNS。
+  30 继续作为统一 Agent trajectory budget，
+  避免通过增加运行时间制造虚假改善。
+</p>
+
+<p>
+  “触顶”严格定义为：
+</p>
+
+<div class="formula">
+CapHit =
+termination_reason == max_turns
+</div>
+
+<p>
+  不简单以 requests == 30 替代。
+</p>
+
+
+<h3>8.2 主要 trajectory 指标</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>指标</th>
+      <th>定义 / 用途</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>RoundCount</td>
+      <td>任务完成前实际 Agent 决策回合数</td>
+    </tr>
+
+    <tr>
+      <td>CapRate</td>
+      <td>MAX_TURNS 触顶任务比例</td>
+    </tr>
+
+    <tr>
+      <td>RepeatToolRate</td>
+      <td>重复或近重复 Tool Call / 全部 Tool Call</td>
+    </tr>
+
+    <tr>
+      <td>RetryRate</td>
+      <td>错误后重复执行同类动作的频率</td>
+    </tr>
+
+    <tr>
+      <td>StateRevisitRate</td>
+      <td>Agent 再次进入近似历史状态的比例</td>
+    </tr>
+
+    <tr>
+      <td>ProductiveRoundRatio</td>
+      <td>对任务完成产生新增状态推进的回合 / 总回合</td>
+    </tr>
+
+    <tr>
+      <td>RoundsToFirstUsefulMemoryHit</td>
+      <td>首次出现有效经验检索所需回合数</td>
+    </tr>
+
+    <tr>
+      <td>PostHitEfficiency</td>
+      <td>有效 Memory Hit 之后的完成效率</td>
+    </tr>
+  </tbody>
+</table>
+
+
+<h3>8.3 目标行为模式</h3>
+
+<p>若 Teacher → Memory → Student 机制有效，应同时观察：</p>
+
+<div class="formula">
+Score ↑
+</div>
+
+<div class="formula">
+CapRate ↓
+</div>
+
+<div class="formula">
+RepeatToolRate ↓
+</div>
+
+<div class="formula">
+ProductiveRoundRatio ↑
+</div>
+
+<div class="formula">
+AutonomousSuccessRate ↑
+</div>
+
+<div class="formula">
+EscalationRate ↓
+</div>
+
+<p>
+  仅“升级率下降”或“round 下降”不能单独判定学习有效。
+</p>
+
+
+<!-- ======================== -->
+<h2>9. Memory 层可观测性</h2>
+
+<p>
+  每次检索至少记录：
+</p>
+
+<pre>
+retrieval_hit
+memory_id
+memory_version
+source_task_id
+source_arm
+similarity_score
+retrieved_task_type
+retrieved_plan_id
+retrieval_rank
+injected_tokens
+current_agent_state
+current_goal
+plan_step
+memory_action = reuse | adapt | reject
+outcome_after_hit
+eligible_for_evolution
+</pre>
+
+<p>
+  目标是将：
+</p>
+
+<pre>
+Library changed
+    ↓
+?
+    ↓
+Score improved
+</pre>
+
+<p>展开为：</p>
+
+<pre>
+Teacher Experience
+      ↓
+Memory Promotion
+      ↓
+Semantic / State Retrieval
+      ↓
+9B selects experience
+      ↓
+Adapt / Execute
+      ↓
+Trajectory shortens
+      ↓
+Task quality improves
+</pre>
+
+
+<!-- ======================== -->
+<h2>10. Experience / Memory 写入隔离</h2>
+
+<div class="important">
+  <strong>原则：</strong>
+  Evaluation arms 不自动成为下一轮 learning data。
+</div>
+
+<p>
+  四臂产生的 trajectory 必须带 source metadata。
+</p>
+
+<pre>
+source_arm
+task_id
+run_id
+memory_version
+library_mode
+injection_mode
+eligible_for_evolution
+judge_score
+success
+termination_reason
+</pre>
+
+<p>
+  默认建议：
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Arm</th>
+      <th>是否进入 runDailyEvolution</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>生产 experiment / X2</td>
+      <td>允许，按既有晋升规则</td>
+    </tr>
+
+    <tr>
+      <td>X1 Frozen + ON</td>
+      <td>默认只读，不写入</td>
+    </tr>
+
+    <tr>
+      <td>X3 Current + OFF</td>
+      <td>默认只读，不写入</td>
+    </tr>
+
+    <tr>
+      <td>X4 Frozen + OFF</td>
+      <td>默认只读，不写入</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  若后续决定允许其他 arm 参与学习，
+  必须作为独立实验设计变更记录，
+  不得静默混入生产经验库。
+</p>
+
+
+<!-- ======================== -->
+<h2>11. 环境隔离与 side-effect 控制</h2>
+
+<p>
+  四臂实验不仅要保证相同 task / seed，
+  还必须保证相同初始环境状态：
+</p>
+
+<div class="formula">
+InitialState_X1 =
+InitialState_X2 =
+InitialState_X3 =
+InitialState_X4
+</div>
+
+<p>
+  对会产生真实写操作的任务：
+</p>
+
+<ul>
+  <li>workspace create/update；</li>
+  <li>workflow mutation；</li>
+  <li>DSL 修改；</li>
+  <li>文件生成 / 更新；</li>
+  <li>其他持久化 side effect；</li>
+</ul>
+
+<p>
+  四臂必须使用：
+</p>
+
+<pre>
+Base Environment Snapshot
+          ↓
+    deterministic clone
+          ↓
+ ┌────────┬────────┬────────┬────────┐
+ │        │        │        │        │
+X1       X2       X3       X4
+</pre>
+
+<p>
+  若无法实现 clone，
+  则必须在每个 arm 前进行 deterministic reset，
+  并通过 preflight checklist 验证。
+</p>
+
+
+<!-- ======================== -->
+<h2>12. 交叉日执行与时间漂移控制</h2>
+
+<p>
+  按 Pilot 均值：
+</p>
+
+<div class="formula">
+92 tasks × 16.5 min ≈ 25.3 h
+</div>
+
+<p>
+  因此 D2 / D7 是 <strong>logical experiment day</strong>，
+  不等价于自然日。
+</p>
+
+<h3>12.1 Snapshot Lock</h3>
+
+<p>
+  四臂开始前固定：
+</p>
+
+<ul>
+  <li>Frozen library snapshot；</li>
+  <li>Current library snapshot；</li>
+  <li>模型版本；</li>
+  <li>prompt / tool schema；</li>
+  <li>judge model；</li>
+  <li>environment base snapshot。</li>
+</ul>
+
+<p>
+  四臂完成之前：
+</p>
+
+<div class="formula">
+禁止 hot-library swap
+</div>
+
+<p>
+  四臂全部完成后再进行当日 evolution。
+</p>
+
+
+<h3>12.2 Arm Order</h3>
+
+<p>
+  不建议：
+</p>
+
+<pre>
+全部 X1
+→ 全部 X2
+→ 全部 X3
+→ 全部 X4
+</pre>
+
+<p>
+  推荐以 task 为 block，
+  按 seed 确定性随机化 arm 顺序：
+</p>
+
+<pre>
+task_01: X2 → X4 → X1 → X3
+task_02: X3 → X1 → X4 → X2
+task_03: X1 → X2 → X3 → X4
+...
+</pre>
+
+<p>
+  以降低 25 小时运行窗口内的时间漂移影响。
+</p>
+
+
+<!-- ======================== -->
+<h2>13. Teacher / Judge 同源风险</h2>
+
+<p>
+  主 Judge 继续固定：
+</p>
+
+<pre>
+deepseek-v4-pro
+</pre>
+
+<p>
+  以保持与 C 阶段评分口径可比。
+</p>
+
+<p>
+  但 Teacher 与 Judge 同源，
+  存在 Teacher-Judge affinity 风险。
+</p>
+
+<p>
+  建议 D2 / D7 抽取小规模样本进行 sensitivity audit：
+</p>
+
+<ul>
+  <li>DeepSeek 主 Judge；</li>
+  <li>独立 Judge 或人工核验；</li>
+  <li>比较任务排序及主要结论方向是否一致。</li>
+</ul>
+
+<p>
+  独立 Judge 不替代主 Judge，
+  只作为稳健性分析。
+</p>
+
+
+<!-- ======================== -->
+<h2>14. 每日循环</h2>
+
+<pre>
+白天：
+campaign.py --day N
+
+→ experiment:
+  重复 20 + 当日新任务
+
+→ D1 / D7 control:
+  对照任务
+
+→ D2 / D7:
+  指定任务执行 X1-X4 四臂
+
+→ gateway 8789 → 8787
+→ omlx Qwen3.5-9B-4bit
+→ quality / length gate
+→ 必要时升级 DeepSeek
+→ deepseek-v4-pro judge
+→ Langfuse 记录 generation / trace / qcb_score
+
+
+夜间：
+
+非交叉日：
+  eligible trajectories
+       ↓
+  runDailyEvolution
+       ↓
+  next-day hot library
+       ↓
+  snapshot_store
+
+交叉日：
+  四臂全部完成
+       ↓
+  对账完成
+       ↓
+  只取 eligible learning arm
+       ↓
+  runDailyEvolution
+       ↓
+  next-day hot library
+</pre>
+
+
+<!-- ======================== -->
+<h2>15. 对账链与 Trace 口径</h2>
+
+<p>完整对账关系：</p>
+
+<pre>
+run.jsonl.trace_ids
+      ↕
+model_runs
+      ↕
+session marker
+      ↕
+Langfuse trace
+      ↕
+qcb_score
+      ↕
+memory retrieval events
+</pre>
+
+<p>
+  使用 <code>create_trace_id(seed)</code>
+  确定性 join。
+</p>
+
+<p>
+  issue-015 修复后，所有结果报告必须先通过对账门禁。
+</p>
+
+
+<!-- ======================== -->
+<h2>16. Pilot 基线</h2>
+
+<p>
+  Pilot：2026-08-19，3 个任务，78 请求。
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>指标</th>
+      <th>结果</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>9B baseline score</td>
+      <td>0.327</td>
+    </tr>
+
+    <tr>
+      <td>27B C D1 baseline</td>
+      <td>0.567</td>
+    </tr>
+
+    <tr>
+      <td>平均任务耗时</td>
+      <td>约 16.5 min</td>
+    </tr>
+
+    <tr>
+      <td>30-turn cap</td>
+      <td>2 / 3 tasks</td>
+    </tr>
+
+    <tr>
+      <td>finish_reason</td>
+      <td>tool_calls 77 / stop 1 / length 0</td>
+    </tr>
+
+    <tr>
+      <td>length escalation</td>
+      <td>0%</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  Pilot 说明 9B 当前主要风险更可能位于：
+</p>
+
+<ul>
+  <li>planning；</li>
+  <li>state tracking；</li>
+  <li>tool continuation；</li>
+  <li>retry / recovery；</li>
+  <li>stopping policy；</li>
+</ul>
+
+<p>
+  而不是单轮 generation max_tokens 截断。
+</p>
+
+
+<!-- ======================== -->
+<h2>17. 最终报告的核心指标体系</h2>
+
+<h3>17.1 Outcome</h3>
+
+<ul>
+  <li>Mean score</li>
+  <li>Task success rate</li>
+  <li>Repeated-task score</li>
+  <li>New-task score</li>
+  <li>Held-out transfer score</li>
+</ul>
+
+
+<h3>17.2 Independence</h3>
+
+<ul>
+  <li>Escalation Rate</li>
+  <li>Autonomous Success Rate</li>
+  <li>Missed Escalation Rate</li>
+  <li>Escalated Success Rate</li>
+</ul>
+
+
+<h3>17.3 Trajectory Efficiency</h3>
+
+<ul>
+  <li>Round Count P50 / P75 / P90 / P95</li>
+  <li>Cap Rate</li>
+  <li>Repeat Tool Rate</li>
+  <li>Retry Rate</li>
+  <li>State Revisit Rate</li>
+  <li>Productive Round Ratio</li>
+</ul>
+
+
+<h3>17.4 Memory Mechanism</h3>
+
+<ul>
+  <li>Retrieval hit rate</li>
+  <li>Top-1 / Top-K similarity</li>
+  <li>Memory reuse / adapt / reject</li>
+  <li>Useful memory hit rate</li>
+  <li>Post-hit score gain</li>
+  <li>Post-hit round reduction</li>
+</ul>
+
+
+<h3>17.5 Causal Effects</h3>
+
+<ul>
+  <li>D7 Raw Gap</li>
+  <li>D1 Baseline Gap</li>
+  <li>DiD</li>
+  <li>Library evolution effect</li>
+  <li>Injection effect</li>
+  <li>Library × Injection interaction</li>
+  <li>Replay Gain</li>
+  <li>Transfer Gain</li>
+</ul>
+
+
+<h3>17.6 Cost</h3>
+
+<ul>
+  <li>Latency / task</li>
+  <li>9B token / request</li>
+  <li>Teacher escalation cost</li>
+  <li>Judge cost</li>
+  <li>Memory injection token cost</li>
+</ul>
+
+<div class="formula">
+QualityAdjustedEfficiency =
+Score / EffectiveRounds
+</div>
+
+<div class="formula">
+CostAdjustedQuality =
+Score / TotalInferenceCost
+</div>
+
+
+<!-- ======================== -->
+<h2>18. 最终决策矩阵</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th></th>
+      <th>质量高</th>
+      <th>质量低</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <th>升级率低</th>
+      <td>
+        <strong>目标状态：</strong><br/>
+        学生真正实现较高自主性
+      </td>
+      <td>
+        <strong>假独立：</strong><br/>
+        重点检查 gate 漏升级、
+        execution failure 与 memory mismatch
+      </td>
+    </tr>
+
+    <tr>
+      <th>升级率高</th>
+      <td>
+        <strong>教师依赖：</strong><br/>
+        系统质量可接受，
+        但 Student 尚未独立
+      </td>
+      <td>
+        <strong>不可接受：</strong><br/>
+        Student + Teacher 架构均需重新评估
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+
+<!-- ======================== -->
+<h2>19. 顺序约束与决策点</h2>
+
+<ol>
+  <li>
+    <strong>Office 先行：</strong>
+    QCB 完整结束并报告后，
+    经用户确认再进入 ALFWorld。
+  </li>
+
+  <li>
+    <strong>9B 空库起跑：</strong>
+    27B 经验继续保持备份，
+    不进入 D 主实验库。
+  </li>
+
+  <li>
+    <strong>D2 / D7 四臂：</strong>
+    继续执行用户拍板方案 A。
+    D2 定位调整为 calibration，
+    D7 为 library evolution 主因果日。
+  </li>
+
+  <li>
+    <strong>MAX_TURNS=30：</strong>
+    实验期间保持不变。
+  </li>
+
+  <li>
+    <strong>BM25：</strong>
+    issue-014 继续 deferred。
+  </li>
+
+  <li>
+    <strong>不得事后修改原始①～⑤ PASS 规则：</strong>
+    新增指标作为 Analysis Addendum
+    与最终决策 guardrail 单独报告。
+  </li>
+</ol>
+
+
+<!-- ======================== -->
+<h2>20. 风险登记</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>风险</th>
+      <th>级别</th>
+      <th>缓解措施</th>
+    </tr>
+  </thead>
+
+  <tbody>
+
+    <tr>
+      <td>
+        D2 Current 与 Frozen 实际同库，
+        导致 evolution effect 不可识别
+      </td>
+      <td>P0</td>
+      <td>
+        D2 改定位为 zero-difference calibration；
+        D7 承担真实 evolution effect。
+      </td>
+    </tr>
+
+    <tr>
+      <td>
+        低升级率其实来自 quality gate 漏检
+      </td>
+      <td>P0</td>
+      <td>
+        同报 Autonomous Success /
+        Missed Escalation /
+        Escalated Success。
+      </td>
+    </tr>
+
+    <tr>
+      <td>
+        四臂共享环境导致 side-effect contamination
+      </td>
+      <td>P0</td>
+      <td>
+        独立环境 snapshot / deterministic reset。
+      </td>
+    </tr>
+
+    <tr>
+      <td>
+        Evaluation arm trajectory 污染 future Memory
+      </td>
+      <td>P0</td>
+      <td>
+        source_arm +
+        eligible_for_evolution；
+        默认仅主 learning arm 可写入。
+      </td>
+    </tr>
+
+    <tr>
+      <td>
+        原始判据允许低质量系统全部 PASS
+      </td>
+      <td>P0</td>
+      <td>
+        保留原判据，
+        但在最终决策中增加 Quality / Autonomy
+        二维 guardrail。
+      </td>
+    </tr>
+
+    <tr>
+      <td>
+        exact task replay 被误解释为泛化
+      </td>
+      <td>P1</td>
+      <td>
+        Replay Gain 与 Transfer Gain 分开，
+        增加 held-out transfer tasks。
+      </td>
+    </tr>
+
+    <tr>
+      <td>
+        30-round 指标过粗
+      </td>
+      <td>P1</td>
+      <td>
+        增加 RepeatTool /
+        StateRevisit /
+        ProductiveRound 等 trajectory 指标。
+      </td>
+    </tr>
+
+    <tr>
+      <td>
+        Teacher / Judge 同源
+      </td>
+      <td>P1</td>
+      <td>
+        D2 / D7 小样本独立 audit。
+      </td>
+    </tr>
+
+    <tr>
+      <td>
+        四臂运行 &gt;24h 引入时间漂移
+      </td>
+      <td>P1</td>
+      <td>
+        snapshot lock +
+        task-block randomized arm order。
+      </td>
+    </tr>
+
+    <tr>
+      <td>
+        Memory 检索错误造成反向迁移
+      </td>
+      <td>P1</td>
+      <td>
+        记录 similarity /
+        reuse-adapt-reject /
+        outcome-after-hit，
+        支持错误归因和降权。
+      </td>
+    </tr>
+
+    <tr>
+      <td>
+        n=20 被误解释为足够统计功效
+      </td>
+      <td>P2</td>
+      <td>
+        仅声明与 C 保持相同样本规模和粒度，
+        不做显著性宣传。
+      </td>
+    </tr>
+
+  </tbody>
+</table>
+
+
+<!-- ======================== -->
+<h2>21. 最终需要回答的核心问题</h2>
+
+<p>
+  D 阶段完成后，不应只回答：
+</p>
+
+<blockquote>
+  9B 的 D7 score 是否高于 control？
+</blockquote>
+
+<p>
+  而应回答以下完整因果链：
+</p>
+
+<pre>
+Teacher
+   ↓
+Successful Planning / Trajectory
+   ↓
+External Memory
+   ↓
+Memory Evolution
+   ↓
+Semantic + State Retrieval
+   ↓
+9B Reuse / Adapt
+   ↓
+减少无效探索
+   ↓
+减少重复 Tool / Retry / State Revisit
+   ↓
+30-turn Cap Rate 下降
+   ↓
+任务质量上升
+   ↓
+Autonomous Success 上升
+   ↓
+Cloud Escalation 下降
+</pre>
+
+<p>
+  理想实验结果应满足：
+</p>
+
+<div class="formula">
+Score ↑
+</div>
+
+<div class="formula">
+ReplayGain &gt; 0
+</div>
+
+<div class="formula">
+TransferGain &gt; 0
+</div>
+
+<div class="formula">
+DiD &gt; 0
+</div>
+
+<div class="formula">
+Library × Injection Interaction ≥ 0
+</div>
+
+<div class="formula">
+CapRate ↓
+</div>
+
+<div class="formula">
+RepeatToolRate ↓
+</div>
+
+<div class="formula">
+AutonomousSuccessRate ↑
+</div>
+
+<div class="formula">
+EscalationRate ↓
+</div>
+
+<div class="formula">
+MissedEscalationRate 不恶化
+</div>
+
+<p>
+  若以上指标形成一致方向，
+  才能够较有力地支持以下结论：
+</p>
+
+<div class="important">
+  <strong>
+    Qwen3.5-9B 的基础规划能力虽然弱于大模型，
+    但通过教师产生的成功经验进行外部化、
+    演进、状态感知检索与轨迹适配，
+    可以减少自身实时规划负担和无效 Agent 循环，
+    从而以较低推理成本获得更高的任务完成质量与自主性。
+  </strong>
+</div>
+
+<p>
+  这验证的不是“9B 参数能力已经等同 27B”，
+  而是：
+</p>
+
+<div class="formula">
+SystemCapability(9B + Teacher Memory)
+&gt;
+SystemCapability(9B Alone)
+</div>
+
+<p>
+  以及进一步需要验证：
+</p>
+
+<div class="formula">
+CostAdjustedQuality(9B + Memory)
+≈ or &gt;
+CostAdjustedQuality(Large Model Agent)
+</div>
+
+
+<!-- ======================== -->
+<h2>22. 实验解释红线</h2>
+
+<ol>
+  <li>
+    不把 0/20 升级解释为统计证明真实升级率 &lt;5%。
+  </li>
+
+  <li>
+    不把 D1～D7 的 20 个重复任务解释为 n=140。
+  </li>
+
+  <li>
+    不把 exact-task replay gain 自动解释为泛化能力。
+  </li>
+
+  <li>
+    不把 round 降低但 score 同时下降解释为 Agent 改善。
+  </li>
+
+  <li>
+    不把低 escalation 单独解释为学生独立。
+  </li>
+
+  <li>
+    不把 Teacher/Judge 同源下的单一评分结果解释为完全客观能力提升。
+  </li>
+
+  <li>
+    不在看到结果后修改原始①～⑤主判据。
+  </li>
+
+  <li>
+    不允许 Evaluation arm 静默污染未来生产 Memory。
+  </li>
+
+  <li>
+    不在四臂执行中途替换 Current Library snapshot。
+  </li>
+
+  <li>
+    不通过提高 MAX_TURNS 来制造“成功率改善”。
+  </li>
+</ol>
+
+
+<hr/>
+
+<p class="small">
+  <strong>Refer Spec：</strong>
+  plans/2026-08-14-post-c-unified-fix-batch-plan.md v5 §108；
+  plans/2026-08-14-plan-library-version-cross-eval.md；
+  2026-08-05-agent-server-c-campaign-design.md；
+  doc/design/2026-08-13-agent-server-high-level-design-v2.md；
+  doc/design/2026-08-19-run-batch-preflight-checklist.md；
+  doc/issues-snapshot/issue-010/013/014/015。
+</p>
+
+<p class="small">
+  <strong>设计纪律：</strong>
+  原始主判据与已起跑执行口径保持不变；
+  本版本新增内容用于机制解释、
+  安全防误判、因果分析及最终系统决策。
+</p>
+
+</body>
+</html>

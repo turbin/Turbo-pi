@@ -74,6 +74,17 @@
 | G3 | length 升级率 <5% 门控脚本可用 | `eval/gate_length_escalation.py`（pilot 校准结论先入档） |
 | G4 | Langfuse 侧可观测核对口径已明确：model 字段=服务模型、gateway_trace_id=对账键、qcb_score=任务分数 | 本清单 B6/E4 |
 
+## H. 四臂交叉日专项（D2/D7，preview.html §10-§12）
+
+| # | 条件 | 验证 |
+|---|---|---|
+| H1 | 冻结实例运行且锁库（加载 D1-post 快照，全程不换载） | 冻结实例 /api/status/chain + EXPERIENCE_STORE_PATH 指向快照副本；`--frozen-base-url` 显式传 |
+| H2 | 快照锁：四臂开始前 frozen+current 双快照落盘；四臂完成前禁止 hot-library swap / 当日 evolution | snapshot_store 落盘记录；交叉日 runbook 顺序（§12.1） |
+| H3 | 臂序为 task-block 确定性随机（禁止臂块顺序） | `--dry-run --day N --arms x1,x2,x3,x4` 输出为逐任务臂序排列；同 run-id 重跑 diff 为空 |
+| H4 | held-out 摘除确认：held_out_tasks() 恰 8 个、与 D1 切片零交集、不出现在非四臂日 | `--dry-run` 各日切片 grep held-out 无命中；四臂日 x2/x3 含、x1/x4 无 |
+| H5 | 写入隔离：夜间进化合成器带 `--eligible-arms`（四臂日默认 experiment,x2），held-out transcripts 排除 | 合成器日志 excluded 计数；交叉日先对账再进化 |
+| H6 | 环境隔离：四臂 workspace 按 `dayN/<arm>/task` 独立克隆（base assets 确定性复制） | 目录结构抽检；side-effect 任务无前臂残留 |
+
 ## 启动式参考（9B pilot 实测可用）
 
 ```bash

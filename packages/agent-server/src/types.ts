@@ -79,4 +79,11 @@ export interface InjectionPayload {
 	 * Empty when nothing was spliced into the messages.
 	 */
 	injectedIds: string[];
+	/**
+	 * T4 (preview.html §9): injected-assembly token estimate (heuristic
+	 * ceil(chars/4), see injection.ts) covering the same spliced block text
+	 * as injectedIds — written to request_traces.injected_tokens. 0 when
+	 * nothing was spliced.
+	 */
+	injectedTokens: number;
 }

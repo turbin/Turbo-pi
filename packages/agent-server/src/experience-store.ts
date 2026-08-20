@@ -99,6 +99,13 @@ export interface RequestTraceInput {
 	stream?: boolean;
 	retrievedCount?: number;
 	retrievedIds?: string[];
+	/**
+	 * T4 (preview.html §9): final re-ranked scores of the retrieved items,
+	 * positionally aligned with retrievedIds (retrieve()'s returned score).
+	 * Written in the same phase-1 (retrieval) upsert; COALESCE merge keeps it
+	 * from being clobbered by later phases.
+	 */
+	retrievedScores?: number[];
 	retrievedKinds?: string[];
 	hit?: boolean;
 	/**
@@ -115,6 +122,13 @@ export interface RequestTraceInput {
 	 * do not send one stay unaffected.
 	 */
 	taskId?: string;
+	/**
+	 * T4 (preview.html §9): injected-assembly token estimate (injection.ts
+	 * ceil(chars/4) heuristic). Explicit 0 (injection off / nothing spliced)
+	 * vs undefined (phase omits it) distinguished by the COALESCE sentinel;
+	 * NULL for pre-T4 rows.
+	 */
+	injectedTokens?: number;
 	finishReason?: string;
 	promptTokens?: number;
 	completionTokens?: number;
@@ -162,10 +176,11 @@ export function tokenizeForFts(text: string): string {
 export class ExperienceStore {
 	/**
 	 * F2 (T3): schema version for experiences.confidence /
-	 * rescore_excluded_batches migrations. initSchema ensures the columns
+	 * rescore_excluded_batches migrations; T4 adds request_traces.
+	 * retrieved_scores / injected_tokens. initSchema ensures the columns
 	 * (PRAGMA table_info + ALTER, M1 pattern) and stamps user_version.
 	 */
-	static readonly SCHEMA_VERSION = 1;
+	static readonly SCHEMA_VERSION = 2;
 
 	private db: Database.Database;
 	private readDb: Database.Database;
@@ -224,9 +239,14 @@ export class ExperienceStore {
 				stream INTEGER NOT NULL DEFAULT 0,
 				retrieved_count INTEGER NOT NULL DEFAULT 0,
 				retrieved_ids TEXT NOT NULL DEFAULT '[]',
+				-- T4 (preview.html §9): 重排后最终分数，与 retrieved_ids 按位对齐。
+				retrieved_scores TEXT NOT NULL DEFAULT '[]',
 				retrieved_kinds TEXT NOT NULL DEFAULT '[]',
 				hit INTEGER NOT NULL DEFAULT 0,
 				injected_ids TEXT NOT NULL DEFAULT '[]',
+				-- T4 (preview.html §9): 注入组装 token 估计（ceil(chars/4) 启发式）；
+				-- 可空：旧行/未到注入阶段保持 NULL，注入关闭显式写 0。
+				injected_tokens INTEGER,
 				task_id TEXT,
 				finish_reason TEXT,
 				prompt_tokens INTEGER,
@@ -252,9 +272,12 @@ export class ExperienceStore {
 		}
 		// F2 (T3): experiences 增 confidence/rescore_excluded_batches——PRAGMA + ALTER
 		// 迁移（M1 模式）+ user_version 版本化；旧行读回列默认值（COALESCE 语义）。
-		// 快照（readDb）只读打开，从不被 ALTER（M10 写侧-读侧分离）。
+		// T4: request_traces 增 retrieved_scores/injected_tokens——同模式，独立
+		// 版本步（version < 2）；旧行 retrieved_scores 回填 '[]'、injected_tokens
+		// 保持 NULL（NULL 兼容旧行）。快照（readDb）只读打开，从不被 ALTER
+		// （M10 写侧-读侧分离）。
 		const version = this.db.pragma("user_version", { simple: true }) as number;
-		if (version < ExperienceStore.SCHEMA_VERSION) {
+		if (version < 1) {
 			const expCols = this.db.prepare("PRAGMA table_info(experiences)").all() as { name: string }[];
 			const hasExpCol = (name: string) => expCols.some((c) => c.name === name);
 			if (!hasExpCol("confidence")) {
@@ -263,8 +286,18 @@ export class ExperienceStore {
 			if (!hasExpCol("rescore_excluded_batches")) {
 				this.db.exec("ALTER TABLE experiences ADD COLUMN rescore_excluded_batches INTEGER NOT NULL DEFAULT 0");
 			}
-			this.db.pragma(`user_version = ${ExperienceStore.SCHEMA_VERSION}`);
 		}
+		if (version < 2) {
+			const traceCols = this.db.prepare("PRAGMA table_info(request_traces)").all() as { name: string }[];
+			const hasTraceCol = (name: string) => traceCols.some((c) => c.name === name);
+			if (!hasTraceCol("retrieved_scores")) {
+				this.db.exec("ALTER TABLE request_traces ADD COLUMN retrieved_scores TEXT NOT NULL DEFAULT '[]'");
+			}
+			if (!hasTraceCol("injected_tokens")) {
+				this.db.exec("ALTER TABLE request_traces ADD COLUMN injected_tokens INTEGER");
+			}
+		}
+		this.db.pragma(`user_version = ${ExperienceStore.SCHEMA_VERSION}`);
 	}
 
 	async insert(exp: Experience): Promise<void> {
@@ -486,20 +519,27 @@ export class ExperienceStore {
 		// omitted" (phase-2 completion call) from "explicitly empty" (control arm
 		// injection off): the former keeps the phase-1.5 value, the latter sets [].
 		// A dedicated NULL-sentinel parameter in the DO UPDATE clause does that.
+		// T4: retrieved_scores / injected_tokens 同款 sentinel 合并语义——
+		// retrieved_scores 由 phase-1 写、其余 phase 省略不得覆盖；injected_tokens
+		// 显式 0（注入关闭/无拼接）与省略（NULL 保持）分开。
 		const injectedIdsUpdate = input.injectedIds === undefined ? null : JSON.stringify(input.injectedIds);
+		const retrievedScoresUpdate = input.retrievedScores === undefined ? null : JSON.stringify(input.retrievedScores);
+		const injectedTokensUpdate = input.injectedTokens === undefined ? null : input.injectedTokens;
 		this.db
 			.prepare(`
 				INSERT INTO request_traces
-					(request_id, ts, model, stream, retrieved_count, retrieved_ids, retrieved_kinds, hit,
-					 injected_ids, task_id, finish_reason, prompt_tokens, completion_tokens, latency_ms, error)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+					(request_id, ts, model, stream, retrieved_count, retrieved_ids, retrieved_scores, retrieved_kinds, hit,
+					 injected_ids, injected_tokens, task_id, finish_reason, prompt_tokens, completion_tokens, latency_ms, error)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT(request_id) DO UPDATE SET
 					finish_reason = COALESCE(excluded.finish_reason, request_traces.finish_reason),
 					prompt_tokens = COALESCE(excluded.prompt_tokens, request_traces.prompt_tokens),
 					completion_tokens = COALESCE(excluded.completion_tokens, request_traces.completion_tokens),
 					latency_ms = COALESCE(excluded.latency_ms, request_traces.latency_ms),
 					error = COALESCE(excluded.error, request_traces.error),
+					retrieved_scores = COALESCE(?, request_traces.retrieved_scores),
 					injected_ids = COALESCE(?, request_traces.injected_ids),
+					injected_tokens = COALESCE(?, request_traces.injected_tokens),
 					task_id = COALESCE(excluded.task_id, request_traces.task_id)
 			`)
 			.run(
@@ -509,16 +549,20 @@ export class ExperienceStore {
 				input.stream ? 1 : 0,
 				input.retrievedCount ?? 0,
 				JSON.stringify(input.retrievedIds ?? []),
+				JSON.stringify(input.retrievedScores ?? []),
 				JSON.stringify(input.retrievedKinds ?? []),
 				input.hit ? 1 : 0,
 				JSON.stringify(input.injectedIds ?? []),
+				input.injectedTokens ?? null,
 				input.taskId ?? null,
 				input.finishReason ?? null,
 				input.promptTokens ?? null,
 				input.completionTokens ?? null,
 				input.latencyMs ?? null,
 				input.error ?? null,
+				retrievedScoresUpdate,
 				injectedIdsUpdate,
+				injectedTokensUpdate,
 			);
 	}
 
@@ -535,7 +579,7 @@ export class ExperienceStore {
 			.all(cutoff) as { day: string; total: number; hits: number }[];
 		const recent = this.db
 			.prepare(
-				"SELECT request_id AS requestId, ts, model, stream, retrieved_count AS retrievedCount, retrieved_ids AS retrievedIds, COALESCE(injected_ids, '[]') AS injectedIds, COALESCE(task_id, '') AS taskId, hit, finish_reason AS finishReason, prompt_tokens AS promptTokens, completion_tokens AS completionTokens, latency_ms AS latencyMs, error FROM request_traces WHERE ts >= ? ORDER BY ts DESC LIMIT 20",
+				"SELECT request_id AS requestId, ts, model, stream, retrieved_count AS retrievedCount, retrieved_ids AS retrievedIds, retrieved_scores AS retrievedScores, COALESCE(injected_ids, '[]') AS injectedIds, injected_tokens AS injectedTokens, COALESCE(task_id, '') AS taskId, hit, finish_reason AS finishReason, prompt_tokens AS promptTokens, completion_tokens AS completionTokens, latency_ms AS latencyMs, error FROM request_traces WHERE ts >= ? ORDER BY ts DESC LIMIT 20",
 			)
 			.all(cutoff) as Record<string, unknown>[];
 		// byKind: expand the JSON retrieved_kinds arrays in JS (window is small).

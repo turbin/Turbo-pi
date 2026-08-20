@@ -79,9 +79,15 @@ export async function buildInjection(
 		}
 	}
 	const injectedIds: string[] = [];
+	let injectedTokens = 0;
 	if (blocks.length && lastUserIdx >= 0) {
-		messages.splice(lastUserIdx, 0, { role: "user", content: blocks.join("\n\n"), timestamp: Date.now() });
+		const spliced = blocks.join("\n\n");
+		messages.splice(lastUserIdx, 0, { role: "user", content: spliced, timestamp: Date.now() });
 		injectedIds.push(...evidenceIds, ...topMethods.map((m) => m.id), ...topGuards.map((g) => g.id));
+		// T4 (preview.html §9): 注入组装 token 估计 = ceil(chars/4) 启发式
+		// （沿用 mock-benchmark 既有口径：无现成 tokenizer，按字符数 /4 上取整）；
+		// 只估拼接块文本——与 injectedIds 同口径（SKILL/SOP 独立通道不参与）。
+		injectedTokens = Math.ceil(spliced.length / 4);
 	}
 
 	let systemPrompt = context.systemPrompt;
@@ -108,5 +114,5 @@ export async function buildInjection(
 		}
 	}
 
-	return { messages, systemPrompt, tools, injectedIds };
+	return { messages, systemPrompt, tools, injectedIds, injectedTokens };
 }

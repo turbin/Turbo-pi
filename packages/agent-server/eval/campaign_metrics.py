@@ -13,6 +13,17 @@
 
 C2（2026-08-09 对抗审查）："escalated" 必须真实标注（运行时 x-gateway 标记或
 model_runs 回填）；未标注的行一律 fail loud，绝不当作 0 升级率放行。
+
+T4（2026-08-19 D 阶段增强，preview.html §3 Analysis Addendum）：假独立三指标，
+预注册——只做报告，不改既有判据函数：
+  成功 = score >= 0.5（与 campaign.py PASS_THRESHOLD 同口径）
+  "明显失败"（§3 组合定义）：score < 0.3 ∨ grading_error == True ∨
+    (termination_reason == "max_turns" ∧ score < 0.5)；旧 run.jsonl 行无
+    termination_reason 时第三个子句跳过（.get 容错）。
+  AutonomousSuccessRate = 成功且未升级任务数 / 全部任务数
+  MissedEscalationRate  = 明显失败且未升级任务数 / 明显失败任务数
+  EscalatedSuccessRate  = 升级后成功任务数 / 升级任务数
+  比率分母为零时记 0.0，并附各分母计数（n 字段）供口径核对。
 """
 
 import json
@@ -21,6 +32,7 @@ from pathlib import Path
 
 CRITERION_REPEAT_D7_MAX = 0.05
 CRITERION_NEW_MAX = 0.20
+PASS_THRESHOLD = 0.5  # 成功口径，与 campaign.py 同值
 
 
 def load_results(path: Path) -> list[dict]:
@@ -73,6 +85,51 @@ def pass_rate(rows: list[dict]) -> float:
     if not rows:
         return 0.0
     return sum(1 for r in rows if r.get("passed")) / len(rows)
+
+
+def _grading_error(row: dict) -> bool:
+    """评分崩溃标记：row["grading"]["grading_error"]（campaign.py 落盘形态）
+    或顶层 row["grading_error"]（合成/手工行）两种形态都认。"""
+    grading = row.get("grading")
+    if isinstance(grading, dict):
+        return bool(grading.get("grading_error"))
+    return bool(row.get("grading_error"))
+
+
+def is_obvious_failure(row: dict) -> bool:
+    """preview.html §3 预注册"明显失败"组合：score < 0.3 ∨ grading_error ∨
+    (termination_reason == "max_turns" ∧ score < 0.5)。
+    旧行无 termination_reason 时第三个子句跳过；score 缺失按 0 处理（保守：
+    缺评分即视为失败，纳入漏升级审计）。"""
+    score = row.get("score", 0.0)
+    if score < 0.3:
+        return True
+    if _grading_error(row):
+        return True
+    return row.get("termination_reason") == "max_turns" and score < PASS_THRESHOLD
+
+
+def addendum_metrics(rows: list[dict]) -> dict:
+    """§3 假独立三指标 + 分母计数；输入行集合的总体口径（不按臂过滤，
+    调用方决定作用域），比率分母为零时记 0.0。"""
+    total = len(rows)
+    success = [r for r in rows if r.get("score", 0.0) >= PASS_THRESHOLD]
+    autonomous = [r for r in success if not r.get("escalated")]
+    failures = [r for r in rows if is_obvious_failure(r)]
+    missed = [r for r in failures if not r.get("escalated")]
+    escalated_rows = [r for r in rows if r.get("escalated")]
+    escalated_ok = [r for r in escalated_rows if r.get("score", 0.0) >= PASS_THRESHOLD]
+    return {
+        "autonomous_success_rate": len(autonomous) / total if total else 0.0,
+        "autonomous_success_n": len(autonomous),
+        "total_n": total,
+        "missed_escalation_rate": len(missed) / len(failures) if failures else 0.0,
+        "missed_escalation_n": len(missed),
+        "obvious_failure_n": len(failures),
+        "escalated_success_rate": len(escalated_ok) / len(escalated_rows) if escalated_rows else 0.0,
+        "escalated_success_n": len(escalated_ok),
+        "escalated_n": len(escalated_rows),
+    }
 
 
 def daily_summary(rows: list[dict]) -> list[dict]:

@@ -97,3 +97,54 @@ def test_four_arm_plan_covers_repeat_set_only(tmp_path):
         assert all(t.startswith("task_") for t in task_ids)
     # 四臂任务集一致（同一重复集）。
     assert set(plan["x1"]) == set(plan["x2"]) == set(plan["x3"]) == set(plan["x4"])
+
+
+def _four_arm_rows_with_held_out() -> list[dict]:
+    """D7 四臂日真实落库形态：重复 20 任务 × 4 臂 + held-out 8 任务只挂 x2/x3
+    （campaign.py --arms 模式：held-out 行 kind=held_out、arm=x2/x3）。"""
+    rows = []
+    for i in range(20):
+        for arm in CROSS_ARMS:
+            rows.append({"day": 7, "task_id": f"task_{i:05d}", "kind": "repeat", "arm": arm, "score": 0.8})
+    for i in range(8):
+        for arm in ("x2", "x3"):
+            rows.append({"day": 7, "task_id": f"held_{i:02d}", "kind": "held_out", "arm": arm, "score": 0.2})
+    return rows
+
+
+def test_held_out_rows_do_not_contaminate_cross_diffs():
+    """held-out 行不得计入四臂差分均值（preview §7.2：transfer 比较独立于
+    cross 2×2 差分口径，x1..x4 均值都应只含重复集）。原为 xfail（pi-test 复核
+    确认污染成立），修复 cross_arm_diffs 按 kind 过滤后转绿。"""
+    rows = _four_arm_rows_with_held_out()
+    diffs = cross_arm_diffs(rows)
+    # 无污染期望：四臂均值同 0.8 → 差分全 0。
+    assert diffs["overall"]["library_evolution"] == pytest.approx(0.0)
+    assert diffs["overall"]["sanity_diff"] == pytest.approx(0.0)
+    assert diffs["overall"]["injection_effect"] == pytest.approx(0.0)
+
+
+def test_cross_arm_diffs_n_counts_filtered_repeat_only():
+    """n_per_arm_per_day 按过滤后实际计数（held-out 行不计入），非硬编码 20。"""
+    rows = _four_arm_rows_with_held_out()
+    diffs = cross_arm_diffs(rows)
+    n = diffs["n_per_arm_per_day"]
+    assert n["7"]["x1"] == 20 and n["7"]["x4"] == 20
+    assert n["7"]["x2"] == 20 and n["7"]["x3"] == 20  # held-out 8 行不计入
+
+
+def test_transfer_gain_computed_from_held_out_rows():
+    """preview §7.2：TransferGain = held_out 任务 x2 均分 − x3 均分（D7 memory
+    on/off），独立于 cross 差分；附两臂计数。"""
+    rows = _four_arm_rows_with_held_out()
+    for r in rows:
+        if r["kind"] == "held_out" and r["arm"] == "x2":
+            r["score"] = 0.8  # memory on 侧提高
+    tg = campaign_cross.transfer_gain(rows)
+    assert tg["transfer_gain"] == pytest.approx(0.8 - 0.2)
+    assert tg["x2_n"] == 8 and tg["x3_n"] == 8
+
+
+def test_transfer_gain_none_without_held_out_rows():
+    """无 held_out 行（非四臂日/旧结果）→ transfer_gain 为 None，不报错。"""
+    assert campaign_cross.transfer_gain(make_rows()) is None

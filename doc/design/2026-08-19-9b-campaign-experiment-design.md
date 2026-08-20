@@ -1,6 +1,6 @@
 # D 阶段：9B 全量重跑批实验设计（判据预注册）
 
-日期：2026-08-19 ｜ 状态：**已起跑（D1 双臂进行中，2026-08-19 15:00 启动）；交叉臂排期已定案（用户 2026-08-19 拍板方案 A：仅 D2/D7 跑四臂）**
+日期：2026-08-19 ｜ 状态：**【已被 preview.html 增强版取代（2026-08-19）】主判据①-⑤两稿一致预注册不变；Analysis Addendum（Q8 transfer/因果分解/轨迹指标/写入隔离/环境隔离/红线）以 `doc/design/preview.html` 为唯一主稿。本稿保留作历史记录与 §3 成本定案（方案 A）出处。**
 依据：plans/2026-08-14-post-c-unified-fix-batch-plan.md v5 §108（9B 切换裁决）；plans/2026-08-14-plan-library-version-cross-eval.md（交叉臂立项）；2026-08-05-agent-server-c-campaign-design.md（C 设计，本稿沿用其框架）；pilot 校准（2026-08-19）
 
 ## 0. 与既有文档的关系

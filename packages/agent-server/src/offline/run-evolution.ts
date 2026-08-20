@@ -18,6 +18,12 @@ import { runDailyEvolution } from "./scheduler.ts";
  * <run_dir>` reuses that run's artifacts: input-hash matching groups are
  * skipped, only unfinished scoring runs again.
  *
+ * T10 (2026-08-19, 评审§十六): the spawned Python pipeline modules append one
+ * usage line per LLM call to the teacher usage ledger
+ * var/eval/evolution-usage.jsonl (each python/ llm_client.py; env
+ * EVOLUTION_USAGE_LEDGER overrides the path) — consumed by
+ * eval/metrics_v2.py --usage-ledger for AmortizedTeacherCost.
+ *
  * Config via env:
  *   EXPERIENCE_STORE_PATH    → experience.db path (default ./var/experience.db)
  *   AGENT_SERVER_BENCHMARK   → benchmark JSON path for pipeline

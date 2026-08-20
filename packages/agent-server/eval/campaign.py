@@ -6,6 +6,11 @@
   2. 对照臂（仅 D1/D7）：重复集，经 8789 + injection off（同路径对照，trace 全落库）
   3. 当日结束后：合成任务级轨迹 → runDailyEvolution → 次日用热库
 
+四臂日（--arms x1,x2,x3,x4，D2/D7）：以 task 为 block、臂序 seed 确定性
+随机（preview.html §12.2，禁止臂块顺序）；held-out 冻结任务只挂 x2/x3
+（§7.2/Q8，D7 memory on/off transfer 比较）；termination_reason 三态落库
+（§8.1：completed/max_turns/timeout，CapHit 不以 requests==30 替代）。
+
 判据预注册见 doc/design/2026-08-05-agent-server-c-campaign-design.md。
 
 用法：
@@ -16,6 +21,7 @@
 
 import argparse
 import contextlib
+import hashlib
 import json
 import os
 import shutil
@@ -27,7 +33,7 @@ from pathlib import Path
 from openai import OpenAI
 
 from campaign_metrics import check_criteria, daily_summary
-from campaign_plan import daily_batch, load_tasks
+from campaign_plan import daily_batch, held_out_tasks, load_tasks
 import campaign_cross
 from preflight import ensure_for_base_url
 
@@ -187,9 +193,15 @@ def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int,
     requests = 0
     trace_ids: list[str] = []
     escalated = False
+    # preview.html §8.1：终止原因三态——自然完成（无 tool_calls break）=
+    # "completed"、MAX_TURNS 耗尽="max_turns"、超 timeout_s="timeout"。
+    # CapHit 严格以 termination_reason == "max_turns" 判定，不以 requests==30
+    # 替代（30 回合内完成同样是合法终止）。timeout 分支已追加 [timeout]，补标志。
+    termination_reason = "max_turns"
     for _ in range(MAX_TURNS):
         if time.time() - t0 > timeout_s:
             transcript.append({"type": "message", "message": {"role": "assistant", "content": [{"type": "text", "text": "[timeout]"}]}})
+            termination_reason = "timeout"
             break
         requests += 1
         # 27B 慢回合 latency 可达 700-950s（D1 事故：单次 APITimeout 杀死整日
@@ -232,6 +244,7 @@ def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int,
         transcript.append({"type": "message", "message": {"role": "assistant", "content": parts}})
         if not msg.tool_calls:
             messages.append({"role": "assistant", "content": msg.content or ""})
+            termination_reason = "completed"
             break
         messages.append(msg.model_dump())
         for call in msg.tool_calls:
@@ -255,6 +268,7 @@ def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int,
             messages.append({"role": "tool", "tool_call_id": call.id, "content": output})
     return {
         "status": "completed",
+        "termination_reason": termination_reason,
         "transcript": transcript,
         "workspace": str(ws),
         "requests": requests,
@@ -279,6 +293,38 @@ def grade(task_id: str, execution: dict, ws: Path) -> dict:
     return result.to_dict()
 
 
+def arm_order_for_task(arms: list[str], run_id: str, day: int, task_id: str) -> list[str]:
+    """preview.html §12.2：task-block 下每任务的臂序 = seed 确定性随机排列。
+
+    seed 派生自 run_id+day+task_id（sha256 取 digest 排序），同 run-id 重跑
+    顺序一致；不同任务（不同 seed）排列不同。只改执行顺序——臂 →
+    client/injection/library 取值逻辑（campaign_cross.ARM_LIBRARY/
+    ARM_INJECTION、client_frozen 冻结臂）保持不变。"""
+    seed = f"{run_id}-d{day}-{task_id}"
+    return sorted(arms, key=lambda arm: hashlib.sha256(f"{seed}:{arm}".encode()).digest())
+
+
+def task_block_plan(arms: dict[str, list[str]], run_id: str, day: int) -> list[tuple[str, str]]:
+    """--arms 模式执行计划（preview.html §12.2，禁止"全部 X1 → 全部 X2 → ..."
+    臂块顺序——25h 窗口时间漂移）。
+
+    以 task 为 block：任务顺序 = 各臂任务列表的并集（首次出现序：重复集在前、
+    held-out 在后）；每任务的臂序 = arm_order_for_task 的确定性随机排列，只取
+    包含该任务的臂（held-out 仅 x2/x3）。返回 [(arm, task_id), ...] 执行序列。"""
+    arm_tasks = {arm: set(ids) for arm, ids in arms.items()}
+    task_ids: list[str] = []
+    for arm in sorted(arms):
+        for tid in arms[arm]:
+            if tid not in task_ids:
+                task_ids.append(tid)
+    plan: list[tuple[str, str]] = []
+    for tid in task_ids:
+        present = [arm for arm in sorted(arms) if tid in arm_tasks[arm]]
+        for arm in arm_order_for_task(present, run_id, day, tid):
+            plan.append((arm, tid))
+    return plan
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--day", type=int)
@@ -289,7 +335,8 @@ def main() -> None:
         "--arms",
         default="",
         help="T7 交叉臂模式：x1,x2,x3,x4（冻结库×注入开 / 当日库×开 / 当日库×关 / 冻结库×关）；"
-        "每臂跑当日重复集。缺省 = 旧双臂（experiment/control）。",
+        "臂序以 task 为 block、seed 确定性随机（preview §12.2），held-out 只挂 x2/x3（§7.2/Q8）。"
+        "缺省 = 旧双臂（experiment/control）。",
     )
     ap.add_argument(
         "--frozen-base-url",
@@ -307,17 +354,21 @@ def main() -> None:
     args = ap.parse_args()
 
     if args.metrics:
-        from campaign_metrics import annotate_escalation, load_results
+        from campaign_metrics import addendum_metrics, annotate_escalation, load_results
 
         rows = load_results(Path(args.metrics))
         gateway_db = Path(args.gateway_db or "../../agent-gateway/var/agent_gateway.db")
         if gateway_db.exists():
             rows = annotate_escalation(rows, gateway_db)
-        report = {"daily": daily_summary(rows), "criteria": check_criteria(rows)}
-        # T7：结果含四臂时附加交叉差分核算（库演进 / 即时注入 / sanity）。
+        # T4（§3）：假独立三指标随报告输出（附分母计数），不改判据。
+        report = {"daily": daily_summary(rows), "criteria": check_criteria(rows), "addendum": addendum_metrics(rows)}
+        # T7：结果含四臂时附加交叉差分核算（库演进 / 即时注入 / sanity），
+        # preview §7.2：transfer_gain 为 held-out 独立口径（x2 − x3），无
+        # held_out 行时为 None。
         if all(any(r.get("arm") == arm for r in rows) for arm in campaign_cross.CROSS_ARMS):
             report["cross"] = {"diffs": campaign_cross.cross_arm_diffs(rows),
-                               "sanity": campaign_cross.check_sanity(rows)}
+                               "sanity": campaign_cross.check_sanity(rows),
+                               "transfer_gain": campaign_cross.transfer_gain(rows)}
         print(json.dumps(report, indent=2, ensure_ascii=False))
         return
 
@@ -328,22 +379,41 @@ def main() -> None:
     batch = daily_batch(tasks, args.day)
     if args.arms:
         # T7 交叉臂模式：每臂跑当日重复集（四臂 = 库版本 × 注入开关 2×2）。
-        arms = {arm: batch["repeat"] for arm in args.arms.split(",")}
+        # preview.html §7.2/Q8：held-out 冻结任务只挂 current 臂（x2/x3）——
+        # D7 memory on/off transfer 比较；冻结臂（x1/x4）与旧双臂不跑 held-out。
+        held = set(held_out_tasks(tasks))
+        arms = {arm: list(batch["repeat"]) for arm in args.arms.split(",")}
+        held_arms = [arm for arm in ("x2", "x3") if arm in arms]
+        for arm in held_arms:
+            arms[arm] = arms[arm] + sorted(held)
         frozen_base = args.frozen_base_url or AGENT_SERVER
         client_frozen = OpenAI(base_url=frozen_base, api_key="lobster-local-key", timeout=1800.0)
+        held_note = f"; held-out {len(held)} on {','.join(held_arms)}" if held and held_arms else ""
         print(f"day {args.day}: cross arms {sorted(arms)} repeat={len(batch['repeat'])} each"
-              f" (frozen base: {frozen_base})")
+              f" (frozen base: {frozen_base}){held_note}")
     else:
+        held = set()
         arms = {"experiment": batch["repeat"] + batch["new"]}
         if args.day in (1, 7):
             arms["control"] = batch["repeat"]
         client_frozen = None
         print(f"day {args.day}: repeat={len(batch['repeat'])} new={len(batch['new'])}")
+    # 执行计划：--arms = task-block 随机臂序（§12.2）；旧双臂保持
+    # experiment 后 control 的既有顺序不变。
+    plan = task_block_plan(arms, args.run_id, args.day) if args.arms \
+        else [(arm, tid) for arm, ids in arms.items() for tid in ids]
     if args.dry_run:
-        for arm, ids in arms.items():
-            print(f"  [{arm}] {len(ids)} tasks")
-            for tid in ids:
-                print(f"    {tid}")
+        if args.arms:
+            by_task: dict[str, list[str]] = {}
+            for arm, tid in plan:
+                by_task.setdefault(tid, []).append(arm)
+            for tid, arm_seq in by_task.items():
+                print(f"  {tid}: {' → '.join(arm_seq)}")
+        else:
+            for arm, ids in arms.items():
+                print(f"  [{arm}] {len(ids)} tasks")
+                for tid in ids:
+                    print(f"    {tid}")
         return
 
     ensure_for_base_url(AGENT_SERVER)
@@ -360,88 +430,100 @@ def main() -> None:
         print(f"resume: {len(done)} tasks already completed, skipping")
 
     with open(out_path, "a") as out:
-        for arm, ids in arms.items():
-            for i, task_id in enumerate(ids):
-                if (args.day, arm, task_id) in done:
-                    print(f"[{arm} {i + 1}/{len(ids)}] {task_id} skip (done)")
-                    continue
-                kind = "repeat" if task_id in set(batch["repeat"]) else "new"
-                meta = next(t for t in tasks if t.id == task_id)
-                ws = setup_workspace(task_id, out_dir / f"day{args.day}" / arm)
-                # T7 交叉臂（m5-test-review 缺陷-1 修复）：注入按臂接线
-                # （ARM_INJECTION：x1/x2 开、x3/x4 关）、冻结臂走冻结实例
-                # （client_frozen，锁库不换载）、library 维度按臂取值。
-                if args.arms:
-                    arm_client = client_frozen if campaign_cross.ARM_LIBRARY[arm] == "frozen" else client
-                    injection = campaign_cross.ARM_INJECTION[arm]
-                    library = campaign_cross.ARM_LIBRARY[arm]
-                else:
-                    arm_client = client
-                    injection = arm == "experiment"
-                    library = ""
-                execution = None
-                lf_seed = f"{args.run_id}-d{args.day}-{arm}-{task_id}"
-                lf_meta = {
-                    "run_id": args.run_id,
-                    "day": args.day,
-                    "arm": arm,
-                    "task_id": task_id,
-                    "kind": kind,
-                    "model": args.model,
-                    **({"library": library} if args.arms else {}),
-                }
-                with task_observation(lf, seed=lf_seed, name=f"task:{arm}:{task_id}", metadata=lf_meta) as obs:
-                    execution = run_agent(
-                        arm_client, args.model, task_prompt(task_id), ws, meta.timeout_seconds,
-                        injection=injection, task_id=task_id, domain="office",
-                    )
-                    g = safe_grade(task_id, execution, ws)
-                    try:
-                        obs.update(output={
-                            "score": g["score"],
-                            "requests": execution["requests"],
-                            "escalated": execution["escalated"],
-                            "trace_ids": execution["trace_ids"],
-                        })
-                    except Exception as e:  # noqa: BLE001 - 上报失败不炸批
-                        print(f"langfuse update failed ({type(e).__name__}: {e})", file=sys.stderr)
-                report_score(lf, seed=lf_seed, score=g["score"], comment=str(g.get("notes", "")))
-                # 轨迹落盘（夜间进化的原料）：每任务一份完整 transcript，
-                # 缺失即无进化输入——合成器对它硬失败。
-                traj_dir = out_dir / "transcripts" / f"day{args.day}"
-                traj_dir.mkdir(parents=True, exist_ok=True)
-                (traj_dir / f"{arm}-{task_id}.json").write_text(
-                    json.dumps(
-                        {
-                            "task_id": task_id,
-                            "arm": arm,
-                            "day": args.day,
-                            "prompt": task_prompt(task_id),
-                            "transcript": execution["transcript"],
-                            "score": g["score"],
-                        },
-                        ensure_ascii=False,
-                    )
+        arm_pos = {arm: 0 for arm in arms}
+        arm_total = {arm: len(ids) for arm, ids in arms.items()}
+        for arm, task_id in plan:
+            arm_pos[arm] += 1
+            if (args.day, arm, task_id) in done:
+                print(f"[{arm} {arm_pos[arm]}/{arm_total[arm]}] {task_id} skip (done)")
+                continue
+            # kind：held-out 单独标出（§7.2/Q8，供 D7 transfer 比较对账），
+            # 不影响判据（check_criteria/daily_summary 只看 experiment 臂）。
+            if task_id in set(batch["repeat"]):
+                kind = "repeat"
+            elif task_id in held:
+                kind = "held_out"
+            else:
+                kind = "new"
+            meta = next(t for t in tasks if t.id == task_id)
+            ws = setup_workspace(task_id, out_dir / f"day{args.day}" / arm)
+            # T7 交叉臂（m5-test-review 缺陷-1 修复）：注入按臂接线
+            # （ARM_INJECTION：x1/x2 开、x3/x4 关）、冻结臂走冻结实例
+            # （client_frozen，锁库不换载）、library 维度按臂取值。
+            if args.arms:
+                arm_client = client_frozen if campaign_cross.ARM_LIBRARY[arm] == "frozen" else client
+                injection = campaign_cross.ARM_INJECTION[arm]
+                library = campaign_cross.ARM_LIBRARY[arm]
+            else:
+                arm_client = client
+                injection = arm == "experiment"
+                library = ""
+            execution = None
+            lf_seed = f"{args.run_id}-d{args.day}-{arm}-{task_id}"
+            lf_meta = {
+                "run_id": args.run_id,
+                "day": args.day,
+                "arm": arm,
+                "task_id": task_id,
+                "kind": kind,
+                "model": args.model,
+                **({"library": library} if args.arms else {}),
+            }
+            with task_observation(lf, seed=lf_seed, name=f"task:{arm}:{task_id}", metadata=lf_meta) as obs:
+                execution = run_agent(
+                    arm_client, args.model, task_prompt(task_id), ws, meta.timeout_seconds,
+                    injection=injection, task_id=task_id, domain="office",
                 )
-                row = {
-                    "day": args.day,
-                    "task_id": task_id,
-                    "kind": kind,
-                    "arm": arm,
-                    "score": g["score"],
-                    "passed": g["score"] >= PASS_THRESHOLD,
-                    # T7：四臂落库附库版本维度（frozen/daily），差分核算按臂取值。
-                    **({"library": library} if args.arms else {}),
-                    # C2：升级标记来自网关 x-gateway 头（M1），trace_ids 供
-                    # model_runs 回填核对；不再硬编码 False。
-                    "escalated": execution["escalated"],
-                    "trace_ids": execution["trace_ids"],
-                    "requests": execution["requests"],
-                    "grading": g,
-                }
-                out.write(json.dumps(row, ensure_ascii=False) + "\n")
-                out.flush()
-                print(f"[{arm} {i + 1}/{len(ids)}] {task_id} score={g['score']:.2f}")
+                g = safe_grade(task_id, execution, ws)
+                try:
+                    obs.update(output={
+                        "score": g["score"],
+                        "requests": execution["requests"],
+                        "escalated": execution["escalated"],
+                        "trace_ids": execution["trace_ids"],
+                    })
+                except Exception as e:  # noqa: BLE001 - 上报失败不炸批
+                    print(f"langfuse update failed ({type(e).__name__}: {e})", file=sys.stderr)
+            report_score(lf, seed=lf_seed, score=g["score"], comment=str(g.get("notes", "")))
+            # 轨迹落盘（夜间进化的原料）：每任务一份完整 transcript，
+            # 缺失即无进化输入——合成器对它硬失败。
+            traj_dir = out_dir / "transcripts" / f"day{args.day}"
+            traj_dir.mkdir(parents=True, exist_ok=True)
+            (traj_dir / f"{arm}-{task_id}.json").write_text(
+                json.dumps(
+                    {
+                        "task_id": task_id,
+                        "arm": arm,
+                        "day": args.day,
+                        "prompt": task_prompt(task_id),
+                        "transcript": execution["transcript"],
+                        "score": g["score"],
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            row = {
+                "day": args.day,
+                "task_id": task_id,
+                "kind": kind,
+                "arm": arm,
+                "score": g["score"],
+                "passed": g["score"] >= PASS_THRESHOLD,
+                # T7：四臂落库附库版本维度（frozen/daily），差分核算按臂取值。
+                **({"library": library} if args.arms else {}),
+                # C2：升级标记来自网关 x-gateway 头（M1），trace_ids 供
+                # model_runs 回填核对；不再硬编码 False。
+                "escalated": execution["escalated"],
+                "trace_ids": execution["trace_ids"],
+                "requests": execution["requests"],
+                # preview.html §8.1：终止原因三态（completed/max_turns/timeout），
+                # CapHit 判定专用；旧行无此字段，下游读取用 .get() 容错。
+                "termination_reason": execution["termination_reason"],
+                "grading": g,
+            }
+            out.write(json.dumps(row, ensure_ascii=False) + "\n")
+            out.flush()
+            print(f"[{arm} {arm_pos[arm]}/{arm_total[arm]}] {task_id} score={g['score']:.2f}")
 
     if lf is not None:
         try:

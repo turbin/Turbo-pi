@@ -17,15 +17,46 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Callable, Protocol, runtime_checkable
 
 
 class LLMError(RuntimeError):
     """LLM 调用失败（网络错误 / HTTP 错误 / 响应格式不符）。"""
+
+
+def _ledger_path() -> str:
+    """T10（评审§十六）usage 台账路径：env EVOLUTION_USAGE_LEDGER 覆盖，
+    缺省 var/eval/evolution-usage.jsonl（cwd 相对，与 EXPERIENCE_STORE_PATH 同约定）。"""
+    return os.environ.get("EVOLUTION_USAGE_LEDGER") or "var/eval/evolution-usage.jsonl"
+
+
+def append_usage_ledger(model: str, prompt_tokens: int, completion_tokens: int, caller: str) -> None:
+    """T10（评审§十六）：每次成功 LLM 调用追写一行 JSONL 台账
+    {ts, model, prompt_tokens, completion_tokens, caller}。
+    写失败只告警不抛——台账是观测设施，不得阻断进化管线。"""
+    try:
+        path = _ledger_path()
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        line = json.dumps(
+            {
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "model": model,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "caller": caller,
+            },
+            ensure_ascii=False,
+        )
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+    except OSError as exc:
+        print(f"usage ledger append failed: {exc}", file=sys.stderr)
 
 
 @runtime_checkable
@@ -58,12 +89,16 @@ class OpenAICompatClient:
     """
 
     def __init__(self, base_url: str | None = None, api_key: str | None = None,
-                 model: str | None = None, *, timeout: float = 120.0):
+                 model: str | None = None, *, timeout: float = 120.0,
+                 caller: str | None = None):
         self.base_url = (base_url or os.environ.get("LLM_BASE_URL")
                          or "http://localhost:8000/v1").rstrip("/")
         self.api_key = api_key if api_key is not None else os.environ.get("LLM_API_KEY", "")
         self.model = model or os.environ.get("LLM_MODEL") or "default-model"
         self.timeout = timeout
+        # T10（评审§十六）：usage 台账 caller 标注；缺省取所属包名
+        # （skill_evolution / verification_selection）。
+        self.caller = caller or (__package__ or "unknown").split(".")[0]
 
     @classmethod
     def teacher_from_env(cls, **kw: Any) -> "OpenAICompatClient":
@@ -108,10 +143,21 @@ class OpenAICompatClient:
             else:
                 # 200 但无 choices（上游错误体/中继异常）：同样按瞬时故障重试。
                 if "choices" in data:
+                    self._record_usage(data)
                     return data
                 last_err = f"响应缺 choices: {str(data)[:300]}"
             time.sleep(2**attempt)
         raise LLMError(f"LLM 响应异常（已重试 3 次）: {last_err}")
+
+    def _record_usage(self, data: dict) -> None:
+        """T10（评审§十六）：成功响应（含 usage）追写台账；usage 缺失记 0。"""
+        usage = data.get("usage") or {}
+        append_usage_ledger(
+            model=self.model,
+            prompt_tokens=int(usage.get("prompt_tokens", 0) or 0),
+            completion_tokens=int(usage.get("completion_tokens", 0) or 0),
+            caller=self.caller,
+        )
 
     # -- 协议实现 -----------------------------------------------------------
     def chat(self, messages: list[dict], **kw: Any) -> str:

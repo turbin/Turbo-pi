@@ -18,6 +18,11 @@ const TOKEN_RE = /[一-鿿]+|[a-zA-Z0-9]+/g;
  * F3 (T4): domain filter — when `domain` is given, tagged candidates from
  * other domains are excluded (跨域注入为零), untagged cards (domain 空串,
  * 存量卡) always pass; a missing `domain` argument disables filtering.
+ *
+ * T4 (preview.html §9): each returned item carries its final re-ranked score
+ * (`RetrievedExperience.score`, bm25 候选 + 余弦×confidence 重排后), which
+ * server.ts writes to request_traces.retrieved_scores positionally aligned
+ * with retrieved_ids.
  */
 export async function retrieve(
 	store: ExperienceStore,

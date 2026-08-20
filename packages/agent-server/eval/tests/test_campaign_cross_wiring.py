@@ -50,10 +50,14 @@ def _run_cross_main(tmp_path, monkeypatch) -> list[dict]:
         arm = Path(ws).parts[-1]  # workspace 路径末段 = 臂名（out_dir/day<d>/<arm>）
         calls.append({"arm": arm, "injection": injection, "client": client, "task_id": task_id})
         return {"transcript": [{"role": "assistant", "content": "ok"}],
-                "escalated": False, "trace_ids": ["chatcmpl-fake"], "requests": 1}
+                "escalated": False, "trace_ids": ["chatcmpl-fake"], "requests": 1,
+                "termination_reason": "completed"}
 
     monkeypatch.setattr(campaign, "load_tasks", lambda: [SimpleNamespace(id=t, timeout_seconds=60) for t in task_ids])
     monkeypatch.setattr(campaign, "daily_batch", lambda tasks, day: {"repeat": task_ids, "new": []})
+    # T1/T2：--arms 模式 now 调用 held_out_tasks（SimpleNamespace 任务无
+    # category 属性，split_tasks 会炸）——本文件只测注入/冻结臂接线，held 置空。
+    monkeypatch.setattr(campaign, "held_out_tasks", lambda tasks: [])
     monkeypatch.setattr(campaign, "setup_workspace", lambda task_id, base: str(base))
     monkeypatch.setattr(campaign, "run_agent", fake_run_agent)
     monkeypatch.setattr(campaign, "safe_grade", lambda task_id, execution, ws: {"score": 0.5})

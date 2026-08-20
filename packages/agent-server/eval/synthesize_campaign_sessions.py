@@ -8,11 +8,17 @@
 
 输入：campaign.py 落盘的 transcripts（results/<run_id>/transcripts/dayN/<arm>-<task_id>.json，
 含 prompt + transcript + score）。
+
+写入隔离（preview.html §10 与 §7.2/Q8）：
+  - 默认只合成 experiment/x2 两臂（--eligible-arms 可覆盖）——X1/X3/X4 只读不写入；
+  - held-out 任务的 transcripts 一律排除（memory 中不得有其 exact trajectory）。
 """
 
 import argparse
 import json
 from pathlib import Path
+
+from campaign_plan import held_out_tasks, load_tasks
 
 SYSTEM_PROMPT = (
     "You are an office-automation agent. Complete the task using the bash tool. "
@@ -78,11 +84,40 @@ def synthesize_task(record: dict, out_path: Path, prefix: str) -> None:
                 )
 
 
+def filter_inputs(files: list[Path], eligible_arms: set[str], held_out: set[str]) -> tuple[list[Path], int, int]:
+    """写入隔离过滤（preview.html §10/§7.2）：返回可合成文件与排除计数。
+
+    文件名 <arm>-<task_id>.json：臂名不在 eligible_arms 的跳过（默认
+    experiment,x2——X1/X3/X4 只读不写入）；task_id 在 held-out 集的跳过
+    （held-out 不得进入 evolution）。"""
+    kept: list[Path] = []
+    skipped_arm = 0
+    skipped_held = 0
+    for path in files:
+        stem = path.stem
+        arm = stem.split("-", 1)[0]
+        task_id = stem.split("-", 1)[1] if "-" in stem else stem
+        if arm not in eligible_arms:
+            skipped_arm += 1
+            continue
+        if task_id in held_out:
+            skipped_held += 1
+            continue
+        kept.append(path)
+    return kept, skipped_arm, skipped_held
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--input-dir", required=True, help="transcripts/dayN 目录")
     ap.add_argument("--output-dir", required=True)
     ap.add_argument("--prefix", default="campaign", help="session id 前缀（防跨日/跨臂碰撞）")
+    ap.add_argument(
+        "--eligible-arms",
+        default="experiment,x2",
+        help="可进入 runDailyEvolution 的臂白名单（逗号分隔）；缺省 experiment,x2——"
+        "preview.html §10：X1/X3/X4 默认只读不写入。",
+    )
     args = ap.parse_args()
 
     in_dir = Path(args.input_dir)
@@ -90,10 +125,20 @@ def main() -> None:
     if not files:
         raise SystemExit(f"no transcript files in {in_dir}")
     out_dir = Path(args.output_dir)
-    for path in files:
+    eligible = set(args.eligible_arms.split(","))
+    # preview.html §7.2/Q8：held-out 任务的 transcript 一律排除（不进入进化）。
+    held = set(held_out_tasks(load_tasks()))
+    kept, skipped_arm, skipped_held = filter_inputs(files, eligible, held)
+    if not kept:
+        raise SystemExit(
+            f"no eligible transcript files in {in_dir} "
+            f"(excluded {skipped_arm} arm-ineligible, {skipped_held} held-out)"
+        )
+    for path in kept:
         record = json.loads(path.read_text())
         synthesize_task(record, out_dir / f"{path.stem}.jsonl", args.prefix)
-    print(f"synthesized {len(files)} sessions into {out_dir}")
+    print(f"synthesized {len(kept)} sessions into {out_dir}; "
+          f"excluded {skipped_arm} arm-ineligible, {skipped_held} held-out")
 
 
 if __name__ == "__main__":
