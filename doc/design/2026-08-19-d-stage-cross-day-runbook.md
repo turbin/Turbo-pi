@@ -50,4 +50,6 @@ nohup ./.venv/bin/python -u campaign.py --day 2 --arms x1,x2,x3,x4 \
 | 冻结实例挂掉/库被换载 | 当日四臂数据作废，修复后重跑该逻辑日（run.jsonl 保留断点） |
 | Kimi audit 不可用（配额/故障） | 登记延期，不阻塞主批；audit 缺口在最终报告声明 |
 
+- **D 阶段 run-evolution 启动 env 增补（2026-08-20 实战教训）**：`AGENT_SERVER_PIPELINE_TIMEOUT_MS=900000` 必设（N2 既有裁决：DeepSeek reasoning 模型单评分 30-60s，缺省 300s 子进程超时必 SIGTERM；source `packages/agent-server/.env` 的部署不包含此变量，手动启动必须显式加）；`LLM_MODEL/TEACHER_MODEL=deepseek-v4-flash`（打分口径，勿误设 v4-pro——judge 才是 v4-pro）。
+
 Refer Spec：doc/design/preview.html（§4.4/§7/§10-§13）；doc/design/2026-08-19-run-batch-preflight-checklist.md（H 节）；plans/2026-08-19-d-stage-addendum-dev-tasks.md（裁决登记）
