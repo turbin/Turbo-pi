@@ -1,6 +1,6 @@
 # issue-018: T6 ETL 完整性判据与合成器契约断裂——campaign 合成 session 全部"半截隔离"（dormant 挖掘断流）
 
-- 状态：**deferred（2026-08-20 用户裁决：登记延后处理；D2 夜间进化前应用修法①）**
+- 状态：**fixed（2026-08-21 修法①落地：合成器补 response_completed 闭合条目（同构线上 v3）；真实 D1 transcripts 重合成后 ETL 实测 inserted=52,077/isolated=0；回归测试 eval 1 例 + TS 2 例先红后绿）**
 - 报告：2026-08-20（D1 夜间进化 checkpoint 分析：etlInserted=0 / etlIsolated=32）
 - 影响面：`packages/agent-server/eval/synthesize_campaign_sessions.py`（合成器）× `packages/agent-server/src/offline/etl.ts`（T6 完整性判据）；ETL dormant 挖掘路径（主流水管线不受影响）
 

@@ -2,7 +2,7 @@
 
 状态：进行中
 任务书：`doc/design/2026-07-24-agent-server-eval-benchmark-tasks.md`
-最近更新：2026-08-09T15:10+08:00 by kimi（对抗性审查交付：issue-003 登记 + 39 项发现报告；B 阶段重跑方案与 P0-P2 修复分批均待用户拍板）
+最近更新：2026-08-21T10:35+08:00 by kimi（D1 阶段报告+进化闭环+issue-017/018 修复）（D1 0% 云升级诊断：真实未升级，但明显失败 23/23 漏升级；issue-019 deferred，D1-D7 不改线上门控）
 
 ## 1. 子任务状态表
 
@@ -13,7 +13,7 @@
 | ~~E2 Terminal-Bench A/B~~【废 07-30】 | E2.0/E2.1/E2.2 done；E2.3 全量中止（控制臂 8 trial/2 resolved 归档 `eval/results/tb-full-20260729/`） | claude（kimi 验收） | 2026-07-30T15:30+08:00 | **复验（kimi 07-28）：通过**。原始 results.json 证实控制臂 1/3 resolved（assign-seats）、实验臂 2/3 resolved（assign-seats + blind-maze），126 sessions（含真实 token usage）落盘；252 vitest 全绿。保留项：控制臂 blind-maze 实为安装失败（pip IncompleteRead，agent 未跑）；analyze-access-logs 无 trial 产物。详见验收报告复验节；**E2.3 小规模（kimi 07-29）：控制臂 4/5 = 实验臂 4/5**（唯一失败 ancient-puzzle 双臂 agent 真实运行未解出，有效对照）；六类环境失败全部机制性解决（wheelhouse/中继/测试注入/colima 代理/顺序执行/NO_PROXY），全量 infra 就绪，见 `doc/design/2026-07-28-agent-server-e2-wheelhouse-relay-changes-and-decisions.md` §7-8 |
 | ~~E3 SWE-bench A/B~~【废 07-30】 | cancelled | | | |
 | E2' ALFWorld 三腿 A/B | **done** | kimi | 2026-07-31T15:00+08:00 | **链路接回**（决策记录 `doc/design/2026-07-30-agent-server-student-teacher-reconnect-changes-and-decisions.md`）：8789→8787→omlx+DeepSeek 升级全通；学生测速 3.2min/局、升级率 ~30%；L1=直连 DeepSeek（9/134）；L2=8787 学生基线；L3=8789 注入（session 已归档清空） |
-| E3' QwenClawBench A/B（100×2） | pending | | | |
+| E3' QwenClawBench A/B（99×2，D 阶段 9B） | **D1 done**（D2-D7 进行中） | kimi | 2026-08-21T10:30+08:00 | D1 52 任务完成：判据①②达标（协议级升级率 0%，issue-019 联合报告纪律）；Baseline Gap −0.094（DiD 参照）；干净进化 active 235 卡；frozen 快照 snapshot-20260821-102512.db；阶段报告 `doc/design/2026-08-21-d1-phase-report.md` |
 | E5 飞轮实验（冷库 L3 轨迹→进化→热库重跑） | **done** | kimi | 2026-08-03T21:45+08:00 | R2 热库 SR 11/134=8.2% > R1 冷库 10/134=7.5%（判据②方向成立，+1 局在噪声内）；**次级强信号：升级率 72.6%→54.4%（-18.2pp）、云端 token -18%**；检索命中 6231/6231=100%；决策记录 `doc/design/2026-08-03-agent-server-e5-flywheel-changes-and-decisions.md`；建议进化 2-3 轮复测看复利效应 | 坑：6372 per-request session 喂进化会超时/SIGKILL → 合成 134 局干净 session（`var/eval/sessions-r1/`，从 L3 JSONL 轨迹+任务行前缀匹配回構）；进化 metric=238（active EVIDENCE 238 条，均 quality 0.547）；热库轮 request_traces 命中 40/40（检索真正工作） |
 | E4' Claw-Eval 文本子集 A/B（199×2） | pending | | | |
 | E5 飞轮实验 + 总评估报告（原 E4） | pending | | | |
@@ -22,7 +22,11 @@
 
 ## 2. 交接信息（跨 agent 共享事实）
 
-- 2026-08-14 kimi：**C 阶段收官**——判据①②双达标（升级率全程 0%）；归因 +10.3pp（抗劣化形态）；收口报告 `doc/design/2026-08-14-agent-server-c-campaign-final-report.md`；数据已归档 `backup/c-campaign-20260814/`（含 920 条 active 卡导出）。**下一步：按协议逐案请示五份方案（doc/design/plans/2026-08-13-*）**。
+- 2026-08-21 kimi：**D1 跑批+进化全链路完成，issue-017/018 修复**。①D1 52 任务+对照臂全绿收尾（报告 `doc/design/2026-08-21-d1-phase-report.md`：Success@K 右移/cap_failure 38.5%/Functional HardPass 仅 3/52）；②进化三次故障闭环：issue-017（打分零重试，修=temperature=0+重试+指纹含模型）/超时 env 遗漏（runbook 固化 90min）/issue-018（合成器闭合标记，ETL 实测 inserted=52,077）；③混合口径进化已废弃重跑（pro/flash 混合 → 全 flash 干净版，1362 调用单一模型）；④D2 前置：冻结实例 8791 加载 snapshot-20260821-102512.db，按交叉日 runbook 执行。**注意与其他会话的文件边界：本条目只动进度台账，codex 的 issue-019 纪律继续有效**。
+
+- 2026-08-21 codex：**D1 0% 云升级诊断完成，issue-019 登记为 deferred**。gateway 真值对账：D1 52 个任务引用 1,369 个唯一 trace，1,369/1,369 均为 `primary|succeeded|omlx`，escalation run=0，排除标注假绿；但预注册明显失败 23/23 未升级，MissedEscalationRate=100%。**Kimi/pi/Claude 及后续 agent 执行纪律：D1-D7 不得修改或启用任务级线上门控；升级率只解释为“协议级升级率”，必须联合报告 AutonomousSuccessRate、MissedEscalationRate 与明显失败数；D2 后可做 Oracle/Teacher Direct Solve/shadow-only 诊断，但不得影响路由或 evolution；正式门控改造延后到 D 阶段收口后并需用户另批。**报告：`doc/design/2026-08-21-d1-zero-cloud-escalation-diagnostic-report.md`；决策：`doc/design/2026-08-21-d1-zero-cloud-escalation-changes-and-decisions.md`。
+
+- 2026-08-14 kimi：**C 阶段收官**——按当时预注册数值阈值①②机械核算通过（升级率全程 0%）；归因 +10.3pp（抗劣化形态）；收口报告 `doc/design/2026-08-14-agent-server-c-campaign-final-report.md`；数据已归档 `backup/c-campaign-20260814/`（含 920 条 active 卡导出）。**2026-08-21 issue-019 修订：0% 只代表协议级升级率，不能单独证明自主性；C 自主性表述降级为历史探索性结论。** 下一步按协议逐案请示五份方案（doc/design/plans/2026-08-13-*）。
 
 - 2026-08-13 kimi：**C 后待启动方案已落盘（doc/design/plans/，用户确认需逐一询问后启动）**：①plan-card-deliverable-fix（issue-010 主体修复）②plan-outcome-attribution-reward（实战归因奖惩+置信度，issue-010项5+012项1/7）③plan-scenario-tags（domain 标签+检索过滤，backlog）④plan-b-rerun-pure-27b（issue-003 收口，含 A/B/C 三选与 pilot 校准）⑤plan-pipeline-checkpointing（issue-002 余留，附降级/关闭备选与决策参考数据）。**触发协议：C 收口报告交付后，逐一向用户确认是否启动**。
 

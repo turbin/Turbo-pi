@@ -120,16 +120,22 @@ def _extract_card(extractor: LLMClient, traj: TeacherTrajectory,
 
 
 def _prompt_fingerprint(verifier: Verifier) -> str:
-    """打分 prompt 指纹：模板/参照轨迹/标准分解/G/K/交付检查版本任一变化即缓存失效。
+    """打分 prompt 指纹：模板/参照轨迹/标准分解/G/K/交付检查版本/模型名任一变化即缓存失效。
 
     交付检查版本（DELIVERY_CAP_VERSION）纳入指纹：封顶语义属于打分产物的一部分，
     检测器变化时既有打分缓存（ScoreJournal）必须全部失效重打。
+
+    模型名纳入指纹（issue-017）：跨模型断点复用会混用 pro/flash 打分口径
+    （2026-08-20 D1 进化实战事故——教师模型口径校正），模型变化时既有打分缓存
+    同样必须全部失效重打。取 verifier 所用 client 的 model 属性；MockLLM 无该
+    属性时 getattr 容错为 "unknown"（离线测试确定性不受影响）。
     """
+    model = getattr(verifier.client, "model", "unknown")
     return prompt_fingerprint(
         PAIRWISE_TEMPLATE, REFERENCE_TRAJECTORY,
         [c.description for c in verifier.criteria],
         verifier.scale.G, verifier.K,
-        extra=DELIVERY_CAP_VERSION,
+        extra=f"{DELIVERY_CAP_VERSION};model={model}",
     )
 
 

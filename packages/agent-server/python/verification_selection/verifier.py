@@ -16,6 +16,7 @@ import hashlib
 import math
 import random
 import re
+import time
 from dataclasses import dataclass, field
 from itertools import combinations
 from typing import Callable, Protocol
@@ -27,6 +28,13 @@ LETTERS = "ABCDEFGHIJKLMNOPQRST"  # A-T，最多 20 档
 
 class ScoreExtractionError(RuntimeError):
     """评分 token 分布提取失败（响应中没有评分标签或没有任何评分 token）。"""
+
+
+# issue-017（doc/issues-snapshot/issue-017-verifier-score-extraction-no-retry.md）：
+# 打分是幂等机械任务（同输入→同输出），文本回退提取失败重试至多 2 次（共 3 次尝试，
+# 每次间隔 _SCORE_RETRY_SLEEP_S）；3 次全败才向上抛（fail loud，不静默给默认分）。
+_SCORE_MAX_ATTEMPTS = 3
+_SCORE_RETRY_SLEEP_S = 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -233,47 +241,66 @@ class Verifier:
     # -- 单次评估 -----------------------------------------------------------
     def _score_once(self, task: str, traj_a: str, traj_b: str,
                     criterion: Criterion, reasoning: str | None) -> tuple[float, float]:
-        # 打分是机械任务：关 thinking + 封顶 max_tokens。v4-flash 是 reasoning
-        # 模型，不限制时会生成长 CoT，top_logprobs=20 逐 token 跟随使响应达
-        # 数 MB（单次 30-90s、7MB 实测），134 轨迹 × C×K 调用会超出管线超时。
-        # 输出只需 <score_A>X</score_A><score_B>Y</score_B> 约 20 token。
-        text, logprobs = self.client.chat_with_logprobs(
-            self.build_messages(task, traj_a, traj_b, criterion, reasoning),
-            top_logprobs=self.top_logprobs,
-            max_tokens=512,
-            thinking={"type": "disabled"})
-        # 双通路兼容：有 logprobs 走期望化；无 logprobs（如 MLX 后端）回退文本解析
-        use_text_fallback = False
-        if isinstance(logprobs, dict):
-            # skill_evolution 客户端返回 {"content": ..., "prompt_logprobs": ...} dict
-            content_tokens = logprobs.get("content")
-            if content_tokens:
-                try:
-                    raw_a = expected_from_top_logprobs(extract_tag_distribution(logprobs, "score_A"), self.scale)
-                    raw_b = expected_from_top_logprobs(extract_tag_distribution(logprobs, "score_B"), self.scale)
-                except ScoreExtractionError:
+        """单次 pairwise 打分，带有限重试（issue-017）。
+
+        打分是机械任务：关 thinking + 封顶 max_tokens。v4-flash 是 reasoning
+        模型，不限制时会生成长 CoT，top_logprobs=20 逐 token 跟随使响应达
+        数 MB（单次 30-90s、7MB 实测），134 轨迹 × C×K 调用会超出管线超时。
+        输出只需 <score_A>X</score_A><score_B>Y</score_B> 约 20 token。
+
+        issue-017（doc/issues-snapshot/issue-017-verifier-score-extraction-no-retry.md）：
+        显式 temperature=0——机械打分任务应确定性，消除 DeepSeek 默认
+        temperature=1.0 采样导致的"偶发不遵循标签格式"；文本回退提取失败
+        （ScoreExtractionError）时重试至多 2 次（共 3 次尝试，间隔 0.5s）——
+        打分是幂等机械任务，单次不遵循属瞬时故障，重试比直接中断整个进化批
+        韧性更强；3 次全败才向上抛（fail loud，不静默给默认分）。
+        """
+        last_exc: ScoreExtractionError | None = None
+        for attempt in range(_SCORE_MAX_ATTEMPTS):
+            try:
+                text, logprobs = self.client.chat_with_logprobs(
+                    self.build_messages(task, traj_a, traj_b, criterion, reasoning),
+                    top_logprobs=self.top_logprobs,
+                    max_tokens=512,
+                    thinking={"type": "disabled"},
+                    temperature=0)
+                # 双通路兼容：有 logprobs 走期望化；无 logprobs（如 MLX 后端）回退文本解析
+                use_text_fallback = False
+                if isinstance(logprobs, dict):
+                    # skill_evolution 客户端返回 {"content": ..., "prompt_logprobs": ...} dict
+                    content_tokens = logprobs.get("content")
+                    if content_tokens:
+                        try:
+                            raw_a = expected_from_top_logprobs(extract_tag_distribution(logprobs, "score_A"), self.scale)
+                            raw_b = expected_from_top_logprobs(extract_tag_distribution(logprobs, "score_B"), self.scale)
+                        except ScoreExtractionError:
+                            use_text_fallback = True
+                    else:
+                        use_text_fallback = True
+                elif isinstance(logprobs, list):
+                    # verification_selection 客户端返回原生 per-token list（可能空）
+                    if logprobs:
+                        try:
+                            raw_a = expected_from_top_logprobs(extract_tag_distribution(logprobs, "score_A"), self.scale)
+                            raw_b = expected_from_top_logprobs(extract_tag_distribution(logprobs, "score_B"), self.scale)
+                        except ScoreExtractionError:
+                            # logprobs 存在但不可用的后端（如 DeepSeek：<score_A> 被拆成
+                            # < / score / _A 多 token，答案位置 top_logprobs 可能不含字母
+                            # token）回退文本解析；文本也无标签时由下层抛 ScoreExtractionError，
+                            # 不静默给默认分。
+                            use_text_fallback = True
+                    else:
+                        use_text_fallback = True
+                else:
                     use_text_fallback = True
-            else:
-                use_text_fallback = True
-        elif isinstance(logprobs, list):
-            # verification_selection 客户端返回原生 per-token list（可能空）
-            if logprobs:
-                try:
-                    raw_a = expected_from_top_logprobs(extract_tag_distribution(logprobs, "score_A"), self.scale)
-                    raw_b = expected_from_top_logprobs(extract_tag_distribution(logprobs, "score_B"), self.scale)
-                except ScoreExtractionError:
-                    # logprobs 存在但不可用的后端（如 DeepSeek：<score_A> 被拆成
-                    # < / score / _A 多 token，答案位置 top_logprobs 可能不含字母
-                    # token）回退文本解析；文本也无标签时由下层抛 ScoreExtractionError，
-                    # 不静默给默认分。
-                    use_text_fallback = True
-            else:
-                use_text_fallback = True
-        else:
-            use_text_fallback = True
-        if use_text_fallback:
-            raw_a, raw_b = self._extract_scores_from_text(text)
-        return self.scale.normalize(raw_a), self.scale.normalize(raw_b)
+                if use_text_fallback:
+                    raw_a, raw_b = self._extract_scores_from_text(text)
+                return self.scale.normalize(raw_a), self.scale.normalize(raw_b)
+            except ScoreExtractionError as exc:
+                last_exc = exc
+                if attempt < _SCORE_MAX_ATTEMPTS - 1:
+                    time.sleep(_SCORE_RETRY_SLEEP_S)
+        raise last_exc
 
     def _extract_scores_from_text(self, text: str) -> tuple[float, float]:
         """Fallback: regex-extract <score_N> LETTER </score_N> from plain text output

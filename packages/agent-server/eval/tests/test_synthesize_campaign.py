@@ -52,6 +52,22 @@ def test_happy_path(tmp_path):
     assert msgs[-1] == ("assistant", "done")
 
 
+def test_output_ends_with_closing_marker(tmp_path):
+    """issue-018（T6 契约）：合成 session 末尾必须追加与 session-writer v3 线上
+    一致形态的 response_completed 闭合条目——ETL 完整性判据（etl.ts）认
+    custom 条目 + customType=response_completed/error/aborted；有头无闭合 =
+    半截整体隔离（D1 实战 etlIsolated=32/32, etlInserted=0）。"""
+    out = tmp_path / "s.jsonl"
+    synthesize_task(_record(), out, "campaign-d1")
+    lines = [json.loads(l) for l in out.read_text().splitlines()]
+    last = lines[-1]
+    assert last["type"] == "custom"
+    assert last["customType"] == "response_completed"
+    # 结构字段与线上 session-writer appendTreeEntry 形态一致
+    # （id/parentId/timestamp 三字段齐全；parentId 为 null 或上一条 id）。
+    assert {"id", "parentId", "timestamp"} <= set(last)
+
+
 def test_missing_transcript_hard_fails(tmp_path):
     with pytest.raises(ValueError, match="不完整"):
         synthesize_task(_record(transcript=[]), tmp_path / "x.jsonl", "p")

@@ -16,6 +16,8 @@
 
 import argparse
 import json
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from campaign_plan import held_out_tasks, load_tasks
@@ -82,6 +84,24 @@ def synthesize_task(record: dict, out_path: Path, prefix: str) -> None:
                     json.dumps({"type": "message", "message": {"role": out_role, "content": text}}, ensure_ascii=False)
                     + "\n"
                 )
+        # issue-018（T6 契约）：session 末尾追加与 session-writer v3 线上一致的
+        # response_completed 闭合条目（type=custom + customType + id/parentId/
+        # timestamp）——ETL 完整性判据（offline/etl.ts）有头无闭合 = 半截整体
+        # 隔离（D1 实战 etlIsolated=32/32, etlInserted=0，dormant 断流）。
+        # 本文件条目无 id 链，parentId 与线上首条目一致为 null。
+        f.write(
+            json.dumps(
+                {
+                    "type": "custom",
+                    "customType": "response_completed",
+                    "id": str(uuid.uuid4()),
+                    "parentId": None,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
 
 
 def filter_inputs(files: list[Path], eligible_arms: set[str], held_out: set[str]) -> tuple[list[Path], int, int]:

@@ -1,6 +1,6 @@
 # issue-017: verifier 打分对"模型偶发不遵循标签格式"零重试——进化批单次失败即整体中断
 
-- 状态：**deferred（2026-08-20 用户裁决：登记延后处理；临时处置=--resume 重跑）**
+- 状态：**fixed（2026-08-21 用户裁决提前修复：temperature=0 + 提取失败重试 3 次 + 打分指纹含模型；测试 6 例先红后绿；python 95/eval 266/vitest 348 全绿）**
 - 报告：2026-08-20（D1 夜间进化连续两次中断，主会话排查定位）
 - 影响面：`packages/agent-server/python/verification_selection/verifier.py`（`_score_once`/`_extract_scores_from_text`）、`pipeline.py`（score_trajectories_with_checkpoint）；D 阶段每日夜间进化
 
