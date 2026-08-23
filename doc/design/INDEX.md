@@ -1,7 +1,7 @@
 # design 目录索引（INDEX）
 
 维护说明：本索引概述 `doc/design/`（目录名带前导空格）下每份文档的内容，并记录从 agent-server P0 起各阶段决策的变化时间线。**新增设计文档时请同步更新本索引。**
-最后更新：2026-08-19（Langfuse 跑批监视部署+全链路接入决策记录；issue-003 关闭重跑裁决）。
+最后更新：2026-08-21（Kimi MCP 迁移为同级独立项目 `kimi-subagent-mcp`；D1 诊断与 issue-019 deferred 纪律维持）。
 
 阅读指引：
 - **通用约束 canonical 版本**（工程内改动、omlx 不可动、提交格式、git 纪律）：`2026-07-22-agent-server-p3-candidate-tasks.md` 的"通用约束"一节，后续任务书均为引用。
@@ -143,7 +143,7 @@
 | 2026-08-03-agent-server-evolution-pipeline-timeout-analysis.md | **进化管线失败根因分析**：输入规模失配（一请求一文件 × 一文件一轨迹 = 6372 轨迹 × 25-40 LLM 调用/轨迹 → 数天）；第 2 次 SIGKILL 超时证伪（27m45s<120min，消息格式只是拼接）+OOM 证伪（64GB 无 jetsam），来源未定论但随规模修正消失；证据链 mermaid + 代码行级证据；根治=agent-server 会话亲和（入 M5） |
 | 2026-08-04-agent-server-c3-amendment-and-r2-evolution-input-changes-and-decisions.md | **C 决策 3 修正【用户批准】**：失败经验三层化（原始文本不入库/败局作归因输入/蒸馏验证 Guard 卡入库）+ R2 进料三路合并（学生+老师胜局+败局对照）+ 触发器门控→局级胜负迁移（27B 升级率 0% 使门控断粮）+ 教训卡必须程序化提取禁自由诊断（2605.29463 红线） |
 | 2026-08-05-agent-server-injection-toggle-and-eval-preflight-changes-and-decisions.md | **注入开关 + preflight 门禁【用户重申目标驱动】**：`AGENT_SERVER_INJECTION=off` + 请求级 `injection` 覆盖，关时跳注入但 session/trace 照录（`disabled:true` 区分关与未命中）；**控制臂跑法变更=8789+injection off 同路径对照取代物理旁路**（基线轨迹进学习回路）；eval/preflight.py 按端口推导依赖链探活+nohup 自动拉起 8789/8787/8899 |
-| 2026-08-14-agent-server-c-campaign-final-report.md | **C 阶段收口报告【判据双达标】**：①重复任务升级率 D7 0%≤5% ②新任务 0%<20%；七日 U 型曲线（0.567→0.378→0.532）；归因 +10.3pp（对照臂自发劣化 -0.138 vs 实验臂 -0.035，记忆以抗劣化形态首次获对照级正证据）；诚实边界：绝对提升仍无证据、对照下滑未定性；用户四问终审回答 |
+| 2026-08-14-agent-server-c-campaign-final-report.md | **C 阶段收口报告【预注册数值阈值机械通过；2026-08-21 自主性解释降级】**：①重复任务协议级升级率 D7 0%≤5% ②新任务 0%<20%；七日 U 型曲线（0.567→0.378→0.532）；归因 +10.3pp（对照臂自发劣化 -0.138 vs 实验臂 -0.035，记忆以抗劣化形态首次获对照级正证据）；issue-019 修订：0% 不能单独证明无需教师/模型自主性，须联合漏升级与明显失败指标，C 相关表述降级为历史探索性结论 |
 | 2026-08-14-fix-batch-user-rulings-changes-and-decisions.md | **C 后统一修改方案用户五项裁决决策记录**：①27B 重跑取消转 9B 全量重跑 + 实验顺序决策点（office 先行→报告→确认→ALFWorld）②断点持久化翻转立项（最小断点）③SOP/SKILL 不做双轨、机制完善统一（F4）④交叉评估臂补 plan 立项 ⑤DLP 默认敏感列表（身份证号+密钥类，可扩充） |
 | 2026-08-14-m1-t0-t1-changes-and-decisions.md | **M1（T0+T1）开发决策记录【实施完成，测试全绿】**：T0=F0 归因数据通道（requestId→randomUUID、injected_ids 实际注入集落库（SKILL/SOP 显式排除）、task_id 透传（campaign.py 必选 kwarg→session 头→trace）、/api/stream 定案**纳入 trace 落库**、旧库 PRAGMA+ALTER 迁移、upsert NULL 哨兵防阶段覆写）；T1=最小断点（打分按任务组增量落盘+fsync、输入哈希=轨迹内容+prompt 指纹防脏复用、`--resume <run_dir>` 幂等跳过、双副本收敛于 checkpoint 模块）；issue-013 转 fixed |
 | 2026-08-14-m2-t2-changes-and-decisions.md | **M2（T2）开发决策记录【实施完成，测试全绿】**：F1 卡片交付物维度（issue-010 主体）——EXTRACTION_PROMPT/CARD_SCHEMA/cardsToStaged schema 三处加 deliverables（非空字符串数组）；交付检查双闸（Python 打分侧无交付轨迹 quality 封顶 0.49 且 accepted 强制 False、TS 闸门 Method/Guard 非空校验）；SOP/SKILL/EVIDENCE 显式豁免；检测器保守启发式（C 语料实证 4/98 误封顶安全方向）；DELIVERY_CAP_VERSION 入打分指纹；存量卡重蒸脚本 restill 交付（断点复用 ScoreJournal，冒烟 83 卡全链路通过，**全量重蒸待用户排期**）；issue-010 转 fixed（待观察） |
@@ -154,12 +154,16 @@
 | 2026-08-19-9b-campaign-experiment-design.md | **D 阶段 9B 全量重跑批实验设计【判据预注册，D1 已起跑】**：D 阶段唯一整合设计稿（此前要素散落 §108 裁决/交叉臂 plan/任务书）；待验证问题 Q1-Q8（记忆增益复现/库演进×即时注入分解/9B 触顶率/F1-F4 实战有效性/升级率判据/length 持续性/bm25 deferred）；判据①-⑤预注册（升级率阈值沿 C + 记忆增益存在性 + C 式劣化不复现新增）；任务集/划分与 C 全同（D/C 可比）；交叉臂定案（用户 08-19 方案 A：四臂仅 D2/D7，冻结库=D1 夜间进化后快照）；9B 基线 0.327/length 0%/工期 4-5 天；风险登记 6 项 |
 | 2026-08-19-d-stage-addendum-implementation-changes-and-decisions.md | **D 阶段增强设计落地（T1-T4）决策记录+主会话验收报告【验收通过】**：pi-dev-1/2 并行+pi-test 复核+主会话门禁（eval 149/vitest 346/gateway 195/check 链全过）；D-1~D-8——task-block sha256 臂序/termination 三态/held-out 8 选取（D1 切片显式剔除）/写入隔离 eligible-arms/假独立三指标/轨迹六指标启发式/request_traces retrieved_scores+injected_tokens（SCHEMA 1→2）/cross×held_out 污染修复（TransferGain 单列）；T5 文档对齐（md 标注取代+清单 H 节+交叉日 runbook+Kimi audit 协议）；遗留 5 项 |
 | 2026-08-19-d-stage-cross-day-runbook.md | **D2/D7 交叉日 runbook【生效中】**：前置双快照+冻结实例→四臂跑批（启动式）→先对账再进化（snapshot lock）→Kimi audit 协议（抽样 6 任务/一致性双判据/不回写不替代）→异常处置表（sanity 超差停批/冻结实例挂当日作废） |
+| 2026-08-23-d2-adversarial-review-and-amendments.md | **D2 对抗审查档案+设计修订【用户 08-23 批准四项】**：三甲乙丙两轮收敛——D2 数值 Grade A/无操作性混淆/零信息校准日；x4 零分真因=penalized hybrid 清零；修订①sanity 分级哨兵 0.10 注记/0.18 停机+置换 p<0.05 双条件（D7 前瞻生效不回溯）；修订②D7 判定规则预注册（主检验/复制判定/合并 α=0.10/敏感性/实例偏置 ABC 三级/禁止 D2 减法校正）；修订③D7 实例交叉（冻结库挂双实例 8790+8791 对半分任务）；D2 按机制校验通过定档继续收尾；E1 judge 缺失行登记 |
 | 2026-08-19-d-stage-addendum-v2-main-review-and-decisions.md | **Addendum v2 主会话整体 review：GPT 19 节逐节对账【验收通过】**：17/19 全落地 + §六 FP 侧 deferred（升级样本触发 audit subset）+ §九 context_budget 补漏；Oracle/PlanAdherence/Success@K/Functional/Compliance/迁移矩阵/泄漏检查/重跑审计/成本摊销全清单对照；主会话补充裁决 3 项（D7 泄漏检查为 TransferGain 前置门禁、FP deferred 触发条件、§九补漏）；eval 262/python 89/gateway 195 独立复跑 |
 | plans/2026-08-19-d-stage-addendum-v2-dev-tasks.md | **Addendum v2（GPT 评审）指标设计+任务书【用户 08-19 批准：Oracle 必须添加+完全遵循 GPT】**：T6 离线分析包 v2（Success@K/迁移矩阵+RecoveryConversion/回归+负迁移 δ=0.1/UsefulHit/Functional 分层/难度分层/TreatmentCompliance）/ T7 PlanAdherence+泄漏检查 0.6 阈值+Memory 生命周期 / T8 Oracle 四条件诊断 harness（D7 后一次性，oracle 臂天然隔离）/ T9 重跑审计 5×3 / T10 教师成本摊销台账；验收口径 5 条 |
 | 2026-08-19-d-stage-addendum-v2-t7-t8-t9-changes-and-decisions.md | **Addendum v2 落地（T7+T8+T9）开发决策记录【实施完成，eval 全量 242 绿】**：T7 三离线分析器——plan_adherence（Adoption/Deviation，动作 token 启发式预注册）/ leakage_check（3-gram Jaccard>0.6 + future-task 提前入库）/ memory_lifecycle（Reuse/SuccessAfterReuse/Utility/Age/Duplicate）；T8 oracle_diagnostic（四条件 harness，子集 sha256("oracle-diag")，蒸馏模板写死，oracle 前缀隔离目录）；T9 rerun_audit（5×3，sha256("rerun-audit")）；真实数据冒烟发现 c-d4 快照 4/8 held-out 有 exact 卡（提请主会话裁决冻结库）；63 新测试全 mock |
 | plans/2026-08-19-d-stage-addendum-dev-tasks.md | **D 阶段增强设计落地任务拆分【用户 08-19 批准】**：T1 四臂 task-block 随机臂序+termination_reason / T2 held-out 8 冻结+写入隔离 eligible_arms / T3 假独立三指标+trajectory 指标族 / T4 memory 可观测最小集（retrieved_scores+injected_tokens）/ T5 文档对齐（主会话）；held-out=8 与人工 judge audit 裁决登记；验收口径 5 条 |
 | 2026-08-19-run-batch-preflight-checklist.md | **跑批环境与条件清单【生效中，工程约束】**：跑批/测试前必须逐项核验七类 27 项——A 模型层（omlx 可达/9B 已加载/指纹 env/真实探针）、B gateway（唯一进程/进程晚于配置/9B 配置/env 齐备/探针 trace 进 Langfuse 且 model 字段=目标模型）、C agent-server 双臂（指纹/Node25/经验库状态用户确认）、D judge（relay/env/真实探针）、E Langfuse（容器/.env 三行/数据流入）、F 跑批进程（venv/env 全套/-u 无缓冲/磁盘/干跑核对）、G 判据门（测试全绿/check/length<5% 门控）；每项附验证命令与事故来源；启动式参考；约束本体入 p3 通用约束 canonical 节 |
 | 2026-08-19-langfuse-monitoring-changes-and-decisions.md | **Langfuse 跑批监视部署+接入决策记录【实施完成，测试全绿+端到端冒烟 PASS】**：官方 v4 compose 栈落 eval/langfuse/（项目 exp-9b-campaign，密钥 gitignore）；colima 代理失效修复（8898→7890 备份可回滚）；gateway observability.py provider 包装单点埋点（[langfuse] 缺省关闭，密钥 env 引用）；对账键=create_trace_id(seed=chatcmpl id) 与 model_runs/run.jsonl/session marker 1:1 join；campaign 任务级 span+qcb_score 上报（不用 langfuse.openai drop-in）；可观测性绝不炸批（建 span 失败回落不重跑/update 吞掉/env 缺省全链 no-op）；v4 读口径=v2/observations（旧 traces API 404）；macOS 系统代理不回 bypass 回环陷阱登记（NO_PROXY） |
+| 2026-08-21-d1-zero-cloud-escalation-diagnostic-report.md | **D1 0% 云升级门控有效性诊断【完成】**：52 个任务/1,369 个唯一 trace 与 gateway `model_runs` 100% 对账，确认 escalation run=0 不是标注假绿；同时明显失败 23/23 未升级，MissedEscalationRate=100%，定性为请求级门控看不到任务级失败的构念有效性缺陷；升级率改称协议级升级率并须联合报告 AutonomousSuccessRate/MissedEscalationRate/明显失败数；D1-D7 不改线上门控，只做 Oracle/shadow 诊断，正式改造 deferred 到 D 收口后 |
+| 2026-08-21-d1-zero-cloud-escalation-changes-and-decisions.md | **D1 零云升级诊断决策记录**：D-1~D-5 固化 gateway 真值判定、构念缺陷定性、D1-D7 门控冻结、联合指标解释口径、正式门控改造延后条件；同步 issue-019 与 Kimi/pi/Claude 跨 agent 交接纪律；本批只改文档未改运行代码 |
+| 2026-08-21-kimi-subagent-mcp-relocation-changes-and-decisions.md | **Kimi MCP 独立项目迁移【完成】**：服务实现、测试、配置、启动脚本与原实施档案迁至同级 `../kimi-subagent-mcp`；改用独立 pyproject/.venv，Turbo-pi 不再承担其运行依赖；四工具只读边界维持 |
 | 2026-08-14-m5-t6-t7-changes-and-decisions.md | **M5（T6+T7）开发决策记录【实施完成，测试全绿】**：T6=台账 quick wins 四项——GatewayMarker 增 trace_id 跨库对账键 + agent-server handleStream 路径补 gateway_marker 会话条目（台账 2）；ETL 摄入前完整性校验（流闭合标记，半截 session 整体隔离 + 快照 etlIsolated 计数，台账 7）；DLP 扩扫 tools[] schema + 身份证号默认模式（裁决 5，config 追加即生效，台账 3）；snapshot_store 每日快照模式（--snapshots-dir 保留 N=7）+ 回滚 runbook（台账 4）；T7=交叉臂 harness——campaign.py --arms x1-x4（库版本×注入 2×2，冻结臂走 --frozen-base-url）+ campaign_cross.py 差分核算（库演进 X2−X1/注入 X1−X4/sanity X3−X4，n=20 功效声明 + sanity 容差 0.05 预注册）；只交付能力+冒烟，真实跑批待 9B pilot 确认 |
 | 2026-08-13-agent-server-high-level-design-v2.md | **概要设计 v2（当前最新总纲）**：设计目标（含判据口径与混淆因子声明）/总体架构四视角图/核心机制六节按模块构成·运行方式·有效作用展开（现役/待建状态标注制）/关键数据流/六份演进方案（C 后逐案请示）/EWC 采纳边界/设计红线/台账摘要（含 2026-08-13 对抗式审查新增 10 项） |
 | 2026-08-13-high-level-design-v2-diagram-split-changes-and-decisions.md | **v2 架构图拆分决策记录**：单图拆为分层/时序/数据流/call graph 四视角；图中函数名与阈值均对照现役代码核实；双库分离入图；核心机制按模块构成·运行方式·有效作用三要素展开；图预渲染 2x PNG 嵌入正文（assets/2026-08-13-high-level-design-v2/，SVG 副本同目录），mermaid 源码折叠保留 |
@@ -325,6 +329,13 @@
 - 【留】对抗性审查 39 项发现（4 critical/21 major/14 minor）→ P0/P1/P2 修复分批待用户拍板；历史数据影响：alfworld-20260730 控制臂 17/134 局重放错位（C3），引用需注明口径
 - 【立】方法论纪律：度量必须与现象同源（C2 教训）；烟囱测试通过 ≠ 真实运行可信；A/B 审计清单=臂间差异恰好等于处理变量
 
+### D1 零云升级门控有效性诊断（08-21）
+
+- 【验】D1 0% 云升级为真实路由结果：1,369/1,369 trace 均为 omlx primary succeeded，escalation run=0，排除客户端标注假绿
+- 【观】请求级门控召回盲区：明显失败 23/23 未升级，MissedEscalationRate=100%；合法 tool call 不等于任务取得进展
+- 【改】“升级率”解释口径收窄为“协议级升级率”，必须与 AutonomousSuccessRate、MissedEscalationRate、明显失败数联合报告
+- 【留】任务级线上门控改造 deferred：D1-D7 保持路由口径不变，只允许 Oracle/Teacher Direct Solve/shadow-only 诊断；正式实现待 D 收口后用户另批
+
 ---
 
 ## 三、当前生效的关键决策速查（living decisions）
@@ -343,3 +354,4 @@
 | 工程约束 | 改动仅限工程内、omlx 不可动、提交格式 COMPLETED/TODO/Refer Spec + conventional 前缀 | P3 任务书 |
 | 注入对照 | 控制臂=8789+`injection:false` 同路径（不旁路），基线轨迹进学习回路；DeepSeek 直连臂（8899）例外 | 08-05 |
 | 跑批门禁 | 跑批入口必过 eval/preflight.py（探活+自动拉起 8789/8787/8899） | 08-05 |
+| 门控解释 | 升级率仅代表协议级门控触发率；必须联合报告 AutonomousSuccessRate、MissedEscalationRate 与明显失败数；D1-D7 不改线上任务级门控 | 08-21 D1 零云升级诊断 |

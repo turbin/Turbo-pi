@@ -304,6 +304,19 @@ def arm_order_for_task(arms: list[str], run_id: str, day: int, task_id: str) -> 
     return sorted(arms, key=lambda arm: hashlib.sha256(f"{seed}:{arm}".encode()).digest())
 
 
+def frozen_instance_for(run_id: str, day: int, task_id: str) -> str:
+    """D7 实例交叉（修订③ 方案 A，2026-08-23 用户批准）：冻结臂任务 → 冻结
+    实例 a/b 的确定性分配。
+
+    预注册键 sha256(f"{run_id}-d{day}-{task_id}-frozen-instance") 奇偶对半：
+    同 run-id 重跑分配一致（断点续跑同实例）；20 任务对半 10/10（±1），
+    实例效应在冻结-current 对比中完全抵消（双臂各含两实例的各半任务）。
+    a = --frozen-base-url 第一 URL，b = 第二 URL（仅双 URL 模式启用；
+    单 URL 模式恒为 a，本函数不参与）。"""
+    digest = hashlib.sha256(f"{run_id}-d{day}-{task_id}-frozen-instance".encode()).digest()
+    return "a" if digest[0] % 2 == 0 else "b"
+
+
 def task_block_plan(arms: dict[str, list[str]], run_id: str, day: int) -> list[tuple[str, str]]:
     """--arms 模式执行计划（preview.html §12.2，禁止"全部 X1 → 全部 X2 → ..."
     臂块顺序——25h 窗口时间漂移）。
@@ -342,7 +355,10 @@ def main() -> None:
         "--frozen-base-url",
         default="",
         help="T7 冻结臂（X1/X4）的评估实例 base URL（加载 D1 快照且全程不换载）；"
-        "缺省回退 AGENT_SERVER（单实例模式，真实跑批必须显式指定）。",
+        "支持逗号分隔双 URL（D7 实例交叉：冻结任务按 sha256(run_id+day+task_id) "
+        "奇偶对半分配 a/b 实例，run.jsonl 行带 frozen_instance 字段，dry-run 可见）；"
+        "单 URL 行为不变（frozen_instance 恒 a）；缺省回退 AGENT_SERVER（单实例模式，"
+        "真实跑批必须显式指定）。",
     )
     ap.add_argument("--metrics", default="", help="核算既有结果 JSONL 的判据，不跑批")
     ap.add_argument(
@@ -386,17 +402,24 @@ def main() -> None:
         held_arms = [arm for arm in ("x2", "x3") if arm in arms]
         for arm in held_arms:
             arms[arm] = arms[arm] + sorted(held)
-        frozen_base = args.frozen_base_url or AGENT_SERVER
-        client_frozen = OpenAI(base_url=frozen_base, api_key="lobster-local-key", timeout=1800.0)
+        frozen_bases = [u.strip() for u in args.frozen_base_url.split(",") if u.strip()] or [AGENT_SERVER]
+        if len(frozen_bases) > 2:
+            ap.error("--frozen-base-url 最多两个 URL（D7 实例交叉双实例模式 a/b）")
+        # D7 实例交叉（修订③ 方案 A）：冻结库挂双实例（8790+8791 均加载 frozen
+        # 副本），client_frozen_a/b 各一；单 URL 模式保持既有单实例行为
+        # （冻结臂全走 client_frozen_a，兼容旧口径）。
+        frozen_dual = len(frozen_bases) == 2
+        client_frozen_a = OpenAI(base_url=frozen_bases[0], api_key="lobster-local-key", timeout=1800.0)
+        client_frozen_b = OpenAI(base_url=frozen_bases[1], api_key="lobster-local-key", timeout=1800.0) if frozen_dual else None
         held_note = f"; held-out {len(held)} on {','.join(held_arms)}" if held and held_arms else ""
+        frozen_note = " [dual frozen instances a/b]" if frozen_dual else ""
         print(f"day {args.day}: cross arms {sorted(arms)} repeat={len(batch['repeat'])} each"
-              f" (frozen base: {frozen_base}){held_note}")
+              f" (frozen base: {','.join(frozen_bases)}){frozen_note}{held_note}")
     else:
         held = set()
         arms = {"experiment": batch["repeat"] + batch["new"]}
         if args.day in (1, 7):
             arms["control"] = batch["repeat"]
-        client_frozen = None
         print(f"day {args.day}: repeat={len(batch['repeat'])} new={len(batch['new'])}")
     # 执行计划：--arms = task-block 随机臂序（§12.2）；旧双臂保持
     # experiment 后 control 的既有顺序不变。
@@ -409,6 +432,11 @@ def main() -> None:
                 by_task.setdefault(tid, []).append(arm)
             for tid, arm_seq in by_task.items():
                 print(f"  {tid}: {' → '.join(arm_seq)}")
+                # D7 实例交叉：冻结臂任务打印实例分配（单 URL 恒 a）。
+                frozen_arms = [a for a in arm_seq if campaign_cross.ARM_LIBRARY[a] == "frozen"]
+                if frozen_arms:
+                    inst = frozen_instance_for(args.run_id, args.day, tid) if frozen_dual else "a"
+                    print(f"    frozen instance: {inst} ({', '.join(frozen_arms)})")
         else:
             for arm, ids in arms.items():
                 print(f"  [{arm}] {len(ids)} tasks")
@@ -449,15 +477,24 @@ def main() -> None:
             ws = setup_workspace(task_id, out_dir / f"day{args.day}" / arm)
             # T7 交叉臂（m5-test-review 缺陷-1 修复）：注入按臂接线
             # （ARM_INJECTION：x1/x2 开、x3/x4 关）、冻结臂走冻结实例
-            # （client_frozen，锁库不换载）、library 维度按臂取值。
+            # （client_frozen_a/b，锁库不换载）、library 维度按臂取值。
             if args.arms:
-                arm_client = client_frozen if campaign_cross.ARM_LIBRARY[arm] == "frozen" else client
+                if campaign_cross.ARM_LIBRARY[arm] == "frozen":
+                    # D7 实例交叉：冻结任务按 sha256(run_id+day+task_id) 奇偶
+                    # 对半分配 a/b（单 URL 模式恒 a，行为不变）。
+                    inst = frozen_instance_for(args.run_id, args.day, task_id) if frozen_dual else "a"
+                    arm_client = client_frozen_a if inst == "a" else client_frozen_b
+                    frozen_instance = inst
+                else:
+                    arm_client = client
+                    frozen_instance = None
                 injection = campaign_cross.ARM_INJECTION[arm]
                 library = campaign_cross.ARM_LIBRARY[arm]
             else:
                 arm_client = client
                 injection = arm == "experiment"
                 library = ""
+                frozen_instance = None
             execution = None
             lf_seed = f"{args.run_id}-d{args.day}-{arm}-{task_id}"
             lf_meta = {
@@ -468,6 +505,7 @@ def main() -> None:
                 "kind": kind,
                 "model": args.model,
                 **({"library": library} if args.arms else {}),
+                **({"frozen_instance": frozen_instance} if frozen_instance else {}),
             }
             with task_observation(lf, seed=lf_seed, name=f"task:{arm}:{task_id}", metadata=lf_meta) as obs:
                 execution = run_agent(
@@ -511,6 +549,10 @@ def main() -> None:
                 "passed": g["score"] >= PASS_THRESHOLD,
                 # T7：四臂落库附库版本维度（frozen/daily），差分核算按臂取值。
                 **({"library": library} if args.arms else {}),
+                # D7 实例交叉：frozen 臂行带所分配冻结实例（a/b），非 frozen
+                # 臂行无此字段；口径 a=--frozen-base-url 第一 URL、b=第二 URL，
+                # 单 URL 模式恒 a。campaign_cross 差分核算不受此维度影响。
+                **({"frozen_instance": frozen_instance} if frozen_instance else {}),
                 # C2：升级标记来自网关 x-gateway 头（M1），trace_ids 供
                 # model_runs 回填核对；不再硬编码 False。
                 "escalated": execution["escalated"],

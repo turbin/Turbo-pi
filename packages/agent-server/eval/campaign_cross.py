@@ -15,10 +15,18 @@
 
 功效声明（红线 6）：重复集 n=20 任务/日/臂，单任务 = 5pp；配对设计消除任务
 难度方差；小样本不报显著性（不附 CI/检验），差分以均值差呈现，结论以全量
-落库为准不外推。sanity 容差 SANITY_TOLERANCE 预注册 = 0.05（超过即报非零）。
+落库为准。sanity 哨兵分级（修订① 2026-08-23 用户批准，D7 起前瞻生效）：
+|X3−X4| ≤ 0.10 → ok；0.10 < |diff| ≤ 0.18 → note（工程注记，不停批）；
+|diff| > 0.18 → stop 候选（置换 p 由报告层人工执行）。D2 实测噪声地板：
+配对 sd≈0.32 / SEM≈0.072（n=20 日），2.5×SEM≈0.18，日 FPR ~2%；原
+SANITY_TOLERANCE=0.05 预注册失准（零效应日误报率 ~50%），已 superseded。
 
 落库形态：campaign.py --arms x1,x2,x3,x4 模式每行 {day, task_id, arm: xN,
 kind: repeat, score, library: frozen|daily, ...}；本模块纯函数核算。
+D7 实例交叉（修订③ 方案 A）：冻结臂任务按 sha256(run_id+day+task_id)
+奇偶对半分配冻结实例 a/b（campaign.frozen_instance_for，run.jsonl 行带
+frozen_instance 维度）；差分核算不受实例维度影响——实例效应在冻结-current
+对比中已抵消，实例分层在 D7 报告中另行呈现（metrics_v2 暂不改）。
 """
 
 from __future__ import annotations
@@ -43,7 +51,16 @@ ARM_INJECTION = {
     "x4": False,
 }
 
-# sanity 臂差容差（预注册）：|X3 − X4| 超过此值即报非零（未建模混淆哨兵）。
+# sanity 臂差哨兵分级（修订① 2026-08-23 用户批准，D7 起前瞻生效）：
+#   工程门（哨兵）与统计门（置换检验）分离——D2 教训即二者混用。
+# D2 实测噪声地板：配对 sd≈0.32 / SEM≈0.072（n=20 任务/日），2.5×SEM≈0.18。
+#   Tier-1 note：|diff| > 0.10 → 报告注记，不停批（日 FPR ~18%）
+#   Tier-2 stop：|diff| > 0.18 → 停批候选；配对置换 p<0.05 条件由报告层
+#                 人工执行（双条件缺一不停；日 FPR ~2%）。
+SANITY_TIER1_NOTE = 0.10
+SANITY_TIER2_STOP = 0.18
+# 历史常量（superseded by SANITY_TIER1_NOTE/SANITY_TIER2_STOP）：0.05 预注册
+# 失准——零效应日误报率 ~50%，不再参与判定，保留仅作口径追溯。
 SANITY_TOLERANCE = 0.05
 
 
@@ -117,13 +134,31 @@ def transfer_gain(rows: list[dict]) -> dict | None:
     }
 
 
-def check_sanity(rows: list[dict], tolerance: float = SANITY_TOLERANCE) -> dict:
-    """sanity 臂差（X3 − X4）检验：|差分| 超过容差即报非零（未建模混淆）。"""
+def check_sanity(rows: list[dict]) -> dict:
+    """sanity 臂差（X3 − X4）分级哨兵（修订① 2026-08-23 用户批准，D7 前瞻生效）。
+
+    D2 实测噪声地板：配对 sd≈0.32 / SEM≈0.072（n=20 任务/日），2.5×SEM≈0.18。
+    三级：
+      tier=ok   |diff| ≤ 0.10（Tier-1 下界内，无注记）
+      tier=note 0.10 < |diff| ≤ 0.18 → 工程注记，不停批（日 FPR ~18%）
+      tier=stop |diff| > 0.18 → 停批候选：requires_permutation_check=True，
+                配对置换 p<0.05 条件由报告层人工执行（双条件缺一不停，日 FPR ~2%）
+    工程门（哨兵）与统计门（置换检验）分离。`ok` 字段 = (tier == "ok")，
+    向后兼容既有消费方；SANITY_TOLERANCE=0.05 已 superseded。"""
     diffs = cross_arm_diffs(rows)
     max_abs = max(abs(d["sanity_diff"]) for d in diffs["per_day"].values())
+    if max_abs > SANITY_TIER2_STOP:
+        tier = "stop"
+    elif max_abs > SANITY_TIER1_NOTE:
+        tier = "note"
+    else:
+        tier = "ok"
     return {
-        "ok": max_abs <= tolerance,
+        "ok": tier == "ok",
+        "tier": tier,
         "max_abs_day_diff": round(max_abs, 4),
-        "tolerance": tolerance,
         "overall_sanity_diff": round(diffs["overall"]["sanity_diff"], 4),
+        "requires_permutation_check": tier == "stop",
+        "tier1_note": SANITY_TIER1_NOTE,
+        "tier2_stop": SANITY_TIER2_STOP,
     }

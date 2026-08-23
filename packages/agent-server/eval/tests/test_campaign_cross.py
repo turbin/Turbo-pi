@@ -23,7 +23,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import campaign_cross  # noqa: E402
-from campaign_cross import CROSS_ARMS, check_sanity, cross_arm_diffs  # noqa: E402
+from campaign_cross import (  # noqa: E402
+    CROSS_ARMS,
+    SANITY_TIER1_NOTE,
+    SANITY_TIER2_STOP,
+    SANITY_TOLERANCE,
+    check_sanity,
+    cross_arm_diffs,
+)
 
 
 def make_rows() -> list[dict]:
@@ -83,6 +90,68 @@ def test_diff_requires_all_four_arms():
     rows = [r for r in make_rows() if r["arm"] != "x4"]
     with pytest.raises(ValueError):
         cross_arm_diffs(rows)
+
+
+def _sanity_boundary_rows(x3_score: float) -> list[dict]:
+    """X3 抬到 x3_score、X4 恒 0.0 的边界构造：每臂每日 1 任务，sanity_diff =
+    x3_score − 0.0 逐位精确（浮点无噪声），三档边界断言可靠。"""
+    rows = []
+    for day, tid in ((1, "task_00000"), (2, "task_00001")):
+        for arm in CROSS_ARMS:
+            score = {"x1": 0.5, "x2": 0.5, "x3": x3_score, "x4": 0.0}[arm]
+            rows.append({"day": day, "task_id": tid, "arm": arm, "kind": "repeat", "score": score})
+    return rows
+
+
+def test_sanity_tier_constants_pre_registered():
+    """修订① 预注册阈值：Tier-1 note=0.10、Tier-2 stop=0.18（2.5×SEM）；
+    SANITY_TOLERANCE=0.05 保留为历史常量（superseded，不参与判定）。"""
+    assert SANITY_TIER1_NOTE == 0.10
+    assert SANITY_TIER2_STOP == 0.18
+    assert SANITY_TOLERANCE == 0.05
+
+
+def test_check_sanity_tier_ok_at_and_below_note_threshold():
+    """|diff| ≤ 0.10 → tier=ok（边界 0.10 含），不停批不注记。"""
+    for x3 in (0.0, 0.05, 0.10):
+        sanity = check_sanity(_sanity_boundary_rows(x3))
+        assert sanity["tier"] == "ok", f"x3={x3} 应 ok"
+        assert sanity["ok"] is True
+        assert sanity["requires_permutation_check"] is False
+
+
+def test_check_sanity_tier_note_between_thresholds():
+    """0.10 < |diff| ≤ 0.18 → tier=note（工程注记，不停批；边界 0.18 含）。"""
+    for x3 in (0.11, 0.15, 0.18):
+        sanity = check_sanity(_sanity_boundary_rows(x3))
+        assert sanity["tier"] == "note", f"x3={x3} 应 note"
+        assert sanity["ok"] is False
+        assert sanity["requires_permutation_check"] is False
+
+
+def test_check_sanity_tier_stop_above_tier2():
+    """|diff| > 0.18 → tier=stop 候选：requires_permutation_check=True，置换 p
+    条件由报告层人工执行（工程门与统计门分离）。"""
+    sanity = check_sanity(_sanity_boundary_rows(0.19))
+    assert sanity["tier"] == "stop"
+    assert sanity["ok"] is False
+    assert sanity["requires_permutation_check"] is True
+
+
+def test_check_sanity_ok_field_equals_tier_ok():
+    """向后兼容：ok 字段语义 = (tier == "ok")，既有消费方（campaign.py --metrics
+    report["cross"]["sanity"]["ok"]）行为不变。"""
+    for x3 in (0.0, 0.10, 0.11, 0.18, 0.19, 0.5):
+        sanity = check_sanity(_sanity_boundary_rows(x3))
+        assert sanity["ok"] == (sanity["tier"] == "ok"), f"x3={x3} ok 语义断裂"
+
+
+def test_sanity_tier_docstring_d2_calibration():
+    """docstring 口径必须写明 D2 校准依据：配对 sd≈0.32/SEM≈0.072、
+    2.5×SEM≈0.18、日 FPR ~2%（修订① 预注册，防阈值回归失据）。"""
+    doc = (campaign_cross.__doc__ or "") + (check_sanity.__doc__ or "")
+    for token in ("0.32", "0.072", "0.18", "FPR"):
+        assert token in doc, f"docstring 缺校准口径 token: {token}"
 
 
 def test_four_arm_plan_covers_repeat_set_only(tmp_path):
