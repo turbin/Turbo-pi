@@ -1,6 +1,6 @@
 # issue-022: Langfuse Redis 磁盘写满 → 摄入 500 → campaign SDK 队列膨胀 → 64GB RSS 被 macOS jetsam 杀死
 
-- 状态：**fixed（2026-08-25 磁盘清理恢复，待观察；防复发项见"建议修法"）**
+- 状态：**fixed（2026-08-25 两轮处置：①prune 17GB 临时恢复 ②根治=clickhouse json.log 20G 无轮转——compose 全服务加 json-file max 100m×3 日志轮转 + 重建栈；磁盘 52%，待观察）**
 - 报告：2026-08-25（D6 campaign 于任务 20/31 处无报错静默消失）
 - 影响面：Langfuse 自托管栈（colima docker 数据盘）、campaign/evolution 等所有 langfuse SDK 客户端进程、D6 批次（resume 恢复）
 
@@ -26,10 +26,11 @@ D6 campaign（PID 43928）在任务 20/31 完成后**无 traceback 静默退出*
 
 ## 建议修法（防复发，待办）
 
-1. **磁盘水位监控**：每日 cron 检查 `docker exec langfuse-redis-1 df -h /data` + docker system df，>80% 告警（入跑批前置清单 E 节）；
-2. **Langfuse 数据保留策略**：trace 保留期评估（当前全量保留，ClickHouse 持续增长）；
-3. **colima 磁盘扩容**（40G→80G）或定期 prune 自动化；
-4. **SDK 侧防御**：campaign/oracle 等长寿命进程的 langfuse client 考虑 `flush_at` 更小批次 + 摄入失败时丢弃策略评估（当前重试无上限——这正是队列膨胀源；修 langfuse SDK 配置即可，不改线上行为语义）。
+1. ~~磁盘清理~~（已执行，首轮）；**根治（第二轮已执行）**：clickhouse 容器的 docker json-file 日志无轮转，5 天长到 20G 并在跑批高峰以 ~7GB/2.5h 增速回填磁盘（2026-08-25 第二轮复发实证）——`eval/langfuse/docker-compose.yml` 全 6 服务加 `logging: json-file max-size=100m max-file=3` 并重建（旧容器连同 20G 日志移除）。**教训：docker 默认 json-file 驱动无上限，长寿命容器必须显式轮转**；
+2. **磁盘水位监控**：每日 cron 检查 `docker exec langfuse-redis-1 df -h /data` + docker system df，>80% 告警（入跑批前置清单 E 节）；
+3. **Langfuse 数据保留策略**：trace 保留期评估（当前全量保留，ClickHouse 持续增长，卷已 3.4G+1.7G logs）；
+4. **colima 磁盘扩容**（40G→80G）或定期 prune 自动化；
+5. **SDK 侧防御**：campaign/oracle 等长寿命进程的 langfuse client 考虑 `flush_at` 更小批次 + 摄入失败时丢弃策略评估（当前重试无上限——这正是队列膨胀源；修 langfuse SDK 配置即可，不改线上行为语义）。
 
 ## 回归测试
 
