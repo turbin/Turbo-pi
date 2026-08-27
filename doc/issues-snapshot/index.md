@@ -4,7 +4,7 @@
 
 | Issue | 标题 | 状态 | 报告 | 修复 | 回归测试 |
 |---|---|---|---|---|---|
-| [issue-024](issue-024-d7-memory-net-negative-mechanisms.md) | D7 预注册裁决：演进库净效应显著为负（X2−X1=−0.177，p=0.0425）；三机制归因=攻略卡过拟合/碎碎念卡/检索不稳×9B 方差 | **open**（归因完成，修法随七层报告提交用户裁决） | 2026-08-26（D7 对账核算） | 待修（蒸馏质量闸/SOP 范围约束/注入交付优先/检索防抖/存量碎碎念卡处置） | 修复时补 |
+| [issue-024](issue-024-d7-memory-net-negative-mechanisms.md) | D7 预注册裁决：演进库注入路径无正增益+少数任务灾难性脱轨（X2−X1=−0.177，p=0.0425；剔 3 极端后 p=0.309）；R2 修订归因=攻略卡/碎碎念卡两风险因子+9B 方差放大器+评分口径因子 | **open**（R2 归因完成，修法随七层报告提交用户裁决） | 2026-08-26（D7 对账核算） | 待修（蒸馏质量闸/SOP 白名单/注入 wrapper 治理/评分双口径/存量碎碎念卡处置） | 修复时补 |
 | [issue-023](issue-023-judge-402-infinite-backoff-stall.md) | 裁判 API 余额耗尽（402）+ 无上限指数退避——D7 跑批静默挂起 10h（69/96 处停摆，无数据污染） | **open**（待用户充值后自动恢复；结构性修复 D 收口后） | 2026-08-26（D7 例行检查） | 待修（退避封顶 + 402 快速失败 + preflight 余额检查 + 停滞告警） | 修复时补 |
 | [issue-001](issue-001-hit-rate-nan.md) | Web 页面命中率显示 NaN% | fixed | 2026-08-05 | 2026-08-05 | `packages/agent-server/test/regressions/issue-001-hit-rate-nan.test.ts` |
 | [issue-002](issue-002-evolution-logprobs-json-truncation.md) | 进化管线 logprobs 大响应截断致 JSON 解析失败 | fixed（2026-08-09 补回归测试转正，待观察） | 2026-08-06 | 2026-08-06~07（三轮）+ 08-09 补测 | `packages/agent-server/python/tests/test_issue002_pipeline_resilience.py` |
