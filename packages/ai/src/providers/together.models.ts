@@ -17,14 +17,6 @@ export const TOGETHER_MODELS = values as {
 		id: "Qwen/Qwen2.5-7B-Instruct-Turbo";
 		provider: "together";
 	};
-	"Qwen/Qwen3-235B-A22B-Instruct-2507-tput": Model<"openai-completions"> & {
-		id: "Qwen/Qwen3-235B-A22B-Instruct-2507-tput";
-		provider: "together";
-	};
-	"Qwen/Qwen3.5-397B-A17B": Model<"openai-completions"> & {
-		id: "Qwen/Qwen3.5-397B-A17B";
-		provider: "together";
-	};
 	"Qwen/Qwen3.5-9B": Model<"openai-completions"> & {
 		id: "Qwen/Qwen3.5-9B";
 		provider: "together";
@@ -37,12 +29,16 @@ export const TOGETHER_MODELS = values as {
 		id: "Qwen/Qwen3.7-Max";
 		provider: "together";
 	};
+	"deepseek-ai/DeepSeek-V4-Flash-0731": Model<"openai-completions"> & {
+		id: "deepseek-ai/DeepSeek-V4-Flash-0731";
+		provider: "together";
+	};
 	"deepseek-ai/DeepSeek-V4-Pro": Model<"openai-completions"> & {
 		id: "deepseek-ai/DeepSeek-V4-Pro";
 		provider: "together";
 	};
-	"essentialai/Rnj-1-Instruct": Model<"openai-completions"> & {
-		id: "essentialai/Rnj-1-Instruct";
+	"deepseek-ai/DeepSeek-V4-Pro-0813": Model<"openai-completions"> & {
+		id: "deepseek-ai/DeepSeek-V4-Pro-0813";
 		provider: "together";
 	};
 	"google/gemma-4-31B-it": Model<"openai-completions"> & {
@@ -61,6 +57,10 @@ export const TOGETHER_MODELS = values as {
 		id: "moonshotai/Kimi-K2.7-Code";
 		provider: "together";
 	};
+	"moonshotai/Kimi-K3": Model<"openai-completions"> & {
+		id: "moonshotai/Kimi-K3";
+		provider: "together";
+	};
 	"nvidia/nemotron-3-ultra-550b-a55b": Model<"openai-completions"> & {
 		id: "nvidia/nemotron-3-ultra-550b-a55b";
 		provider: "together";
@@ -73,12 +73,8 @@ export const TOGETHER_MODELS = values as {
 		id: "openai/gpt-oss-20b";
 		provider: "together";
 	};
-	"zai-org/GLM-5": Model<"openai-completions"> & {
-		id: "zai-org/GLM-5";
-		provider: "together";
-	};
-	"zai-org/GLM-5.1": Model<"openai-completions"> & {
-		id: "zai-org/GLM-5.1";
+	"thinkingmachines/Inkling": Model<"openai-completions"> & {
+		id: "thinkingmachines/Inkling";
 		provider: "together";
 	};
 	"zai-org/GLM-5.2": Model<"openai-completions"> & {

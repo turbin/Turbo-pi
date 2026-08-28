@@ -54,7 +54,7 @@ def make_ctx(*, scores=None, distill_response=None, run_agent=None, grade=None):
     if run_agent is None:
         calls = []
 
-        def run_agent(client, model, prompt, ws, timeout_s, *, injection, task_id, domain):
+        def run_agent(client, model, prompt, ws, timeout_s, *, injection, task_id, domain, arm="", condition=""):
             calls.append({"client": client, "model": model, "prompt": prompt, "injection": injection, "task_id": task_id})
             return _execution()
 

@@ -134,6 +134,16 @@ export interface RequestTraceInput {
 	completionTokens?: number;
 	latencyMs?: number;
 	error?: string;
+	/** P0: experiment arm label (eval runner extra_body.arm). */
+	arm?: string;
+	/** P0: experiment condition label (eval runner extra_body.condition). */
+	condition?: string;
+	/**
+	 * P0: canonical SHA256 of the model-facing request payload. Computed by the
+	 * eval runner and echoed by agent-server into request_traces for arm-equivalence
+	 * auditing (E0.2).
+	 */
+	canonicalRequestHash?: string;
 }
 
 export interface HitRateStats {
@@ -252,7 +262,10 @@ export class ExperienceStore {
 				prompt_tokens INTEGER,
 				completion_tokens INTEGER,
 				latency_ms INTEGER,
-				error TEXT
+				error TEXT,
+				arm TEXT,
+				condition TEXT,
+				canonical_request_hash TEXT
 			);
 			CREATE INDEX IF NOT EXISTS idx_request_traces_ts ON request_traces(ts);
 		`);
@@ -269,6 +282,16 @@ export class ExperienceStore {
 		}
 		if (!hasTraceCol("task_id")) {
 			this.db.exec("ALTER TABLE request_traces ADD COLUMN task_id TEXT");
+		}
+		// P0: add arm/condition/canonical_request_hash for E0 treatment-compliance auditing.
+		if (!hasTraceCol("arm")) {
+			this.db.exec("ALTER TABLE request_traces ADD COLUMN arm TEXT");
+		}
+		if (!hasTraceCol("condition")) {
+			this.db.exec("ALTER TABLE request_traces ADD COLUMN condition TEXT");
+		}
+		if (!hasTraceCol("canonical_request_hash")) {
+			this.db.exec("ALTER TABLE request_traces ADD COLUMN canonical_request_hash TEXT");
 		}
 		// F2 (T3): experiences 增 confidence/rescore_excluded_batches——PRAGMA + ALTER
 		// 迁移（M1 模式）+ user_version 版本化；旧行读回列默认值（COALESCE 语义）。
@@ -529,8 +552,9 @@ export class ExperienceStore {
 			.prepare(`
 				INSERT INTO request_traces
 					(request_id, ts, model, stream, retrieved_count, retrieved_ids, retrieved_scores, retrieved_kinds, hit,
-					 injected_ids, injected_tokens, task_id, finish_reason, prompt_tokens, completion_tokens, latency_ms, error)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+					 injected_ids, injected_tokens, task_id, finish_reason, prompt_tokens, completion_tokens, latency_ms, error,
+					 arm, condition, canonical_request_hash)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT(request_id) DO UPDATE SET
 					finish_reason = COALESCE(excluded.finish_reason, request_traces.finish_reason),
 					prompt_tokens = COALESCE(excluded.prompt_tokens, request_traces.prompt_tokens),
@@ -540,7 +564,10 @@ export class ExperienceStore {
 					retrieved_scores = COALESCE(?, request_traces.retrieved_scores),
 					injected_ids = COALESCE(?, request_traces.injected_ids),
 					injected_tokens = COALESCE(?, request_traces.injected_tokens),
-					task_id = COALESCE(excluded.task_id, request_traces.task_id)
+					task_id = COALESCE(excluded.task_id, request_traces.task_id),
+					arm = COALESCE(excluded.arm, request_traces.arm),
+					condition = COALESCE(excluded.condition, request_traces.condition),
+					canonical_request_hash = COALESCE(excluded.canonical_request_hash, request_traces.canonical_request_hash)
 			`)
 			.run(
 				input.requestId,
@@ -560,6 +587,9 @@ export class ExperienceStore {
 				input.completionTokens ?? null,
 				input.latencyMs ?? null,
 				input.error ?? null,
+				input.arm ?? null,
+				input.condition ?? null,
+				input.canonicalRequestHash ?? null,
 				retrievedScoresUpdate,
 				injectedIdsUpdate,
 				injectedTokensUpdate,

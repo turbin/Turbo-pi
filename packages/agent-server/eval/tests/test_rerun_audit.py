@@ -158,7 +158,7 @@ def _execution():
 def test_run_audit_stub(tmp_path):
     seq = {"t1": [0.6, 0.7, 0.8], "t2": [0.2, 0.2, 0.5]}
 
-    def run_agent(client, model, prompt, ws, timeout_s, *, injection, task_id, domain):
+    def run_agent(client, model, prompt, ws, timeout_s, *, injection, task_id, domain, arm="", condition=""):
         return _execution()
 
     def grade_seq(task_id, execution, ws):
@@ -186,7 +186,7 @@ def test_run_audit_stub(tmp_path):
 def test_run_audit_injection_on(tmp_path):
     seen = []
 
-    def run_agent(client, model, prompt, ws, timeout_s, *, injection, task_id, domain):
+    def run_agent(client, model, prompt, ws, timeout_s, *, injection, task_id, domain, arm="", condition=""):
         seen.append((injection, task_id))
         return _execution()
 

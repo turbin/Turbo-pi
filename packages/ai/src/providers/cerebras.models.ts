@@ -13,8 +13,4 @@ export const CEREBRAS_MODELS = values as {
 		id: "gpt-oss-120b";
 		provider: "cerebras";
 	};
-	"zai-glm-4.7": Model<"openai-completions"> & {
-		id: "zai-glm-4.7";
-		provider: "cerebras";
-	};
 };

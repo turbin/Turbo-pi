@@ -9,12 +9,16 @@ export const FIREWORKS_MODELS = values as {
 		id: "accounts/fireworks/models/deepseek-v4-flash";
 		provider: "fireworks";
 	};
+	"accounts/fireworks/models/deepseek-v4-flash-0731": Model<"anthropic-messages"> & {
+		id: "accounts/fireworks/models/deepseek-v4-flash-0731";
+		provider: "fireworks";
+	};
 	"accounts/fireworks/models/deepseek-v4-pro": Model<"anthropic-messages"> & {
 		id: "accounts/fireworks/models/deepseek-v4-pro";
 		provider: "fireworks";
 	};
-	"accounts/fireworks/models/glm-5p1": Model<"anthropic-messages"> & {
-		id: "accounts/fireworks/models/glm-5p1";
+	"accounts/fireworks/models/deepseek-v4-pro-0813": Model<"anthropic-messages"> & {
+		id: "accounts/fireworks/models/deepseek-v4-pro-0813";
 		provider: "fireworks";
 	};
 	"accounts/fireworks/models/glm-5p2": Model<"openai-completions"> & {
@@ -29,12 +33,20 @@ export const FIREWORKS_MODELS = values as {
 		id: "accounts/fireworks/models/gpt-oss-20b";
 		provider: "fireworks";
 	};
+	"accounts/fireworks/models/inkling": Model<"anthropic-messages"> & {
+		id: "accounts/fireworks/models/inkling";
+		provider: "fireworks";
+	};
 	"accounts/fireworks/models/kimi-k2p6": Model<"anthropic-messages"> & {
 		id: "accounts/fireworks/models/kimi-k2p6";
 		provider: "fireworks";
 	};
 	"accounts/fireworks/models/kimi-k2p7-code": Model<"anthropic-messages"> & {
 		id: "accounts/fireworks/models/kimi-k2p7-code";
+		provider: "fireworks";
+	};
+	"accounts/fireworks/models/kimi-k3": Model<"anthropic-messages"> & {
+		id: "accounts/fireworks/models/kimi-k3";
 		provider: "fireworks";
 	};
 	"accounts/fireworks/models/minimax-m2p7": Model<"anthropic-messages"> & {
@@ -45,12 +57,24 @@ export const FIREWORKS_MODELS = values as {
 		id: "accounts/fireworks/models/minimax-m3";
 		provider: "fireworks";
 	};
+	"accounts/fireworks/models/muse-glimmer-30b": Model<"anthropic-messages"> & {
+		id: "accounts/fireworks/models/muse-glimmer-30b";
+		provider: "fireworks";
+	};
+	"accounts/fireworks/models/nemotron-3-ultra-nvfp4": Model<"anthropic-messages"> & {
+		id: "accounts/fireworks/models/nemotron-3-ultra-nvfp4";
+		provider: "fireworks";
+	};
+	"accounts/fireworks/models/nemotron-lightning-3p5-30b-a3b": Model<"anthropic-messages"> & {
+		id: "accounts/fireworks/models/nemotron-lightning-3p5-30b-a3b";
+		provider: "fireworks";
+	};
 	"accounts/fireworks/models/qwen3p7-plus": Model<"anthropic-messages"> & {
 		id: "accounts/fireworks/models/qwen3p7-plus";
 		provider: "fireworks";
 	};
-	"accounts/fireworks/routers/glm-5p1-fast": Model<"anthropic-messages"> & {
-		id: "accounts/fireworks/routers/glm-5p1-fast";
+	"accounts/fireworks/models/qwen3p8-max": Model<"anthropic-messages"> & {
+		id: "accounts/fireworks/models/qwen3p8-max";
 		provider: "fireworks";
 	};
 	"accounts/fireworks/routers/glm-5p2-fast": Model<"openai-completions"> & {
@@ -67,6 +91,10 @@ export const FIREWORKS_MODELS = values as {
 	};
 	"accounts/fireworks/routers/kimi-k2p7-code-fast": Model<"anthropic-messages"> & {
 		id: "accounts/fireworks/routers/kimi-k2p7-code-fast";
+		provider: "fireworks";
+	};
+	"accounts/fireworks/routers/kimi-k3-fast": Model<"anthropic-messages"> & {
+		id: "accounts/fireworks/routers/kimi-k3-fast";
 		provider: "fireworks";
 	};
 };

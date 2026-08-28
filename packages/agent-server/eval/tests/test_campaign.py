@@ -352,7 +352,10 @@ def test_run_agent_accepts_injection_kwarg_and_records_marker(tmp_path):
     result = campaign.run_agent(
         client, "agent-auto", "do the thing", tmp_path, timeout_s=60, injection=False, task_id="task_00042", domain="office"
     )
-    assert seen["extra_body"] == {"injection": False, "task_id": "task_00042", "domain": "office"}
+    assert seen["extra_body"]["injection"] is False
+    assert seen["extra_body"]["task_id"] == "task_00042"
+    assert seen["extra_body"]["domain"] == "office"
+    assert "canonical_request_hash" in seen["extra_body"]
     assert result["status"] == "completed"
     assert result["trace_ids"] == ["chatcmpl-fake-1"]
     assert result["escalated"] is True

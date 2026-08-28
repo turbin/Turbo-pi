@@ -69,7 +69,7 @@
 
 | # | 条件 | 验证 |
 |---|---|---|
-| G1 | 既有测试全绿 | `./test.sh` 口径（agent-server/agent-gateway/eval） |
+| G1 | 既有测试全绿 | `./test.sh` 口径（agent-server/agent-gateway/eval）。P0 修改后 `./test.sh` 自动使用 Node 25 工具链；agent-server/agent-gateway/eval 测试全绿。pi-ai 与 pi-coding-agent 当前存在与模型目录/用户环境相关的预存失败（非 P0/E0 批次阻塞项），开跑前须确认这些失败未扩大。 |
 | G2 | `npm run check` 无新增失败（pre-existing pinned-deps=eval/results 工件口径不变） | 完整输出核对 |
 | G3 | length 升级率 <5% 门控脚本可用 | `eval/gate_length_escalation.py`（pilot 校准结论先入档） |
 | G4 | Langfuse 侧可观测核对口径已明确：model 字段=服务模型、gateway_trace_id=对账键、qcb_score=任务分数 | 本清单 B6/E4 |

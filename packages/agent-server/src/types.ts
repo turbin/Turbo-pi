@@ -15,6 +15,16 @@ export interface StreamRequest {
 	 * plain pi clients without a domain see unfiltered retrieval.
 	 */
 	domain?: string;
+	/** P0: experiment arm label (e.g. experiment/control/x1), written to request_traces.arm. */
+	arm?: string;
+	/** P0: experiment condition label (e.g. frozen-injTrue), written to request_traces.condition. */
+	condition?: string;
+	/**
+	 * P0: canonical SHA256 of the model-facing request payload (excluding
+	 * runner attribution fields). Written to request_traces.canonical_request_hash
+	 * for arm-equivalence auditing (E0.2).
+	 */
+	canonicalRequestHash?: string;
 }
 
 export interface ProxyStreamOptions extends Partial<SimpleStreamOptions> {
@@ -32,6 +42,12 @@ export interface ProxyStreamOptions extends Partial<SimpleStreamOptions> {
 	 * AGENT_SERVER_INJECTION, default on); an explicit boolean overrides it.
 	 */
 	injection?: boolean;
+	/** P0: experiment arm label, mirrored from StreamRequest for trace writing. */
+	arm?: string;
+	/** P0: experiment condition label, mirrored from StreamRequest for trace writing. */
+	condition?: string;
+	/** P0: canonical request hash, mirrored from StreamRequest for trace writing. */
+	canonicalRequestHash?: string;
 }
 
 export interface Experience {

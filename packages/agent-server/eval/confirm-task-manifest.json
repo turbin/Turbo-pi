@@ -1,0 +1,109 @@
+{
+  "source_run": "results/campaign-20260819/run.jsonl",
+  "total_tasks": 99,
+  "executed_tasks": 79,
+  "confirm_task_ids": [
+    "task_00003_a_stock_announcements_scheduled_fetch",
+    "task_00009_session_manager_skill_creation_and_progress_check",
+    "task_00016_moltbook_auto_post_skill_creation",
+    "task_00018_memos_discovery_and_workspace_bootstrap",
+    "task_00030_openclaw_gateway_crash_root_cause_analysis_and_recovery_plan",
+    "task_00032_gateway_health_check_skill_and_crash_pattern_analysis",
+    "task_00040_server_status_report_compilation",
+    "task_00045_draft_technical_proposal_section_8_5_top_lifting_points_for_anechoic",
+    "task_00049_weekly_magazine_article_from_news_event_files",
+    "task_00054_memory_management_workflow_design",
+    "task_00056_seo_long_tail_keyword_research_report_for_retirement_calculator",
+    "task_00062_llm_benchmark_design_statistical_analysis_and_execution_planning",
+    "task_00072_spark_fi_liquidity_monitor_delta_analysis_and_alert_report",
+    "task_00074_pol_usdc_arbitrage_monitor_execution",
+    "task_00080_ai_quant_trading_strategy_ml_backtesting_system",
+    "task_00082_whatsapp_recovery_status_inquiry_skill",
+    "task_00089_security_code_audit_of_compensation_service",
+    "task_00092_nginx_basic_auth_credential_management_skill",
+    "task_00098_diagnose_scheduled_book_recommendation_failure",
+    "task_00100_house_robber_algorithm_deep_dive_explanation"
+  ],
+  "confirm_tasks": [
+    {
+      "task_id": "task_00003_a_stock_announcements_scheduled_fetch",
+      "sha256": "40130767dfe996001b2ce5b613e7bd0aeeddefa350327eecf703624d22936beb"
+    },
+    {
+      "task_id": "task_00009_session_manager_skill_creation_and_progress_check",
+      "sha256": "f2ea483b85a6981392138760c8e57fb911f734e2bc1ae634b79f0056dc420c33"
+    },
+    {
+      "task_id": "task_00016_moltbook_auto_post_skill_creation",
+      "sha256": "3c4dd96b6008d551fb935e8a86dbca83ed4f5917841a25d2dd7efd4aa99a5822"
+    },
+    {
+      "task_id": "task_00018_memos_discovery_and_workspace_bootstrap",
+      "sha256": "bcdca76a5e2fd75aadd73d9564a46dd6c0bb0af1b92f0e336c17c23d791a69f7"
+    },
+    {
+      "task_id": "task_00030_openclaw_gateway_crash_root_cause_analysis_and_recovery_plan",
+      "sha256": "39baee29d49430eaa6de9657f2e1a166909d21c0157a45762e9f4fdd4fb20dfe"
+    },
+    {
+      "task_id": "task_00032_gateway_health_check_skill_and_crash_pattern_analysis",
+      "sha256": "4ca433b690e9251e8bf369d6cb98170e0c53b46cbed78c62174ff73d63190621"
+    },
+    {
+      "task_id": "task_00040_server_status_report_compilation",
+      "sha256": "511e203ba0415bda1c66ded257d0c7d11ea8fd1f00995e3d56523dd2be8367ad"
+    },
+    {
+      "task_id": "task_00045_draft_technical_proposal_section_8_5_top_lifting_points_for_anechoic",
+      "sha256": "03a7c64993fabf0c5f4240ac0df1f96c82ed6e89d602c03f872f27a2449ed5da"
+    },
+    {
+      "task_id": "task_00049_weekly_magazine_article_from_news_event_files",
+      "sha256": "2d5f709849213afc9563531d78972892fc2b94a6c03542c7a831936ca89013e3"
+    },
+    {
+      "task_id": "task_00054_memory_management_workflow_design",
+      "sha256": "8c326ece01b761c06cfed1bf5508bbc65215c4849886e5e84666cd7ddf16a3e2"
+    },
+    {
+      "task_id": "task_00056_seo_long_tail_keyword_research_report_for_retirement_calculator",
+      "sha256": "450d50f31dd9909977502b9ff0ca5cc7185f934fd99d787818ca5578211de0fb"
+    },
+    {
+      "task_id": "task_00062_llm_benchmark_design_statistical_analysis_and_execution_planning",
+      "sha256": "fbc49460fc6de3efe3619629ea06ef83eea83760af1ebc2ecc610b71f165ef85"
+    },
+    {
+      "task_id": "task_00072_spark_fi_liquidity_monitor_delta_analysis_and_alert_report",
+      "sha256": "74fbf65eb8851421fb9cd048f28a96478800692d5016ebb954fca97253cf65eb"
+    },
+    {
+      "task_id": "task_00074_pol_usdc_arbitrage_monitor_execution",
+      "sha256": "12f2b66169502388c7263f2296e205f556ababb7f0496c787bf8c243f850f16f"
+    },
+    {
+      "task_id": "task_00080_ai_quant_trading_strategy_ml_backtesting_system",
+      "sha256": "01ff29059f6d3cbc0539934e31d60705a8becbcd080a14a962189e45b914f637"
+    },
+    {
+      "task_id": "task_00082_whatsapp_recovery_status_inquiry_skill",
+      "sha256": "e003dae44ee6c2ad8a4fd3d23ce83be507f20ad6f69a9c2aa5f5398629eea202"
+    },
+    {
+      "task_id": "task_00089_security_code_audit_of_compensation_service",
+      "sha256": "ad501f0ba282921d841a68347f95d94cc8c67e95b125de293d457f865711abdd"
+    },
+    {
+      "task_id": "task_00092_nginx_basic_auth_credential_management_skill",
+      "sha256": "b053a460892e5b2b6db1895ab416b1c14e3a6d5970e6a68f7dd4d20dc7ff1fef"
+    },
+    {
+      "task_id": "task_00098_diagnose_scheduled_book_recommendation_failure",
+      "sha256": "7b31ed5c5a4b86a5c20a8736c7397b4aaa5710bf8fc582c4dcfd8ac4c9d12ddf"
+    },
+    {
+      "task_id": "task_00100_house_robber_algorithm_deep_dive_explanation",
+      "sha256": "d1d27b9ce173fbeab9d1000c26dc9a73527762f1dfc3fb977a82a3297cad8328"
+    }
+  ]
+}

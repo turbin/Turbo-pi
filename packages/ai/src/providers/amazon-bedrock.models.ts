@@ -49,6 +49,10 @@ export const AMAZON_BEDROCK_MODELS = values as {
 		id: "anthropic.claude-opus-4-8";
 		provider: "amazon-bedrock";
 	};
+	"anthropic.claude-opus-5": Model<"bedrock-converse-stream"> & {
+		id: "anthropic.claude-opus-5";
+		provider: "amazon-bedrock";
+	};
 	"anthropic.claude-sonnet-4-5-20250929-v1:0": Model<"bedrock-converse-stream"> & {
 		id: "anthropic.claude-sonnet-4-5-20250929-v1:0";
 		provider: "amazon-bedrock";
@@ -71,6 +75,10 @@ export const AMAZON_BEDROCK_MODELS = values as {
 	};
 	"au.anthropic.claude-opus-4-8": Model<"bedrock-converse-stream"> & {
 		id: "au.anthropic.claude-opus-4-8";
+		provider: "amazon-bedrock";
+	};
+	"au.anthropic.claude-opus-5": Model<"bedrock-converse-stream"> & {
+		id: "au.anthropic.claude-opus-5";
 		provider: "amazon-bedrock";
 	};
 	"au.anthropic.claude-sonnet-4-5-20250929-v1:0": Model<"bedrock-converse-stream"> & {
@@ -121,6 +129,10 @@ export const AMAZON_BEDROCK_MODELS = values as {
 		id: "eu.anthropic.claude-opus-4-8";
 		provider: "amazon-bedrock";
 	};
+	"eu.anthropic.claude-opus-5": Model<"bedrock-converse-stream"> & {
+		id: "eu.anthropic.claude-opus-5";
+		provider: "amazon-bedrock";
+	};
 	"eu.anthropic.claude-sonnet-4-5-20250929-v1:0": Model<"bedrock-converse-stream"> & {
 		id: "eu.anthropic.claude-sonnet-4-5-20250929-v1:0";
 		provider: "amazon-bedrock";
@@ -157,6 +169,10 @@ export const AMAZON_BEDROCK_MODELS = values as {
 		id: "global.anthropic.claude-opus-4-8";
 		provider: "amazon-bedrock";
 	};
+	"global.anthropic.claude-opus-5": Model<"bedrock-converse-stream"> & {
+		id: "global.anthropic.claude-opus-5";
+		provider: "amazon-bedrock";
+	};
 	"global.anthropic.claude-sonnet-4-5-20250929-v1:0": Model<"bedrock-converse-stream"> & {
 		id: "global.anthropic.claude-sonnet-4-5-20250929-v1:0";
 		provider: "amazon-bedrock";
@@ -167,6 +183,18 @@ export const AMAZON_BEDROCK_MODELS = values as {
 	};
 	"global.anthropic.claude-sonnet-5": Model<"bedrock-converse-stream"> & {
 		id: "global.anthropic.claude-sonnet-5";
+		provider: "amazon-bedrock";
+	};
+	"global.openai.gpt-5.6-luna": Model<"bedrock-converse-stream"> & {
+		id: "global.openai.gpt-5.6-luna";
+		provider: "amazon-bedrock";
+	};
+	"global.openai.gpt-5.6-sol": Model<"bedrock-converse-stream"> & {
+		id: "global.openai.gpt-5.6-sol";
+		provider: "amazon-bedrock";
+	};
+	"global.openai.gpt-5.6-terra": Model<"bedrock-converse-stream"> & {
+		id: "global.openai.gpt-5.6-terra";
 		provider: "amazon-bedrock";
 	};
 	"google.gemma-3-27b-it": Model<"bedrock-converse-stream"> & {
@@ -187,6 +215,10 @@ export const AMAZON_BEDROCK_MODELS = values as {
 	};
 	"jp.anthropic.claude-opus-4-8": Model<"bedrock-converse-stream"> & {
 		id: "jp.anthropic.claude-opus-4-8";
+		provider: "amazon-bedrock";
+	};
+	"jp.anthropic.claude-opus-5": Model<"bedrock-converse-stream"> & {
+		id: "jp.anthropic.claude-opus-5";
 		provider: "amazon-bedrock";
 	};
 	"jp.anthropic.claude-sonnet-4-5-20250929-v1:0": Model<"bedrock-converse-stream"> & {
@@ -393,6 +425,10 @@ export const AMAZON_BEDROCK_MODELS = values as {
 		id: "us.anthropic.claude-opus-4-8";
 		provider: "amazon-bedrock";
 	};
+	"us.anthropic.claude-opus-5": Model<"bedrock-converse-stream"> & {
+		id: "us.anthropic.claude-opus-5";
+		provider: "amazon-bedrock";
+	};
 	"us.anthropic.claude-sonnet-4-5-20250929-v1:0": Model<"bedrock-converse-stream"> & {
 		id: "us.anthropic.claude-sonnet-4-5-20250929-v1:0";
 		provider: "amazon-bedrock";
@@ -427,6 +463,10 @@ export const AMAZON_BEDROCK_MODELS = values as {
 	};
 	"xai.grok-4.3": Model<"bedrock-converse-stream"> & {
 		id: "xai.grok-4.3";
+		provider: "amazon-bedrock";
+	};
+	"xai.grok-4.6": Model<"bedrock-converse-stream"> & {
+		id: "xai.grok-4.6";
 		provider: "amazon-bedrock";
 	};
 	"zai.glm-4.7": Model<"bedrock-converse-stream"> & {

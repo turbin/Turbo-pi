@@ -1,7 +1,7 @@
 # design 目录索引（INDEX）
 
 维护说明：本索引概述 `doc/design/`（目录名带前导空格）下每份文档的内容，并记录从 agent-server P0 起各阶段决策的变化时间线。**新增设计文档时请同步更新本索引。**
-最后更新：2026-08-27（新增阶段 12：D 阶段收口与终审——七层最终报告 R3 可交付 + 下一步方案待裁决）。
+最后更新：2026-08-28（阶段 14 自我进化工程蓝图更新至 V3——Kimi × Codex 对抗审核补齐可执行信任边界、验证隔离、签名审计、四层状态模型与受限源码 ABI；不授权实施或跑批）。
 
 阅读指引：
 - **通用约束 canonical 版本**（工程内改动、omlx 不可动、提交格式、git 纪律）：`2026-07-22-agent-server-p3-candidate-tasks.md` 的"通用约束"一节，后续任务书均为引用。
@@ -229,8 +229,25 @@
 
 | 文件 | 内容 |
 |---|---|
-| 2026-08-27-9b-campaign-d-phase-final-report.md | **D 阶段七层最终报告（R3 终审“可交付”）**：判据①② PASS、③④ FAIL——记忆系统无正增益+少数任务灾难性脱轨（X2−X1=−0.177，p=0.0425，剔 3 极端后 p=0.309）；双 agent 对抗审查三轮收敛（数据组错数 3+口径 6/无误 31 项，逻辑组致命 3+重要 10 全部修复）；归因=攻略卡/碎碎念卡两风险因子+9B 方差放大器+评分口径因子；Oracle：注入本身可致害（task_00060 裸考 0.80→喂攻略 0.00）；DiD/交互项/新任务趋势/日漂移全量补报；T9 重跑审计待补附录 |
-| plans/2026-08-27-post-d-phase-next-steps-plan.md | **D 收口后下一步方案【待用户裁决】**：方案 A（先修记忆 v2 再进 ALFWorld，推荐）/ B（冻结记忆直接进）/ C（先清 deferred 债）；建议路径=T9 附录→issue-020 三教师对照→记忆 v2 设计稿→批准→实施→一日四臂复验→ALFWorld；决策点 4 项（含存量碎碎念卡处置与 issue-023 修复批次归属） |
+| 2026-08-27-9b-campaign-d-phase-final-report.md | **D 阶段七层最终报告（R3 conditional pass / 需 major revision）**：判据①② PASS、③④ FAIL；可确认当前记忆注入路径无正增益且存在少数任务灾难性脱轨，不能把总体差异唯一归因于记忆内容；T9 5×3 已补，但同任务三次共用 workspace，0.0067 仅代表该实现下 5 题表面稳定，不能外推为全局噪声 floor；arms 等价、取证链、功效与 ALFWorld 前置仍待闭环 |
+| plans/2026-08-27-post-d-phase-next-steps-plan.md | **历史方案【已废止】**：原 A/B/C 路线与“先三教师再 v2”的串行建议，已被阶段 13 的对抗审查版实验计划取代 |
+
+### 阶段 13：D 后实验重设计（2026-08-27）
+
+| 文件 | 内容 |
+|---|---|
+| plans/2026-08-27-post-d-adversarial-experiment-redesign-plan.md | **现行实验入口 V1【设计通过、待实施批准】**：P0 基础设施→E0 机械臂等价/T9-R2→E1 裸基线+内容×剂量→按结果分支 E2/E3→E5a 冻结 detector→E4+E5b 前瞻 shadow→共同主效用/安全裁决；20 个未执行任务用 manifest+denylist 严格封存；本文件不授权跑批 |
+| 2026-08-27-post-d-experiment-redesign-adversarial-review.md | **5 轮 Kimi×Codex 对抗审查记录**：核验 workspace/注入路径、任务池/统计、卡片 schema/evolution、gate/judge、全方案反例；接受工程阻断并纠正 Kimi 关于“无未见任务”、judge/cost、E2/E5 时序的错误判断 |
+| 2026-08-27-post-d-experiment-redesign-changes-and-decisions.md | **重设计决策记录 D-01~D-12**：测量先行、内容×剂量可识别设计、E2/E3 条件触发、sidecar/派生库、确认集技术隔离、E4 双共同主指标、E5 前瞻时序及本轮授权边界 |
+
+### 阶段 14：自我进化工程蓝图（2026-08-27）
+
+| 文件 | 内容 |
+|---|---|
+| plans/2026-08-27-self-evolving-engineering-design-plan.md | **自我进化工程设计 V3【五轮对抗审核定稿，待 Phase 0b 参数预注册；不授权实施/跑批】**：在 V2 的 OpenRSI/DGM/autoresearch 方案上补齐独立 TEK 进程边界、search/selection/confirmation 隔离、artifact-attestation-deployment-runtime 四层模型、签名/WORM 审计、严格 shadow、scoped 模型门与 capability-limited 源码 ABI |
+| 2026-08-28-self-evolving-engineering-design-adversarial-review.md | **Kimi × Codex 五轮上限对抗审核记录**：独立红队→统计/状态反驳→信任主体与数据模型→安全白名单与证据边界→V3 终审；记录收敛项、证据适用边界和 Phase 0 参数 |
+| 2026-08-27-self-evolving-engineering-design-changes-and-decisions.md | **自举设计决策 SE-01~SE-28**：在 V2 基础上新增 TEK 独立进程边界、四层状态、签名分权、adaptive holdout 隔离、严格 shadow、稀有事件保守门、受限 ABI、数据保留、签名依赖例外与 Phase 0a/0b |
+| 2026-08-27-p0-infrastructure-changes-and-decisions.md | **P0 基础设施实施决策 P0-01~P0-06**：judge 适配器、独立工作区断言、确认集 denylist、canonical request hash、arm/condition trace 标记、测试门控风险域分离 |
 
 ---
 
@@ -351,6 +368,14 @@
 - 【改】“升级率”解释口径收窄为“协议级升级率”，必须与 AutonomousSuccessRate、MissedEscalationRate、明显失败数联合报告
 - 【留】任务级线上门控改造 deferred：D1-D7 保持路由口径不变，只允许 Oracle/Teacher Direct Solve/shadow-only 诊断；正式实现待 D 收口后用户另批
 
+### D 收口与后续实验重设计（08-27）
+
+- 【改】D 最终报告从“R3 可交付”降为 **conditional pass / major revision**：T9 已补但三次重复共用 workspace，不能把 0.0067 当全局噪声 floor，也不能把两臂差异唯一归因于记忆内容
+- 【废】原 post-D A/B/C 串行路线及“先三教师再 v2”默认顺序，由五轮 Kimi×Codex 对抗审查后的条件分支流程取代
+- 【立】现行流程：P0 基础设施→E0 机械臂等价→E1 内容×剂量→按结果决定是否 E2/E3→E5a 冻结 detector→E4+E5b 前瞻 shadow→共同主效用/安全裁决
+- 【立】20 个实际从未执行任务为严格确认集，使用 manifest + runner denylist 封存；跨日重复不增加独立任务样本量
+- 【留】v1 记忆冻结且 ALFWorld 阻断；方案设计通过，但代码实施和真实跑批待用户逐阶段批准
+
 ---
 
 ## 三、当前生效的关键决策速查（living decisions）
@@ -370,3 +395,5 @@
 | 注入对照 | 控制臂=8789+`injection:false` 同路径（不旁路），基线轨迹进学习回路；DeepSeek 直连臂（8899）例外 | 08-05 |
 | 跑批门禁 | 跑批入口必过 eval/preflight.py（探活+自动拉起 8789/8787/8899） | 08-05 |
 | 门控解释 | 升级率仅代表协议级门控触发率；必须联合报告 AutonomousSuccessRate、MissedEscalationRate 与明显失败数；D1-D7 不改线上任务级门控 | 08-21 D1 零云升级诊断 |
+| D 后实验入口 | P0→E0→E1→结果分支 E2/E3→E5a→E4+E5b；共同主效用与主安全同时过门，才可进入 ALFWorld | 08-27 post-D 重设计 |
+| 当前授权边界 | v1 记忆冻结、ALFWorld 阻断；现只完成设计与 5 轮审查，下一步须用户单独批准 P0+E0 实施 | 08-27 post-D 重设计 |

@@ -17,10 +17,6 @@ export const OPENCODE_MODELS = values as {
 		id: "claude-haiku-4-5";
 		provider: "opencode";
 	};
-	"claude-opus-4-1": Model<"anthropic-messages"> & {
-		id: "claude-opus-4-1";
-		provider: "opencode";
-	};
 	"claude-opus-4-5": Model<"anthropic-messages"> & {
 		id: "claude-opus-4-5";
 		provider: "opencode";
@@ -35,6 +31,10 @@ export const OPENCODE_MODELS = values as {
 	};
 	"claude-opus-4-8": Model<"anthropic-messages"> & {
 		id: "claude-opus-4-8";
+		provider: "opencode";
+	};
+	"claude-opus-5": Model<"anthropic-messages"> & {
+		id: "claude-opus-5";
 		provider: "opencode";
 	};
 	"claude-sonnet-4": Model<"anthropic-messages"> & {
@@ -57,10 +57,6 @@ export const OPENCODE_MODELS = values as {
 		id: "deepseek-v4-flash";
 		provider: "opencode";
 	};
-	"deepseek-v4-flash-free": Model<"openai-completions"> & {
-		id: "deepseek-v4-flash-free";
-		provider: "opencode";
-	};
 	"deepseek-v4-pro": Model<"openai-completions"> & {
 		id: "deepseek-v4-pro";
 		provider: "opencode";
@@ -75,6 +71,18 @@ export const OPENCODE_MODELS = values as {
 	};
 	"gemini-3.5-flash": Model<"google-generative-ai"> & {
 		id: "gemini-3.5-flash";
+		provider: "opencode";
+	};
+	"gemini-3.5-flash-lite": Model<"google-generative-ai"> & {
+		id: "gemini-3.5-flash-lite";
+		provider: "opencode";
+	};
+	"gemini-3.6-flash": Model<"google-generative-ai"> & {
+		id: "gemini-3.6-flash";
+		provider: "opencode";
+	};
+	"gemini-3.7-flash": Model<"google-generative-ai"> & {
+		id: "gemini-3.7-flash";
 		provider: "opencode";
 	};
 	"glm-5": Model<"openai-completions"> & {
@@ -165,11 +173,15 @@ export const OPENCODE_MODELS = values as {
 		id: "gpt-5.6-terra";
 		provider: "opencode";
 	};
-	"grok-4.5": Model<"openai-completions"> & {
+	"grok-4.5": Model<"openai-responses"> & {
 		id: "grok-4.5";
 		provider: "opencode";
 	};
-	"grok-build-0.1": Model<"openai-completions"> & {
+	"grok-4.6": Model<"openai-responses"> & {
+		id: "grok-4.6";
+		provider: "opencode";
+	};
+	"grok-build-0.1": Model<"openai-responses"> & {
 		id: "grok-build-0.1";
 		provider: "opencode";
 	};
@@ -189,6 +201,10 @@ export const OPENCODE_MODELS = values as {
 		id: "kimi-k2.7-code";
 		provider: "opencode";
 	};
+	"kimi-k3": Model<"openai-completions"> & {
+		id: "kimi-k3";
+		provider: "opencode";
+	};
 	"mimo-v2.5-free": Model<"openai-completions"> & {
 		id: "mimo-v2.5-free";
 		provider: "opencode";
@@ -205,12 +221,20 @@ export const OPENCODE_MODELS = values as {
 		id: "minimax-m3";
 		provider: "opencode";
 	};
+	"muse-spark-1.2": Model<"openai-responses"> & {
+		id: "muse-spark-1.2";
+		provider: "opencode";
+	};
+	"muse-spark-1.2-contributor-free": Model<"openai-responses"> & {
+		id: "muse-spark-1.2-contributor-free";
+		provider: "opencode";
+	};
 	"nemotron-3-ultra-free": Model<"openai-completions"> & {
 		id: "nemotron-3-ultra-free";
 		provider: "opencode";
 	};
-	"north-mini-code-free": Model<"openai-completions"> & {
-		id: "north-mini-code-free";
+	"nemotron-3.5-lightning-free": Model<"openai-completions"> & {
+		id: "nemotron-3.5-lightning-free";
 		provider: "opencode";
 	};
 	"qwen3.5-plus": Model<"anthropic-messages"> & {

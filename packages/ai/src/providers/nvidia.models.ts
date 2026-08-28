@@ -5,12 +5,16 @@ import values from "./data/nvidia.json" with { type: "json" };
 import type { Model } from "../types.ts";
 
 export const NVIDIA_MODELS = values as {
-	"meta/llama-3.1-70b-instruct": Model<"openai-completions"> & {
-		id: "meta/llama-3.1-70b-instruct";
+	"deepseek-ai/deepseek-v4-flash-0731": Model<"openai-completions"> & {
+		id: "deepseek-ai/deepseek-v4-flash-0731";
 		provider: "nvidia";
 	};
-	"meta/llama-3.1-8b-instruct": Model<"openai-completions"> & {
-		id: "meta/llama-3.1-8b-instruct";
+	"google/gemma-3-12b-it": Model<"openai-completions"> & {
+		id: "google/gemma-3-12b-it";
+		provider: "nvidia";
+	};
+	"google/gemma-3-4b-it": Model<"openai-completions"> & {
+		id: "google/gemma-3-4b-it";
 		provider: "nvidia";
 	};
 	"meta/llama-3.2-11b-vision-instruct": Model<"openai-completions"> & {
@@ -21,24 +25,36 @@ export const NVIDIA_MODELS = values as {
 		id: "meta/llama-3.2-90b-vision-instruct";
 		provider: "nvidia";
 	};
-	"meta/llama-3.3-70b-instruct": Model<"openai-completions"> & {
-		id: "meta/llama-3.3-70b-instruct";
+	"meta/muse-glimmer-30b": Model<"openai-completions"> & {
+		id: "meta/muse-glimmer-30b";
 		provider: "nvidia";
 	};
 	"minimaxai/minimax-m3": Model<"openai-completions"> & {
 		id: "minimaxai/minimax-m3";
 		provider: "nvidia";
 	};
-	"mistralai/mistral-large-3-675b-instruct-2512": Model<"openai-completions"> & {
-		id: "mistralai/mistral-large-3-675b-instruct-2512";
-		provider: "nvidia";
-	};
-	"mistralai/mistral-small-4-119b-2603": Model<"openai-completions"> & {
-		id: "mistralai/mistral-small-4-119b-2603";
+	"mistralai/mistral-7b-instruct-v0.3": Model<"openai-completions"> & {
+		id: "mistralai/mistral-7b-instruct-v0.3";
 		provider: "nvidia";
 	};
 	"moonshotai/kimi-k2.6": Model<"openai-completions"> & {
 		id: "moonshotai/kimi-k2.6";
+		provider: "nvidia";
+	};
+	"moonshotai/kimi-k3": Model<"openai-completions"> & {
+		id: "moonshotai/kimi-k3";
+		provider: "nvidia";
+	};
+	"nvidia/cosmos-reason2-8b": Model<"openai-completions"> & {
+		id: "nvidia/cosmos-reason2-8b";
+		provider: "nvidia";
+	};
+	"nvidia/llama-3.1-nemotron-70b-instruct": Model<"openai-completions"> & {
+		id: "nvidia/llama-3.1-nemotron-70b-instruct";
+		provider: "nvidia";
+	};
+	"nvidia/llama-3.1-nemotron-ultra-253b-v1": Model<"openai-completions"> & {
+		id: "nvidia/llama-3.1-nemotron-ultra-253b-v1";
 		provider: "nvidia";
 	};
 	"nvidia/nemotron-3-nano-30b-a3b": Model<"openai-completions"> & {
@@ -57,8 +73,8 @@ export const NVIDIA_MODELS = values as {
 		id: "nvidia/nemotron-3-ultra-550b-a55b";
 		provider: "nvidia";
 	};
-	"nvidia/nvidia-nemotron-nano-9b-v2": Model<"openai-completions"> & {
-		id: "nvidia/nvidia-nemotron-nano-9b-v2";
+	"nvidia/nemotron-3.5-lightning-30b-a3b": Model<"openai-completions"> & {
+		id: "nvidia/nemotron-3.5-lightning-30b-a3b";
 		provider: "nvidia";
 	};
 	"openai/gpt-oss-120b": Model<"openai-completions"> & {
@@ -69,20 +85,12 @@ export const NVIDIA_MODELS = values as {
 		id: "openai/gpt-oss-20b";
 		provider: "nvidia";
 	};
-	"qwen/qwen3.5-122b-a10b": Model<"openai-completions"> & {
-		id: "qwen/qwen3.5-122b-a10b";
-		provider: "nvidia";
-	};
-	"stepfun-ai/step-3.5-flash": Model<"openai-completions"> & {
-		id: "stepfun-ai/step-3.5-flash";
+	"poolside/laguna-xs-2.1": Model<"openai-completions"> & {
+		id: "poolside/laguna-xs-2.1";
 		provider: "nvidia";
 	};
 	"stepfun-ai/step-3.7-flash": Model<"openai-completions"> & {
 		id: "stepfun-ai/step-3.7-flash";
-		provider: "nvidia";
-	};
-	"z-ai/glm-5.2": Model<"openai-completions"> & {
-		id: "z-ai/glm-5.2";
 		provider: "nvidia";
 	};
 };

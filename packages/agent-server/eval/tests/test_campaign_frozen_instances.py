@@ -51,12 +51,18 @@ def _run_cross_main(tmp_path, monkeypatch, frozen_base_url: str, run_id: str,
     calls: list[dict] = []
     metas: list[dict] = []
 
-    def fake_run_agent(client, model, prompt, ws, timeout_s, *, injection, task_id, domain):
+    def fake_run_agent(client, model, prompt, ws, timeout_s, *, injection, task_id, domain, arm="", condition=""):
         arm = Path(ws).parts[-1]  # workspace 路径末段 = 臂名（out_dir/day<d>/<arm>）
         calls.append({"arm": arm, "injection": injection, "client": client, "task_id": task_id})
-        return {"transcript": [{"role": "assistant", "content": "ok"}],
-                "escalated": False, "trace_ids": ["chatcmpl-fake"], "requests": 1,
-                "termination_reason": "completed"}
+        return {
+            "transcript": [{"role": "assistant", "content": "ok"}],
+            "escalated": False,
+            "trace_ids": ["chatcmpl-fake"],
+            "canonical_request_hashes": ["hash-fake"],
+            "requests": 1,
+            "termination_reason": "completed",
+            "condition": "test",
+        }
 
     monkeypatch.setattr(campaign, "load_tasks", lambda: [SimpleNamespace(id=t, timeout_seconds=60) for t in task_ids])
     monkeypatch.setattr(campaign, "daily_batch", lambda tasks, day: {"repeat": task_ids, "new": []})

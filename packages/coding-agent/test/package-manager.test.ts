@@ -72,12 +72,16 @@ describe("DefaultPackageManager", () => {
 	let settingsManager: SettingsManager;
 	let packageManager: DefaultPackageManager;
 	let previousOfflineEnv: string | undefined;
+	let previousHome: string | undefined;
 
 	beforeEach(() => {
 		previousOfflineEnv = process.env.PI_OFFLINE;
 		delete process.env.PI_OFFLINE;
+		previousHome = process.env.HOME;
 		tempDir = join(tmpdir(), `pm-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
+		process.env.HOME = join(tempDir, "home");
+		mkdirSync(process.env.HOME, { recursive: true });
 		agentDir = join(tempDir, "agent");
 		mkdirSync(agentDir, { recursive: true });
 
@@ -94,6 +98,11 @@ describe("DefaultPackageManager", () => {
 			delete process.env.PI_OFFLINE;
 		} else {
 			process.env.PI_OFFLINE = previousOfflineEnv;
+		}
+		if (previousHome === undefined) {
+			delete process.env.HOME;
+		} else {
+			process.env.HOME = previousHome;
 		}
 		vi.restoreAllMocks();
 		vi.unstubAllGlobals();

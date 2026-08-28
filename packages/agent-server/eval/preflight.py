@@ -256,22 +256,75 @@ def ensure_relay() -> None:
     print("preflight: deepseek relay :8899 started")
 
 
+def _judge_env() -> tuple[str, str] | None:
+    """Return (base_url, api_key) for judge from env or .env."""
+    dotenv = _load_dotenv()
+    base_url = os.environ.get("JUDGE_BASE_URL") or dotenv.get("JUDGE_BASE_URL")
+    api_key = os.environ.get("JUDGE_API_KEY") or dotenv.get("JUDGE_API_KEY")
+    if not base_url or not api_key:
+        return None
+    return base_url, api_key
+
+
+def ensure_judge_balance() -> None:
+    """issue-023: preflight balance probe — fail fast on 401/402/403.
+
+    DeepSeek does not expose a balance endpoint in the OpenAI-compatible API,
+    so we send a minimal chat-completion probe and reject account-class errors.
+    """
+    creds = _judge_env()
+    if creds is None:
+        sys.exit(
+            "preflight FAIL: JUDGE_BASE_URL/JUDGE_API_KEY not set — "
+            f"add them to {ENV_FILE} (issue-023)"
+        )
+    base_url, api_key = creds
+    url = base_url.rstrip("/") + "/chat/completions"
+    payload = json.dumps(
+        {"model": os.environ.get("JUDGE_MODEL", "deepseek-v4-pro"), "messages": [{"role": "user", "content": "ok"}], "max_tokens": 2}
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15.0) as resp:
+            _ = resp.read()
+        print("preflight: judge balance OK")
+        return
+    except urllib.error.HTTPError as exc:
+        if exc.code in (401, 402, 403):
+            body = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+            sys.exit(
+                f"preflight FAIL: judge returned HTTP {exc.code} ({body}) — "
+                "check API key / DeepSeek balance before starting the batch (issue-023)"
+            )
+        print(f"preflight: judge probe HTTP {exc.code} (not an account error; will retry at runtime)")
+    except Exception as exc:  # noqa: BLE001
+        print(f"preflight: judge probe unreachable ({type(exc).__name__}: {exc}) — will retry at runtime")
+
+
 def ensure_for_base_url(base_url: str) -> None:
     """Probe/auto-start every local service the given endpoint depends on."""
     if ":8790" in base_url:
         # M8: tb 控制臂实例——AGENT_SERVER_INJECTION=off 的专用 8790。
         ensure_omlx()
         ensure_gateway()
+        ensure_judge_balance()
         ensure_agent_server(CONTROL_AGENT_SERVER_URL, port=8790, injection=False)
     elif ":8789" in base_url:
         ensure_omlx()
         ensure_gateway()
+        ensure_judge_balance()
         ensure_agent_server(AGENT_SERVER_URL, port=8789)
     elif ":8787" in base_url:
         ensure_omlx()
         ensure_gateway()
     elif ":8899" in base_url:
         ensure_relay()
+        ensure_judge_balance()
     elif ":8000" in base_url:
         ensure_omlx()
     else:

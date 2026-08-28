@@ -1,0 +1,61 @@
+{
+  "gateway": {
+    "bind": "0.0.0.0:3000"
+  },
+  "models": {
+    "providers": {
+      "bailian": {
+        "baseUrl": "https://coding.dashscope.aliyuncs.com/v1",
+        "api": "openai-completions",
+        "apiKey": "YOUR_BAILIAN_API_KEY",
+        "models": {
+          "qwen3-max-2026-01-23": {
+            "contextWindow": 256000,
+            "maxTokens": 65536,
+            "reasoning": "enabled-high"
+          },
+          "qwen3.5-plus": {
+            "contextWindow": 256000,
+            "maxTokens": 4096,
+            "reasoning": "enabled-medium"
+          },
+          "qwen3-coder-next": {
+            "contextWindow": 128000,
+            "maxTokens": 8192,
+            "reasoning": "enabled"
+          },
+          "qwen3-coder-plus": {
+            "contextWindow": 256000,
+            "maxTokens": 16384,
+            "reasoning": "enabled-medium"
+          },
+          "glm-4.7": {
+            "contextWindow": 256000,
+            "maxTokens": 8192,
+            "reasoning": "enabled"
+          },
+          "kimi-k2.5": {
+            "contextWindow": 200000,
+            "maxTokens": 4096,
+            "reasoning": "enabled-medium"
+          }
+        }
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "bailian/qwen3.5-plus"
+      },
+      "models": [
+        "bailian/qwen3-max-2026-01-23",
+        "bailian/qwen3.5-plus",
+        "bailian/qwen3-coder-next",
+        "bailian/qwen3-coder-plus",
+        "bailian/glm-4.7",
+        "bailian/kimi-k2.5"
+      ]
+    }
+  }
+}

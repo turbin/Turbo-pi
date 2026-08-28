@@ -37,6 +37,41 @@ vi.mock("openai", () => {
 				},
 			},
 		};
+		responses = {
+			create: () => {
+				const stream = {
+					async *[Symbol.asyncIterator]() {
+						yield { type: "response.created", response: { id: "resp_1" } };
+						yield { type: "response.output_item.added", output_index: 0, item: { type: "message" } };
+						yield { type: "response.output_text.delta", output_index: 0, delta: "hi" };
+						yield {
+							type: "response.output_item.done",
+							output_index: 0,
+							item: { type: "message", id: "msg_1", content: [{ type: "output_text", text: "hi" }] },
+						};
+						yield {
+							type: "response.completed",
+							response: {
+								id: "resp_1",
+								status: "completed",
+								usage: { input_tokens: 1, output_tokens: 1 },
+							},
+						};
+					},
+				};
+				const promise = Promise.resolve(stream) as Promise<typeof stream> & {
+					withResponse(): Promise<{
+						data: typeof stream;
+						response: { status: number; headers: Headers };
+					}>;
+				};
+				promise.withResponse = async () => ({
+					data: stream,
+					response: { status: 200, headers: new Headers() },
+				});
+				return promise;
+			},
+		};
 	}
 
 	return { default: FakeOpenAI };
@@ -59,7 +94,7 @@ async function createCloudflareRuntime(): Promise<{ modelRuntime: ModelRuntime; 
 describe("ModelRegistry Cloudflare compat streaming", () => {
 	it("materializes the Cloudflare endpoint through ModelRuntime streaming", async () => {
 		const { modelRuntime } = await createCloudflareRuntime();
-		const model = modelRuntime.getModel("cloudflare-ai-gateway", "workers-ai/@cf/moonshotai/kimi-k2.5");
+		const model = modelRuntime.getModel("cloudflare-ai-gateway", "gpt-4.1-mini");
 		expect(model).toBeDefined();
 
 		resetApiProviders();
@@ -69,13 +104,13 @@ describe("ModelRegistry Cloudflare compat streaming", () => {
 			baseURL?: string;
 			defaultHeaders?: Record<string, unknown>;
 		};
-		expect(clientOptions.baseURL).toBe("https://gateway.ai.cloudflare.com/v1/test-account/test-gateway/compat");
+		expect(clientOptions.baseURL).toBe("https://gateway.ai.cloudflare.com/v1/test-account/test-gateway/openai");
 		expect(clientOptions.defaultHeaders?.["cf-aig-authorization"]).toBe("Bearer test-token");
 	});
 
 	it("materializes the Cloudflare endpoint after extension-style auth resolution", async () => {
 		const { modelRegistry } = await createCloudflareRuntime();
-		const model = modelRegistry.find("cloudflare-ai-gateway", "workers-ai/@cf/moonshotai/kimi-k2.5");
+		const model = modelRegistry.find("cloudflare-ai-gateway", "gpt-4.1-mini");
 		expect(model).toBeDefined();
 
 		resetApiProviders();
@@ -89,7 +124,7 @@ describe("ModelRegistry Cloudflare compat streaming", () => {
 			baseURL?: string;
 			defaultHeaders?: Record<string, unknown>;
 		};
-		expect(clientOptions.baseURL).toBe("https://gateway.ai.cloudflare.com/v1/test-account/test-gateway/compat");
+		expect(clientOptions.baseURL).toBe("https://gateway.ai.cloudflare.com/v1/test-account/test-gateway/openai");
 		expect(clientOptions.defaultHeaders?.["cf-aig-authorization"]).toBe("Bearer test-token");
 	});
 });

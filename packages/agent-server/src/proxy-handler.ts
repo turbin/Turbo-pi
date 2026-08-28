@@ -64,6 +64,9 @@ export async function handleStream(
 			requestId: opts.requestId,
 			...(opts.taskId ? { taskId: opts.taskId } : {}),
 			...(opts.domain ? { domain: opts.domain } : {}),
+			...(body.options?.arm ? { arm: body.options.arm } : {}),
+			...(body.options?.condition ? { condition: body.options.condition } : {}),
+			...(body.options?.canonicalRequestHash ? { canonicalRequestHash: body.options.canonicalRequestHash } : {}),
 		},
 	});
 
@@ -90,6 +93,9 @@ export async function handleStream(
 				retrievedKinds: kinds,
 				hit: retrieved.length > 0,
 				...(opts.taskId ? { taskId: opts.taskId } : {}),
+				...(body.options?.arm ? { arm: body.options.arm } : {}),
+				...(body.options?.condition ? { condition: body.options.condition } : {}),
+				...(body.options?.canonicalRequestHash ? { canonicalRequestHash: body.options.canonicalRequestHash } : {}),
 			});
 			logTrace(opts.requestId, "retrieval", {
 				hit: retrieved.length > 0 ? 1 : 0,
@@ -116,6 +122,9 @@ export async function handleStream(
 				injectedIds: injectionOn ? injected.injectedIds : [],
 				// T4 (§9): 注入 token 估计；注入关闭显式写 0（与 injectedIds=[] 同口径）。
 				injectedTokens: injectionOn ? injected.injectedTokens : 0,
+				...(body.options?.arm ? { arm: body.options.arm } : {}),
+				...(body.options?.condition ? { condition: body.options.condition } : {}),
+				...(body.options?.canonicalRequestHash ? { canonicalRequestHash: body.options.canonicalRequestHash } : {}),
 			});
 		}
 
@@ -177,6 +186,11 @@ export async function handleStream(
 			// 补齐 finish_reason/tokens/latency（修复前这三列永远 NULL）。
 			if (!opts.requestId) return;
 			const latencyMs = Date.now() - startedAt;
+			const traceAttrs = {
+				...(body.options?.arm ? { arm: body.options.arm } : {}),
+				...(body.options?.condition ? { condition: body.options.condition } : {}),
+				...(body.options?.canonicalRequestHash ? { canonicalRequestHash: body.options.canonicalRequestHash } : {}),
+			};
 			if (customType === "response_completed") {
 				await opts.store.recordRequestTrace({
 					requestId: opts.requestId,
@@ -185,10 +199,16 @@ export async function handleStream(
 					completionTokens: completion.completionTokens,
 					latencyMs,
 					...(completion.error !== undefined ? { error: completion.error } : {}),
+					...traceAttrs,
 				});
 			} else if (customType === "error") {
 				// 底层流异常：与 traceStreamCompletion 的 catch 分支同口径。
-				await opts.store.recordRequestTrace({ requestId: opts.requestId, finishReason: "error", latencyMs });
+				await opts.store.recordRequestTrace({
+					requestId: opts.requestId,
+					finishReason: "error",
+					latencyMs,
+					...traceAttrs,
+				});
 			}
 			// aborted（客户端取消）：不写阶段二（与 traceStreamCompletion cancel 分支一致）。
 		});
@@ -202,6 +222,9 @@ export async function handleStream(
 				finishReason: "error",
 				latencyMs: Date.now() - startedAt,
 				error: String(err),
+				...(body.options?.arm ? { arm: body.options.arm } : {}),
+				...(body.options?.condition ? { condition: body.options.condition } : {}),
+				...(body.options?.canonicalRequestHash ? { canonicalRequestHash: body.options.canonicalRequestHash } : {}),
 			});
 		}
 		throw err;

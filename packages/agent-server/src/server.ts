@@ -186,6 +186,18 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 		// retrieval and lands in session header metadata; absent for plain pi
 		// clients → unfiltered retrieval (untagged-card backward compatibility).
 		const domain = typeof body.domain === "string" && body.domain.trim() ? body.domain : undefined;
+		// P0: experiment arm/condition/canonical-request-hash for E0 treatment-compliance auditing.
+		const arm = typeof body.arm === "string" && body.arm.trim() ? body.arm : undefined;
+		const condition = typeof body.condition === "string" && body.condition.trim() ? body.condition : undefined;
+		const canonicalRequestHash =
+			typeof body.canonical_request_hash === "string" && body.canonical_request_hash.trim()
+				? body.canonical_request_hash
+				: undefined;
+		const traceAttrs = {
+			...(arm !== undefined ? { arm } : {}),
+			...(condition !== undefined ? { condition } : {}),
+			...(canonicalRequestHash !== undefined ? { canonicalRequestHash } : {}),
+		};
 		// Opt-in request dump for debugging; off by default so user prompts and
 		// code are not written outside var/ (review finding: fixed /tmp path).
 		if (process.env.AGENT_SERVER_DEBUG_DUMP === "1") {
@@ -264,6 +276,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 						requestId,
 						...(taskId !== undefined ? { taskId } : {}),
 						...(domain !== undefined ? { domain } : {}),
+						...traceAttrs,
 					},
 				});
 				try {
@@ -288,6 +301,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 						retrievedKinds: kinds,
 						hit: retrieved.length > 0,
 						...(taskId !== undefined ? { taskId } : {}),
+						...traceAttrs,
 					});
 					logTrace(requestId, "retrieval", {
 						hit: retrieved.length > 0 ? 1 : 0,
@@ -307,6 +321,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 						injectedIds: injectionOn ? injected.injectedIds : [],
 						// T4 (§9): 注入 token 估计；注入关闭显式写 0（与 injectedIds=[] 同口径）。
 						injectedTokens: injectionOn ? injected.injectedTokens : 0,
+						...traceAttrs,
 					});
 					const openaiReq = toOpenAIRequest(injected, model as any);
 
@@ -345,6 +360,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 								requestId,
 								store,
 								startedAt,
+								traceAttrs,
 							) as unknown as NodeReadableStream<Uint8Array>,
 						),
 					);
@@ -356,6 +372,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 						finishReason: "error",
 						latencyMs: Date.now() - startedAt,
 						error: String(err),
+						...traceAttrs,
 					});
 					logTrace(requestId, "error", { message: String(err) });
 					throw err;
@@ -369,6 +386,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 					options: { ...options, injection: injectionOn },
 					...(taskId !== undefined ? { taskId } : {}),
 					...(domain !== undefined ? { domain } : {}),
+					...traceAttrs,
 				},
 				{
 					store,
@@ -377,6 +395,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 					requestId,
 					...(taskId !== undefined ? { taskId } : {}),
 					...(domain !== undefined ? { domain } : {}),
+					...traceAttrs,
 				},
 			);
 			const reader = stream.getReader();
@@ -411,6 +430,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 							finishReason: "error",
 							latencyMs: Date.now() - startedAt,
 							error: String(event.errorMessage ?? "unknown"),
+							...traceAttrs,
 						});
 						logTrace(requestId, "error", { message: String(event.errorMessage ?? "unknown") });
 						return reply.code(502).send({ error: { message: String(event.errorMessage ?? "unknown") } });
@@ -448,6 +468,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 				promptTokens,
 				completionTokens,
 				latencyMs: Date.now() - startedAt,
+				...traceAttrs,
 			});
 			logTrace(requestId, "done", {
 				finish: finishReason,
@@ -483,6 +504,7 @@ export function createServer(opts: CreateServerOptions = {}): FastifyInstance {
 				finishReason: "error",
 				latencyMs: Date.now() - startedAt,
 				error: message,
+				...traceAttrs,
 			});
 			logTrace(requestId, "error", { message });
 			return reply.code(502).send({ error: { message } });
@@ -664,6 +686,7 @@ function traceStreamCompletion(
 	requestId: string,
 	store: ExperienceStore,
 	startedAt: number,
+	traceAttrs: Record<string, unknown> = {},
 ): ReadableStream<Uint8Array> {
 	const reader = stream.getReader();
 	let finishReason: string | undefined;
@@ -681,6 +704,7 @@ function traceStreamCompletion(
 						promptTokens,
 						completionTokens,
 						latencyMs: Date.now() - startedAt,
+						...traceAttrs,
 					});
 					logTrace(requestId, "done", {
 						finish: finishReason ?? "stop",
@@ -729,6 +753,7 @@ function traceStreamCompletion(
 					finishReason: "error",
 					latencyMs: Date.now() - startedAt,
 					error: String(err),
+					...traceAttrs,
 				});
 				logTrace(requestId, "error", { message: String(err) });
 				controller.error(err);

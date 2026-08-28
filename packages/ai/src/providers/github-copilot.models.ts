@@ -29,6 +29,10 @@ export const GITHUB_COPILOT_MODELS = values as {
 		id: "claude-opus-4.8";
 		provider: "github-copilot";
 	};
+	"claude-opus-5": Model<"anthropic-messages"> & {
+		id: "claude-opus-5";
+		provider: "github-copilot";
+	};
 	"claude-sonnet-4": Model<"anthropic-messages"> & {
 		id: "claude-sonnet-4";
 		provider: "github-copilot";
@@ -45,20 +49,20 @@ export const GITHUB_COPILOT_MODELS = values as {
 		id: "claude-sonnet-5";
 		provider: "github-copilot";
 	};
-	"gemini-2.5-pro": Model<"openai-completions"> & {
-		id: "gemini-2.5-pro";
-		provider: "github-copilot";
-	};
-	"gemini-3-flash-preview": Model<"openai-completions"> & {
-		id: "gemini-3-flash-preview";
-		provider: "github-copilot";
-	};
 	"gemini-3.1-pro-preview": Model<"openai-completions"> & {
 		id: "gemini-3.1-pro-preview";
 		provider: "github-copilot";
 	};
 	"gemini-3.5-flash": Model<"openai-completions"> & {
 		id: "gemini-3.5-flash";
+		provider: "github-copilot";
+	};
+	"gemini-3.6-flash": Model<"openai-completions"> & {
+		id: "gemini-3.6-flash";
+		provider: "github-copilot";
+	};
+	"gemini-3.7-flash": Model<"openai-completions"> & {
+		id: "gemini-3.7-flash";
 		provider: "github-copilot";
 	};
 	"gpt-4.1": Model<"openai-completions"> & {
@@ -109,12 +113,28 @@ export const GITHUB_COPILOT_MODELS = values as {
 		id: "gpt-5.6-terra";
 		provider: "github-copilot";
 	};
+	"grok-4.5": Model<"openai-completions"> & {
+		id: "grok-4.5";
+		provider: "github-copilot";
+	};
+	"grok-4.6": Model<"openai-completions"> & {
+		id: "grok-4.6";
+		provider: "github-copilot";
+	};
 	"kimi-k2.7-code": Model<"openai-completions"> & {
 		id: "kimi-k2.7-code";
 		provider: "github-copilot";
 	};
+	"kimi-k3": Model<"openai-completions"> & {
+		id: "kimi-k3";
+		provider: "github-copilot";
+	};
 	"mai-code-1-flash-picker": Model<"openai-responses"> & {
 		id: "mai-code-1-flash-picker";
+		provider: "github-copilot";
+	};
+	"mai-code-1.1-flash": Model<"openai-responses"> & {
+		id: "mai-code-1.1-flash";
 		provider: "github-copilot";
 	};
 };

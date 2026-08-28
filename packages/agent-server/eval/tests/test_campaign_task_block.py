@@ -183,12 +183,18 @@ def _run_main(tmp_path, monkeypatch, argv, repeat_ids, new_ids=(), held_ids=(), 
     """
     calls: list[dict] = []
 
-    def fake_run_agent(client, model, prompt, ws, timeout_s, *, injection, task_id, domain):
+    def fake_run_agent(client, model, prompt, ws, timeout_s, *, injection, task_id, domain, arm="", condition=""):
         arm = Path(ws).parts[-1]  # workspace 路径末段 = 臂名
         calls.append({"arm": arm, "injection": injection, "client": client, "task_id": task_id})
-        return {"transcript": [{"role": "assistant", "content": "ok"}],
-                "escalated": False, "trace_ids": ["chatcmpl-fake"], "requests": 1,
-                "termination_reason": "completed"}
+        return {
+            "transcript": [{"role": "assistant", "content": "ok"}],
+            "escalated": False,
+            "trace_ids": ["chatcmpl-fake"],
+            "canonical_request_hashes": ["hash-fake"],
+            "requests": 1,
+            "termination_reason": "completed",
+            "condition": "test",
+        }
 
     all_ids = list(repeat_ids) + list(new_ids) + list(held_ids)
     monkeypatch.setattr(campaign, "load_tasks", lambda: [SimpleNamespace(id=t, timeout_seconds=60) for t in all_ids])

@@ -32,6 +32,7 @@ from openai import OpenAI  # noqa: E402
 
 from campaign import AGENT_SERVER, run_agent, safe_grade, setup_workspace, task_prompt  # noqa: E402
 from campaign_plan import load_tasks, split_tasks  # noqa: E402
+import confirm_tasks  # noqa: E402
 from preflight import ensure_for_base_url  # noqa: E402
 
 GATEWAY_DB = (EVAL_DIR / "../../agent-gateway/var/agent_gateway.db").resolve()
@@ -79,6 +80,7 @@ def main() -> None:
     tasks = load_tasks()
     repeat, _new = split_tasks(tasks)
     picks = repeat[: args.tasks]
+    confirm_tasks.assert_no_confirm_tasks(picks, context="pilot_9b")
     print(f"pilot 9B: {len(picks)} tasks via {AGENT_SERVER} (injection on, experiment arm path)")
 
     client = OpenAI(base_url=AGENT_SERVER, api_key="lobster-local-key", timeout=1800.0)
@@ -94,6 +96,7 @@ def main() -> None:
         execution = run_agent(
             client, "agent-auto", task_prompt(task_id), ws, meta.timeout_seconds,
             injection=True, task_id=task_id, domain="office",
+            arm="experiment", condition="pilot-injection-on",
         )
         duration = time.time() - t0
         g = safe_grade(task_id, execution, ws)

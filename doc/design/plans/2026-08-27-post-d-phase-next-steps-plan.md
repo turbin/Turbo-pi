@@ -1,6 +1,8 @@
 # D 阶段收口后下一步方案（post-D-phase next steps）
 
-日期：2026-08-27 ｜ 状态：**待用户裁决（R3 已降级为 conditional pass）** ｜ 上游：`2026-08-27-9b-campaign-d-phase-final-report.md`（R3 有条件接受，需 major revision）
+日期：2026-08-27 ｜ 状态：**已废止，被 `2026-08-27-post-d-adversarial-experiment-redesign-plan.md` 取代** ｜ 上游：`2026-08-27-9b-campaign-d-phase-final-report.md`（R3 有条件接受，需 major revision）
+
+> 本文件保留为历史选项记录，不再作为执行入口。五轮 Kimi 工程调查 × Codex 批判审查发现原方案无法隔离 workspace、wrapper、内容与剂量，且 E5 时序缺少前瞻性；现行流程与裁决见替代计划及 `../2026-08-27-post-d-experiment-redesign-changes-and-decisions.md`。
 
 ## 前置事实（D 阶段终审结论）
 

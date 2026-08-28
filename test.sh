@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -e
 
+# Use the repo-local pinned Node 25 toolchain when available. agent-server and
+# agent-gateway depend on better-sqlite3 bindings that are built for Node 25;
+# running under Homebrew Node 26 causes mass native-module failures.
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NODE25_DIR="$ROOT_DIR/.tools/node-v25.9.0-darwin-arm64"
+if [ -x "$NODE25_DIR/bin/node" ]; then
+    export PATH="$NODE25_DIR/bin:$PATH"
+fi
+
 AUTH_FILE="$HOME/.pi/agent/auth.json"
 AUTH_BACKUP="$HOME/.pi/agent/auth.json.bak"
 

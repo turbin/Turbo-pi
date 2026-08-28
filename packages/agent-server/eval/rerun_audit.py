@@ -47,6 +47,7 @@ from openai import OpenAI
 
 from campaign import run_agent, safe_grade, setup_workspace, task_prompt
 from campaign_plan import load_tasks
+import confirm_tasks
 from preflight import ensure_for_base_url
 
 EVAL_DIR = Path(__file__).resolve().parent
@@ -171,16 +172,19 @@ class RunContext:
 def run_audit(task_ids: list[str], ctx: RunContext, out_dir: Path, *, repeats: int = REPEATS) -> dict:
     """每任务 ×repeats 重复（8789 injection=on），输出审计 JSON。"""
     out_dir.mkdir(parents=True, exist_ok=True)
+    confirm_tasks.assert_no_confirm_tasks(task_ids, context="rerun_audit")
     per_task: dict[str, dict] = {}
     for tid in task_ids:
         prompt = ctx.task_prompt(tid)
         timeout_s = ctx.task_timeout(tid)
         scores: list[float] = []
         for i in range(repeats):
-            ws = ctx.setup_workspace(tid, out_dir / "workspaces" / tid)
+            # P0：每次重复使用独立 repeat-N/<task-id> 工作区，开始前断言目录不存在。
+            ws = ctx.setup_workspace(tid, out_dir / "workspaces" / tid / f"repeat-{i}")
             execution = ctx.run_agent(
                 ctx.student_client, "agent-auto", prompt, ws, timeout_s,
                 injection=True, task_id=tid, domain="office",
+                arm="experiment", condition="rerun-injection-on",
             )
             grade = ctx.grade(tid, execution, ws)
             scores.append(float(grade.get("score") or 0.0))

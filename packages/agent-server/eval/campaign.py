@@ -27,6 +27,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -35,6 +36,8 @@ from openai import OpenAI
 from campaign_metrics import check_criteria, daily_summary
 from campaign_plan import daily_batch, held_out_tasks, load_tasks
 import campaign_cross
+import confirm_tasks
+from judge_adapter import JUDGE_FAILURE_SENTINEL
 from preflight import ensure_for_base_url
 
 EVAL_DIR = Path(__file__).resolve().parent
@@ -63,12 +66,21 @@ BASH_TOOL = {
 
 
 def setup_workspace(task_id: str, workdir: Path) -> Path:
-    """Copy the task's asset tree into an isolated workspace."""
+    """Copy the task's asset tree into a fresh, isolated workspace.
+
+    P0 discipline: each run must use a brand-new workspace. If the target
+    directory already exists, we fail loudly rather than merge with a previous
+    run (preview.html §10 / 2026-08-27 plan §2).
+    """
     src = QCB_DIR / "assets" / task_id
     ws = workdir / task_id
-    ws.mkdir(parents=True, exist_ok=True)
+    if ws.exists():
+        raise FileExistsError(
+            f"workspace already exists (previous run residue?): {ws}"
+        )
+    ws.mkdir(parents=True, exist_ok=False)
     if src.exists():
-        shutil.copytree(src, ws, dirs_exist_ok=True)
+        shutil.copytree(src, ws, dirs_exist_ok=False)
     return ws
 
 
@@ -163,7 +175,27 @@ def report_score(lf, *, seed: str, score: float, comment: str) -> None:
         print(f"langfuse score failed ({type(e).__name__}: {e})", file=sys.stderr)
 
 
-def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int, *, injection: bool, task_id: str, domain: str) -> dict:
+def _canonical_request_hash(model: str, messages: list[dict], tools: list[dict], kwargs: dict) -> str:
+    """Stable hash of the model-facing request payload (P0 canonical request hash).
+
+    Excludes runner-level attribution fields (arm/condition/injection/task_id/domain)
+    so the same prompt under different arms hashes identically.
+    """
+    canonical = {
+        "model": model,
+        "messages": messages,
+        "tools": [{"type": t["type"], "function": t["function"]} for t in tools],
+        "temperature": kwargs.get("temperature"),
+        "max_tokens": kwargs.get("max_tokens"),
+        "stop": kwargs.get("stop"),
+        "thinking": kwargs.get("thinking"),
+    }
+    return hashlib.sha256(
+        json.dumps(canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+
+
+def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int, *, injection: bool, task_id: str, domain: str, arm: str = "", condition: str = "") -> dict:
     """Minimal bash-tool agent loop (E1 harness 同源形态）。
 
     C1（2026-08-09 对抗审查）：`injection` 是必选关键字参数——实验/对照臂
@@ -177,6 +209,10 @@ def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int,
     F3（T4）：`domain` 同为必选关键字参数——随请求透传（extra_body），
     agent-server 侧用于检索域过滤（跨域注入为零）与 session 元数据；
     缺省会静默丢失情景键，故不允许缺省。
+
+    P0：`arm` 与 `condition` 透传到 request_traces，支持按臂/条件做
+    treatment-compliance 对账；`canonical_request_hash` 记录每次请求规范化
+    后的模型面 payload 哈希，供臂等价性审计（E0.2）使用。
     """
     transcript: list[dict] = []
     messages = [
@@ -192,6 +228,7 @@ def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int,
     t0 = time.time()
     requests = 0
     trace_ids: list[str] = []
+    request_hashes: list[str] = []
     escalated = False
     # preview.html §8.1：终止原因三态——自然完成（无 tool_calls break）=
     # "completed"、MAX_TURNS 耗尽="max_turns"、超 timeout_s="timeout"。
@@ -208,14 +245,27 @@ def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int,
         # 批次）。瞬时 API 错误重试，指数退避；重试耗尽才向外抛。
         resp = None
         last_err: Exception | None = None
+        base_kwargs = {
+            "model": model,
+            "messages": messages,
+            "tools": [BASH_TOOL],
+            "temperature": 0.0,
+        }
+        req_hash = _canonical_request_hash(model, messages, [BASH_TOOL], base_kwargs)
+        request_hashes.append(req_hash)
         for attempt in range(4):
             try:
-                resp = client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    tools=[BASH_TOOL],
-                    extra_body={"injection": injection, "task_id": task_id, "domain": domain},
-                )
+                extra_body: dict[str, object] = {
+                    "injection": injection,
+                    "task_id": task_id,
+                    "domain": domain,
+                    "canonical_request_hash": req_hash,
+                }
+                if arm:
+                    extra_body["arm"] = arm
+                if condition:
+                    extra_body["condition"] = condition
+                resp = client.chat.completions.create(**base_kwargs, extra_body=extra_body)
                 break
             except Exception as e:  # noqa: BLE001 - APITimeout/Connection/5xx 均为瞬时
                 last_err = e
@@ -273,12 +323,19 @@ def run_agent(client: OpenAI, model: str, prompt: str, ws: Path, timeout_s: int,
         "workspace": str(ws),
         "requests": requests,
         "trace_ids": trace_ids,
+        "canonical_request_hashes": request_hashes,
+        "arm": arm,
+        "condition": condition,
         "escalated": escalated,
     }
 
 
 def grade(task_id: str, execution: dict, ws: Path) -> dict:
     """Vendored QCB grading（automated + judge hybrid）。judge 走 .env 的 DeepSeek。"""
+    from judge_adapter import patch_lib_grading  # noqa: PLC0415
+
+    patch_lib_grading()
+
     from lib_grading import grade_task  # noqa: PLC0415 - vendored import
     from lib_tasks import TaskLoader  # noqa: PLC0415
 
@@ -393,6 +450,10 @@ def main() -> None:
 
     tasks = load_tasks()
     batch = daily_batch(tasks, args.day)
+    confirm_tasks.assert_no_confirm_tasks(
+        list(batch["repeat"]) + list(batch["new"]),
+        context=f"day {args.day}",
+    )
     if args.arms:
         # T7 交叉臂模式：每臂跑当日重复集（四臂 = 库版本 × 注入开关 2×2）。
         # preview.html §7.2/Q8：held-out 冻结任务只挂 current 臂（x2/x3）——
@@ -451,6 +512,13 @@ def main() -> None:
     out_dir = EVAL_DIR / "results" / args.run_id
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "run.jsonl"
+    # issue-023: 监视器线程检测 run.jsonl 停滞与 judge sentinel。
+    monitor = threading.Thread(
+        target=_stall_monitor,
+        args=(out_path, 120.0, float(os.environ.get("CAMPAIGN_STALL_THRESHOLD_SECONDS", "1800"))),
+        daemon=True,
+    )
+    monitor.start()
     # 单请求可能 15min+（27B 长输出），客户端超时必须大于最慢回合。
     client = OpenAI(base_url=AGENT_SERVER, api_key="lobster-local-key", timeout=1800.0)
     done = completed_keys(out_path)
@@ -508,9 +576,11 @@ def main() -> None:
                 **({"frozen_instance": frozen_instance} if frozen_instance else {}),
             }
             with task_observation(lf, seed=lf_seed, name=f"task:{arm}:{task_id}", metadata=lf_meta) as obs:
+                condition = f"{library}-inj{injection}" if args.arms else f"inj{injection}"
                 execution = run_agent(
                     arm_client, args.model, task_prompt(task_id), ws, meta.timeout_seconds,
                     injection=injection, task_id=task_id, domain="office",
+                    arm=arm, condition=condition,
                 )
                 g = safe_grade(task_id, execution, ws)
                 try:
@@ -557,10 +627,12 @@ def main() -> None:
                 # model_runs 回填核对；不再硬编码 False。
                 "escalated": execution["escalated"],
                 "trace_ids": execution["trace_ids"],
+                "canonical_request_hashes": execution["canonical_request_hashes"],
                 "requests": execution["requests"],
                 # preview.html §8.1：终止原因三态（completed/max_turns/timeout），
                 # CapHit 判定专用；旧行无此字段，下游读取用 .get() 容错。
                 "termination_reason": execution["termination_reason"],
+                "condition": execution["condition"],
                 "grading": g,
             }
             out.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -594,6 +666,32 @@ def safe_grade(task_id: str, execution: dict, ws: Path) -> dict:
             "notes": f"grading crashed: {type(e).__name__}: {e}",
             "grading_error": True,
         }
+
+
+def _stall_monitor(results_path: Path, interval_s: float = 120.0, stall_threshold_s: float = 1800.0) -> None:
+    """issue-023: daemon thread that watches run.jsonl mtime and the judge sentinel.
+
+    If the results file is older than stall_threshold_s or the judge sentinel
+    appears, log loudly and terminate the process so the batch cannot stay
+    "alive but stuck".
+    """
+    while True:
+        time.sleep(interval_s)
+        if JUDGE_FAILURE_SENTINEL.exists():
+            print(
+                f"STALL ALERT: judge failure sentinel found ({JUDGE_FAILURE_SENTINEL}) — exiting batch",
+                file=sys.stderr,
+            )
+            os._exit(3)
+        if not results_path.exists():
+            continue
+        age = time.time() - results_path.stat().st_mtime
+        if age > stall_threshold_s:
+            print(
+                f"STALL ALERT: {results_path} unchanged for {age:.0f}s (> {stall_threshold_s:.0f}s) — exiting batch",
+                file=sys.stderr,
+            )
+            os._exit(4)
 
 
 def completed_keys(results_path: Path) -> set[tuple[int, str, str]]:
