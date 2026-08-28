@@ -254,6 +254,7 @@
 | plans/2026-08-28-phase3-orchestration-plan.md | Phase 3 任务分解与里程碑计划（T29–T34），已更新为全部完成 |
 | plans/2026-08-28-phase4-detector-teacher-plan.md | Phase 4 任务级 detector 与 teacher 回流实施计划（执行中） |
 | 2026-08-28-p4-2-frozen-shadow-task-level-detector-changes-and-decisions.md | **P4-2 frozen shadow 任务级 detector v1 实施决策**：只读 shadow、v1 规则集合、版本门控、证据 artifact 嵌入、浏览器安全哈希与回归测试 |
+| 2026-08-28-p4-4-integration-and-shadow-metrics-changes-and-decisions.md | **P4-4 集成测试与 shadow 评估指标**：composite artifact 扩展支持 detector snapshot、detector 召回/误报/漏报/升级成本/DLP 阻塞指标、端到端 faux 数据测试 |
 
 ---
 

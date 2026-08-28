@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { TaskLevelDetectorSnapshot } from "@earendil-works/pi-agent-core";
 import type { ArtifactRegistry } from "./artifact-registry.ts";
 import type { ArtifactManifest } from "./artifact-schema.ts";
 import { SHA256_HEX_PATTERN } from "./artifact-schema.ts";
@@ -79,6 +80,8 @@ export interface EvidenceArtifactInput {
 	graderOutcomes: GraderOutcome[];
 	userCorrections: UserCorrection[];
 	escalationJoinKeys: EscalationJoinKey[];
+	/** Optional frozen shadow task-level detector snapshot produced by P4-2. */
+	detectorSnapshot?: TaskLevelDetectorSnapshot;
 	/** Optional aligned teacher correction ref produced by P4-3 backflow alignment. */
 	teacherCorrectionRef?: TeacherCorrectionRef;
 }
@@ -175,6 +178,7 @@ export function buildEvidenceArtifact(input: EvidenceArtifactInput): EvidenceArt
 		grader_outcomes: input.graderOutcomes,
 		user_corrections: input.userCorrections,
 		escalation_join_keys: input.escalationJoinKeys,
+		...(input.detectorSnapshot !== undefined ? { detector_snapshot: input.detectorSnapshot } : {}),
 		...(input.teacherCorrectionRef !== undefined ? { teacher_correction_ref: input.teacherCorrectionRef } : {}),
 	};
 
@@ -193,6 +197,7 @@ export function buildEvidenceArtifact(input: EvidenceArtifactInput): EvidenceArt
 			`grader_outcomes:${input.graderOutcomes.length}`,
 			`user_corrections:${input.userCorrections.length}`,
 			`escalation_join_keys:${input.escalationJoinKeys.length}`,
+			...(input.detectorSnapshot ? [`detector_signals:${input.detectorSnapshot.signals.length}`] : []),
 			...(input.teacherCorrectionRef ? [`teacher_correction_refs:1`] : []),
 		],
 		scaffold_hash: contract.scaffoldHash,
