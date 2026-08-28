@@ -82,7 +82,7 @@ export function resolveScaffoldConfig(session: AgentSession): ScaffoldConfig {
 			maxRetries: retrySettings.maxRetries,
 			backoffMs: retrySettings.baseDelayMs,
 		},
-		taskLevelDetectorVersion: session.versionContract.artifactId,
+		taskLevelDetectorVersion: session.taskLevelDetectorVersion,
 		providerModelSamplingMatrix: buildSamplingMatrix(session),
 	};
 }

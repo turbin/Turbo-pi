@@ -12,6 +12,14 @@ import type {
 } from "../types.ts";
 import { collectEntriesForBranchSummary, generateBranchSummary } from "./compaction/branch-summarization.ts";
 import { compact, DEFAULT_COMPACTION_SETTINGS, prepareCompaction } from "./compaction/compaction.ts";
+import {
+	createTaskLevelDetector,
+	hashCanonicalForDetector,
+	type TaskLevelDetectorScaffold,
+	type TaskLevelDetectorSnapshot,
+	type TaskLevelDetectorToolEvent,
+	type TaskLevelDetectorTurn,
+} from "./detector/task-level-detector.ts";
 import { convertToLlm } from "./messages.ts";
 import { formatPromptTemplateInvocation } from "./prompt-templates.ts";
 import { formatSkillInvocation } from "./skills.ts";
@@ -179,6 +187,9 @@ export class AgentHarness<
 	private followUpQueueMode: QueueMode;
 	private nextTurnQueue: AgentMessage[] = [];
 	private handlers = new Map<string, Set<AgentHarnessHandler>>();
+	private shadowHandlers = new Set<
+		(event: AgentHarnessEvent<TSkill, TPromptTemplate>, signal?: AbortSignal) => void | Promise<void>
+	>();
 
 	constructor(options: AgentHarnessOptions<TSkill, TPromptTemplate, TTool>) {
 		this.env = options.env;
@@ -207,6 +218,30 @@ export class AgentHarness<
 
 	private getHandlers(type: string): Set<AgentHarnessHandler> | undefined {
 		return this.handlers.get(type);
+	}
+
+	/**
+	 * Subscribe to all harness events without participating in control flow.
+	 * Shadow listeners are fired after main listeners; their errors are swallowed
+	 * and their return values are ignored.
+	 */
+	subscribeShadow(
+		listener: (event: AgentHarnessEvent<TSkill, TPromptTemplate>, signal?: AbortSignal) => void | Promise<void>,
+	): () => void {
+		this.shadowHandlers.add(listener);
+		return () => {
+			this.shadowHandlers.delete(listener);
+		};
+	}
+
+	private async emitShadow(event: AgentHarnessEvent<TSkill, TPromptTemplate>, signal?: AbortSignal): Promise<void> {
+		for (const listener of this.shadowHandlers) {
+			try {
+				await listener(event, signal);
+			} catch {
+				// Shadow listeners must never affect the main loop.
+			}
+		}
 	}
 
 	private async emitOwn(event: AgentHarnessOwnEvent<TSkill, TPromptTemplate>, signal?: AbortSignal): Promise<void> {
@@ -486,6 +521,9 @@ export class AgentHarness<
 	}
 
 	private async handleAgentEvent(event: AgentEvent, signal?: AbortSignal): Promise<void> {
+		// Shadow listeners observe events without affecting control flow.
+		await this.emitShadow(event, signal);
+
 		if (event.type === "message_end") {
 			await this.session.appendMessage(event.message);
 			await this.emitAny(event, signal);
@@ -965,6 +1003,68 @@ export class AgentHarness<
 
 	async setStreamOptions(streamOptions: AgentHarnessStreamOptions): Promise<void> {
 		this.streamOptions = cloneStreamOptions(streamOptions);
+	}
+
+	/**
+	 * Attach a frozen shadow task-level detector v1 to this harness.
+	 *
+	 * The detector is read-only: it records signals to a per-task log and never
+	 * changes loop control flow or user output. Returns an unsubscribe function
+	 * and accessors for the shadow log.
+	 */
+	attachShadowTaskLevelDetector(
+		getScaffold: () => TaskLevelDetectorScaffold,
+		options: {
+			onSnapshot?: (snapshot: TaskLevelDetectorSnapshot) => void;
+		} = {},
+	): {
+		unsubscribe: () => void;
+		getLog: () => readonly TaskLevelDetectorSnapshot[];
+		getCurrentSnapshot: () => TaskLevelDetectorSnapshot | undefined;
+	} {
+		const detector = createTaskLevelDetector();
+		const log: TaskLevelDetectorSnapshot[] = [];
+
+		const unsubscribe = this.subscribeShadow((event) => {
+			if (event.type === "before_agent_start") {
+				// `before_agent_start` is the first task event; reset here so the
+				// original task text is not cleared by the subsequent `agent_start`.
+				detector.reset();
+				detector.setOriginalTask(event.prompt);
+				return;
+			}
+			if (event.type === "tool_execution_end") {
+				// The harness event does not include tool arguments; use the unique
+				// tool call id to avoid false progress-stalled positives.
+				const toolEvent: TaskLevelDetectorToolEvent = {
+					toolName: event.toolName,
+					argsHash: hashCanonicalForDetector({ toolCallId: event.toolCallId }),
+					resultHash: hashCanonicalForDetector(event.result),
+				};
+				detector.recordToolEvent(toolEvent);
+				return;
+			}
+			if (event.type === "turn_end") {
+				const turn: TaskLevelDetectorTurn = {
+					assistantMessage: event.message,
+					toolCallIds: event.toolResults.map((result) => result.toolCallId),
+				};
+				detector.recordTurnEnd(turn);
+				return;
+			}
+			if (event.type === "agent_end") {
+				const snapshot = detector.getSnapshot(getScaffold());
+				log.push(snapshot);
+				options.onSnapshot?.(snapshot);
+				return;
+			}
+		});
+
+		return {
+			unsubscribe,
+			getLog: () => [...log],
+			getCurrentSnapshot: () => (log.length > 0 ? log[log.length - 1] : undefined),
+		};
 	}
 
 	async abort(): Promise<AbortResult> {

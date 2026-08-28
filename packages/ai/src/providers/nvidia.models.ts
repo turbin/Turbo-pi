@@ -9,6 +9,10 @@ export const NVIDIA_MODELS = values as {
 		id: "deepseek-ai/deepseek-v4-flash-0731";
 		provider: "nvidia";
 	};
+	"deepseek-ai/deepseek-v4-pro-0813": Model<"openai-completions"> & {
+		id: "deepseek-ai/deepseek-v4-pro-0813";
+		provider: "nvidia";
+	};
 	"google/gemma-3-12b-it": Model<"openai-completions"> & {
 		id: "google/gemma-3-12b-it";
 		provider: "nvidia";
@@ -87,10 +91,6 @@ export const NVIDIA_MODELS = values as {
 	};
 	"poolside/laguna-xs-2.1": Model<"openai-completions"> & {
 		id: "poolside/laguna-xs-2.1";
-		provider: "nvidia";
-	};
-	"stepfun-ai/step-3.7-flash": Model<"openai-completions"> & {
-		id: "stepfun-ai/step-3.7-flash";
 		provider: "nvidia";
 	};
 };

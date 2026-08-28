@@ -24,6 +24,11 @@ import type {
 	PrepareNextTurnContext,
 	ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
+import {
+	createTaskLevelDetector,
+	type TaskLevelDetector,
+	type TaskLevelDetectorScaffold,
+} from "@earendil-works/pi-agent-core";
 import type {
 	AssistantMessage,
 	AuthResult,
@@ -228,6 +233,11 @@ export interface AgentSessionConfig {
 	extensionRunnerRef?: { current?: ExtensionRunner };
 	/** Session start event metadata emitted when extensions bind to this runtime. */
 	sessionStartEvent?: SessionStartEvent;
+	/**
+	 * Task-level detector version. "off" or undefined disables the detector;
+	 * "v1-rule" enables the frozen shadow rule-based detector. Defaults to "v1-rule".
+	 */
+	taskLevelDetectorVersion?: string;
 }
 
 export interface ExtensionBindings {
@@ -352,6 +362,7 @@ export class AgentSession {
 		escalations: EscalationCollector;
 		productManifest: ProductManifestCollector;
 	};
+	private _taskLevelDetector?: TaskLevelDetector;
 	private _evidenceSink: EvidenceSink;
 	private _pendingToolStarts = new Map<string, { toolName: string; args: unknown; startTime: number }>();
 	private _evidenceArtifacts: EvidenceArtifactRecord[] = [];
@@ -376,6 +387,7 @@ export class AgentSession {
 
 	private _modelRuntime: ModelRuntime;
 	private _versionContract: VersionContract;
+	private _taskLevelDetectorVersion: string;
 
 	// Tool registry for extension getTools/setTools
 	private _toolRegistry: Map<string, AgentTool> = new Map();
@@ -398,6 +410,7 @@ export class AgentSession {
 		this._cwd = config.cwd;
 		this._modelRuntime = config.modelRuntime;
 		this._versionContract = loadVersionContract();
+		this._taskLevelDetectorVersion = config.taskLevelDetectorVersion ?? "v1-rule";
 		this._persistVersionContract();
 		this._evidenceSink = createEvidenceSink({ storeDir: this.sessionManager.getSessionDir() });
 		this._initializeCollectors();
@@ -432,6 +445,11 @@ export class AgentSession {
 	/** Current gen0 version contract (same value as the versionContract getter). */
 	sessionVersionContract(): VersionContract {
 		return this._versionContract;
+	}
+
+	/** Active task-level detector version for this session. */
+	get taskLevelDetectorVersion(): string {
+		return this._taskLevelDetectorVersion;
 	}
 
 	/** Evidence artifacts produced for completed tasks in this session. */
@@ -707,6 +725,7 @@ export class AgentSession {
 
 		// Feed collectors for the shadow evidence plane
 		this._routeToCollectors(event);
+		this._routeToDetector(event);
 
 		// Notify all listeners
 		this._emit(event.type === "agent_end" ? { ...event, willRetry: this._willRetryAfterAgentEnd(event) } : event);
@@ -778,6 +797,7 @@ export class AgentSession {
 				timestamp: Date.now(),
 			};
 			this._collectors.toolEvents.record(toolEvent);
+			this._taskLevelDetector?.recordToolEvent(toolEvent);
 			this._pendingToolStarts.delete(event.toolCallId);
 		} else if (
 			event.type === "message_end" &&
@@ -804,6 +824,19 @@ export class AgentSession {
 			if (correction && typeof correction === "object") {
 				this.recordUserCorrection(correction as UserCorrection);
 			}
+		}
+	}
+
+	private _routeToDetector(event: AgentEvent): void {
+		if (!this._taskLevelDetector) return;
+
+		if (event.type === "message_start" && event.message.role === "user") {
+			this._taskLevelDetector.setOriginalTask(this._getUserMessageText(event.message));
+		} else if (event.type === "turn_end") {
+			this._taskLevelDetector.recordTurnEnd({
+				assistantMessage: event.message,
+				toolCallIds: event.toolResults.map((result) => result.toolCallId),
+			});
 		}
 	}
 
@@ -2752,7 +2785,13 @@ export class AgentSession {
 			escalations: createEscalationCollector(),
 			productManifest: createProductManifestCollector(),
 		};
+		this._taskLevelDetector = this._isTaskLevelDetectorEnabled() ? createTaskLevelDetector() : undefined;
 		this._pendingToolStarts.clear();
+	}
+
+	private _isTaskLevelDetectorEnabled(): boolean {
+		const version = this._taskLevelDetectorVersion;
+		return version !== undefined && version !== "off" && version.length > 0;
 	}
 
 	private _shouldCollectEvidence(): boolean {
@@ -2767,6 +2806,11 @@ export class AgentSession {
 			this._collectors.productManifest.record(entry);
 		}
 
+		const detectorScaffold: TaskLevelDetectorScaffold = {
+			taskLevelDetectorVersion: this._taskLevelDetectorVersion,
+		};
+		const detectorSnapshot = this._taskLevelDetector?.getSnapshot(detectorScaffold);
+
 		const artifact = this._evidenceSink.buildAndStore({
 			taskId: this.sessionId,
 			versionContract: this._versionContract,
@@ -2775,6 +2819,7 @@ export class AgentSession {
 			graderOutcomes: this._collectors.outcomes.getOutcomes(),
 			userCorrections: this._collectors.outcomes.getCorrections(),
 			escalationJoinKeys: this._collectors.escalations.getJoinKeys(),
+			detectorSnapshot,
 		});
 
 		if (artifact) {

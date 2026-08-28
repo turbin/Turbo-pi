@@ -317,6 +317,14 @@ export const VERCEL_AI_GATEWAY_MODELS = values as {
 		id: "inclusionai/ling-3.0-flash";
 		provider: "vercel-ai-gateway";
 	};
+	"inclusionai/ling-3.0-flash-fin": Model<"anthropic-messages"> & {
+		id: "inclusionai/ling-3.0-flash-fin";
+		provider: "vercel-ai-gateway";
+	};
+	"inclusionai/ling-3.0-flash-fin-free": Model<"anthropic-messages"> & {
+		id: "inclusionai/ling-3.0-flash-fin-free";
+		provider: "vercel-ai-gateway";
+	};
 	"interfaze/interfaze-beta": Model<"anthropic-messages"> & {
 		id: "interfaze/interfaze-beta";
 		provider: "vercel-ai-gateway";
@@ -815,6 +823,10 @@ export const VERCEL_AI_GATEWAY_MODELS = values as {
 	};
 	"tencent/hy3": Model<"anthropic-messages"> & {
 		id: "tencent/hy3";
+		provider: "vercel-ai-gateway";
+	};
+	"tencent/hy4-preview": Model<"anthropic-messages"> & {
+		id: "tencent/hy4-preview";
 		provider: "vercel-ai-gateway";
 	};
 	"thinkingmachines/inkling": Model<"anthropic-messages"> & {

@@ -5,6 +5,8 @@
 ### Added
 
 - Added extension registration for complete pi-ai providers, including native authentication, model refresh, filtering, and streaming behavior.
+- Wired the frozen shadow task-level detector v1 into `AgentSession` and `evidence-sink`, embedding detector snapshots into composite evidence artifacts.
+- Added `taskLevelDetectorVersion` session option and scaffold wiring to enable/disable the detector.
 
 ### Fixed
 

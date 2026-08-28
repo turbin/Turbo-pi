@@ -205,6 +205,10 @@ export const OPENCODE_MODELS = values as {
 		id: "kimi-k3";
 		provider: "opencode";
 	};
+	"ling-3.0-flash-fin-free": Model<"openai-completions"> & {
+		id: "ling-3.0-flash-fin-free";
+		provider: "opencode";
+	};
 	"mimo-v2.5-free": Model<"openai-completions"> & {
 		id: "mimo-v2.5-free";
 		provider: "opencode";

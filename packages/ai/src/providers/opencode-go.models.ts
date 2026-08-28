@@ -45,6 +45,10 @@ export const OPENCODE_GO_MODELS = values as {
 		id: "hy3";
 		provider: "opencode-go";
 	};
+	"hy4-preview": Model<"openai-completions"> & {
+		id: "hy4-preview";
+		provider: "opencode-go";
+	};
 	"kimi-k2.6": Model<"openai-completions"> & {
 		id: "kimi-k2.6";
 		provider: "opencode-go";
@@ -91,6 +95,10 @@ export const OPENCODE_GO_MODELS = values as {
 	};
 	"qwen3.7-plus": Model<"openai-completions"> & {
 		id: "qwen3.7-plus";
+		provider: "opencode-go";
+	};
+	"qwen3.8-flash": Model<"anthropic-messages"> & {
+		id: "qwen3.8-flash";
 		provider: "opencode-go";
 	};
 	"qwen3.8-max": Model<"openai-completions"> & {

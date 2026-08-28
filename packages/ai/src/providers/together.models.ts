@@ -81,4 +81,8 @@ export const TOGETHER_MODELS = values as {
 		id: "zai-org/GLM-5.2";
 		provider: "together";
 	};
+	"zai-org/GLM-5.3-Flash": Model<"openai-completions"> & {
+		id: "zai-org/GLM-5.3-Flash";
+		provider: "together";
+	};
 };

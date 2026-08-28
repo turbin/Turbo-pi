@@ -72,6 +72,7 @@ export interface HarnessOptions {
 	extensionFactories?: Array<InlineExtension | CreateTestExtensionsResultInput>;
 	withConfiguredAuth?: boolean;
 	sessionDir?: string;
+	taskLevelDetectorVersion?: string;
 }
 
 export interface Harness {
@@ -191,6 +192,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		allowedToolNames: options.allowedToolNames,
 		excludedToolNames: options.excludedToolNames,
 		extensionRunnerRef,
+		taskLevelDetectorVersion: options.taskLevelDetectorVersion,
 	});
 
 	const events: AgentSessionEvent[] = [];

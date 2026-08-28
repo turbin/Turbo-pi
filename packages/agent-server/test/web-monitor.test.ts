@@ -104,7 +104,7 @@ describe("web monitor", () => {
 		expect(resp.json().lines).toEqual([]);
 
 		mkdirSync(dirname(logPath), { recursive: true });
-		writeFileSync(logPath, Array.from({ length: 5 }, (_, i) => `line-${i}`).join("\n") + "\n");
+		writeFileSync(logPath, `${Array.from({ length: 5 }, (_, i) => `line-${i}`).join("\n")}\n`);
 		// lines=3 returns the LAST 3 lines in chronological order.
 		resp = await server.inject({ method: "GET", url: "/api/logs?lines=3" });
 		expect(resp.json().lines).toEqual(["line-2", "line-3", "line-4"]);

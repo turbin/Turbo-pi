@@ -11,6 +11,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { TaskLevelDetectorSnapshot } from "@earendil-works/pi-agent-core";
 import type { EscalationJoinKey } from "./evolution/escalation-collector.ts";
 import type { GraderOutcome, UserCorrection } from "./evolution/outcome-collector.ts";
 import type { ProductManifestEntry } from "./evolution/product-manifest-collector.ts";
@@ -47,6 +48,8 @@ export interface EvidenceArtifactInput {
 	graderOutcomes: GraderOutcome[];
 	userCorrections: UserCorrection[];
 	escalationJoinKeys: EscalationJoinKey[];
+	/** Optional frozen shadow task-level detector snapshot. */
+	detectorSnapshot?: TaskLevelDetectorSnapshot;
 }
 
 export interface EvidenceSinkOptions {
@@ -87,6 +90,7 @@ class EvidenceSinkImpl implements EvidenceSink {
 			grader_outcomes: input.graderOutcomes,
 			user_corrections: input.userCorrections,
 			escalation_join_keys: input.escalationJoinKeys,
+			...(input.detectorSnapshot !== undefined ? { detector_snapshot: input.detectorSnapshot } : {}),
 		};
 
 		const evidenceBlob = toCanonicalBlob(evidencePayload);
@@ -104,6 +108,7 @@ class EvidenceSinkImpl implements EvidenceSink {
 				`grader_outcomes:${input.graderOutcomes.length}`,
 				`user_corrections:${input.userCorrections.length}`,
 				`escalation_join_keys:${input.escalationJoinKeys.length}`,
+				...(input.detectorSnapshot ? [`detector_signals:${input.detectorSnapshot.signals.length}`] : []),
 			],
 			scaffold_hash: contract.scaffoldHash,
 			model_fingerprint: JSON.stringify({

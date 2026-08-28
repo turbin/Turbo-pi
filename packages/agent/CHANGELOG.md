@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- Frozen shadow task-level detector v1 (rule-based) with read-only signals (`progressStalled`, `repeatedToolFailure`, `deliveryMissing`, `escalationRecommended`) under `packages/agent/src/harness/detector/`.
+- `AgentHarness.subscribeShadow()` and `AgentHarness.attachShadowTaskLevelDetector()` for non-blocking shadow event observation.
+
 ## [0.80.10] - 2026-07-16
 
 ## [0.80.9] - 2026-07-16

@@ -13,10 +13,6 @@ export const FIREWORKS_MODELS = values as {
 		id: "accounts/fireworks/models/deepseek-v4-flash-0731";
 		provider: "fireworks";
 	};
-	"accounts/fireworks/models/deepseek-v4-pro": Model<"anthropic-messages"> & {
-		id: "accounts/fireworks/models/deepseek-v4-pro";
-		provider: "fireworks";
-	};
 	"accounts/fireworks/models/deepseek-v4-pro-0813": Model<"anthropic-messages"> & {
 		id: "accounts/fireworks/models/deepseek-v4-pro-0813";
 		provider: "fireworks";
@@ -27,10 +23,6 @@ export const FIREWORKS_MODELS = values as {
 	};
 	"accounts/fireworks/models/gpt-oss-120b": Model<"anthropic-messages"> & {
 		id: "accounts/fireworks/models/gpt-oss-120b";
-		provider: "fireworks";
-	};
-	"accounts/fireworks/models/gpt-oss-20b": Model<"anthropic-messages"> & {
-		id: "accounts/fireworks/models/gpt-oss-20b";
 		provider: "fireworks";
 	};
 	"accounts/fireworks/models/inkling": Model<"anthropic-messages"> & {
@@ -47,10 +39,6 @@ export const FIREWORKS_MODELS = values as {
 	};
 	"accounts/fireworks/models/kimi-k3": Model<"anthropic-messages"> & {
 		id: "accounts/fireworks/models/kimi-k3";
-		provider: "fireworks";
-	};
-	"accounts/fireworks/models/minimax-m2p7": Model<"anthropic-messages"> & {
-		id: "accounts/fireworks/models/minimax-m2p7";
 		provider: "fireworks";
 	};
 	"accounts/fireworks/models/minimax-m3": Model<"anthropic-messages"> & {
@@ -79,18 +67,6 @@ export const FIREWORKS_MODELS = values as {
 	};
 	"accounts/fireworks/routers/glm-5p2-fast": Model<"openai-completions"> & {
 		id: "accounts/fireworks/routers/glm-5p2-fast";
-		provider: "fireworks";
-	};
-	"accounts/fireworks/routers/kimi-k2p6-fast": Model<"anthropic-messages"> & {
-		id: "accounts/fireworks/routers/kimi-k2p6-fast";
-		provider: "fireworks";
-	};
-	"accounts/fireworks/routers/kimi-k2p6-turbo": Model<"anthropic-messages"> & {
-		id: "accounts/fireworks/routers/kimi-k2p6-turbo";
-		provider: "fireworks";
-	};
-	"accounts/fireworks/routers/kimi-k2p7-code-fast": Model<"anthropic-messages"> & {
-		id: "accounts/fireworks/routers/kimi-k2p7-code-fast";
 		provider: "fireworks";
 	};
 	"accounts/fireworks/routers/kimi-k3-fast": Model<"anthropic-messages"> & {
