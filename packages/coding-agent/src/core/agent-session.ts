@@ -61,6 +61,29 @@ import {
 	shouldCompact,
 } from "./compaction/index.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
+import { createEvidenceSink, type EvidenceArtifactRecord, type EvidenceSink } from "./evidence-sink.ts";
+import {
+	createEscalationCollector,
+	type EscalationCollector,
+	parseFromGatewayResponse,
+} from "./evolution/escalation-collector.ts";
+import {
+	createOutcomeCollector,
+	type GraderOutcome,
+	type OutcomeCollector,
+	type UserCorrection,
+} from "./evolution/outcome-collector.ts";
+import {
+	collectFromDirectory,
+	createProductManifestCollector,
+	type ProductManifestCollector,
+} from "./evolution/product-manifest-collector.ts";
+import {
+	createToolEventCollector,
+	hashCanonical,
+	type ToolEvent,
+	type ToolEventCollector,
+} from "./evolution/tool-event-collector.ts";
 import { loadVersionContract, type VersionContract } from "./evolution/version-contract.ts";
 import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.ts";
 import { createToolHtmlRenderer } from "./export-html/tool-renderer.ts";
@@ -323,6 +346,16 @@ export class AgentSession {
 	private _extensionRunner!: ExtensionRunner;
 	private _turnIndex = 0;
 
+	private _collectors?: {
+		toolEvents: ToolEventCollector;
+		outcomes: OutcomeCollector;
+		escalations: EscalationCollector;
+		productManifest: ProductManifestCollector;
+	};
+	private _evidenceSink: EvidenceSink;
+	private _pendingToolStarts = new Map<string, { toolName: string; args: unknown; startTime: number }>();
+	private _evidenceArtifacts: EvidenceArtifactRecord[] = [];
+
 	private _resourceLoader: ResourceLoader;
 	private _customTools: ToolDefinition[];
 	private _baseToolDefinitions: Map<string, ToolDefinition> = new Map();
@@ -366,6 +399,8 @@ export class AgentSession {
 		this._modelRuntime = config.modelRuntime;
 		this._versionContract = loadVersionContract();
 		this._persistVersionContract();
+		this._evidenceSink = createEvidenceSink({ storeDir: this.sessionManager.getSessionDir() });
+		this._initializeCollectors();
 		this._extensionRunnerRef = config.extensionRunnerRef;
 		this._initialActiveToolNames = config.initialActiveToolNames;
 		this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
@@ -397,6 +432,46 @@ export class AgentSession {
 	/** Current gen0 version contract (same value as the versionContract getter). */
 	sessionVersionContract(): VersionContract {
 		return this._versionContract;
+	}
+
+	/** Evidence artifacts produced for completed tasks in this session. */
+	get evidenceArtifacts(): readonly EvidenceArtifactRecord[] {
+		return [...this._evidenceArtifacts];
+	}
+
+	/** The most recently produced evidence artifact, if any. */
+	get lastEvidenceArtifact(): EvidenceArtifactRecord | undefined {
+		return this._evidenceArtifacts[this._evidenceArtifacts.length - 1];
+	}
+
+	/** Records a grader outcome against the current task. */
+	recordGraderOutcome(outcome: GraderOutcome): void {
+		this._collectors?.outcomes.recordGraderOutcome(outcome);
+	}
+
+	/** Records a user correction against the current task. */
+	recordUserCorrection(correction: UserCorrection): void {
+		this._collectors?.outcomes.recordUserCorrection(correction);
+	}
+
+	/**
+	 * Records a gateway escalation marker (flat or nested) if it parses to a
+	 * valid escalation join key.
+	 */
+	recordGatewayMarker(marker: unknown): void {
+		if (!this._collectors) return;
+		let source = marker;
+		if (typeof marker === "string") {
+			try {
+				source = JSON.parse(marker);
+			} catch {
+				return;
+			}
+		}
+		const key = parseFromGatewayResponse(source);
+		if (key) {
+			this._collectors.escalations.recordJoinKey(key);
+		}
 	}
 
 	/**
@@ -630,6 +705,9 @@ export class AgentSession {
 		// Emit to extensions first
 		await this._emitExtensionEvent(event);
 
+		// Feed collectors for the shadow evidence plane
+		this._routeToCollectors(event);
+
 		// Notify all listeners
 		this._emit(event.type === "agent_end" ? { ...event, willRetry: this._willRetryAfterAgentEnd(event) } : event);
 
@@ -676,6 +754,58 @@ export class AgentSession {
 			}
 		}
 	};
+
+	private _routeToCollectors(event: AgentEvent): void {
+		if (!this._collectors) return;
+
+		if (event.type === "tool_execution_start") {
+			this._pendingToolStarts.set(event.toolCallId, {
+				toolName: event.toolName,
+				args: event.args,
+				startTime: Date.now(),
+			});
+		} else if (event.type === "tool_execution_end") {
+			const start = this._pendingToolStarts.get(event.toolCallId);
+			const durationMs = start ? Date.now() - start.startTime : 0;
+			const argsForHash = start?.args ?? {};
+			const resultForHash = event.isError ? String(event.result) : event.result;
+			const toolEvent: ToolEvent = {
+				toolName: event.toolName,
+				argsHash: hashCanonical(argsForHash),
+				resultHash: hashCanonical(resultForHash),
+				durationMs,
+				...(event.isError ? { error: typeof event.result === "string" ? event.result : String(event.result) } : {}),
+				timestamp: Date.now(),
+			};
+			this._collectors.toolEvents.record(toolEvent);
+			this._pendingToolStarts.delete(event.toolCallId);
+		} else if (
+			event.type === "message_end" &&
+			event.message.role === "custom" &&
+			(event.message as CustomMessage).customType === "gateway_marker"
+		) {
+			const markerSource = (event.message as CustomMessage).details ?? (event.message as CustomMessage).content;
+			this.recordGatewayMarker(markerSource);
+		} else if (
+			event.type === "message_end" &&
+			event.message.role === "custom" &&
+			(event.message as CustomMessage).customType === "grader_outcome"
+		) {
+			const outcome = (event.message as CustomMessage).details ?? (event.message as CustomMessage).content;
+			if (outcome && typeof outcome === "object") {
+				this.recordGraderOutcome(outcome as GraderOutcome);
+			}
+		} else if (
+			event.type === "message_end" &&
+			event.message.role === "custom" &&
+			(event.message as CustomMessage).customType === "user_correction"
+		) {
+			const correction = (event.message as CustomMessage).details ?? (event.message as CustomMessage).content;
+			if (correction && typeof correction === "object") {
+				this.recordUserCorrection(correction as UserCorrection);
+			}
+		}
+	}
 
 	private _willRetryAfterAgentEnd(event: Extract<AgentEvent, { type: "agent_end" }>): boolean {
 		const settings = this.settingsManager.getRetrySettings();
@@ -1090,6 +1220,7 @@ export class AgentSession {
 		} finally {
 			this._systemPromptOverride = undefined;
 			this._flushPendingBashMessages();
+			await this._finalizeEvidenceArtifact();
 			await this._emitAgentSettled();
 		}
 	}
@@ -2611,6 +2742,45 @@ export class AgentSession {
 			activeToolNames: baseActiveToolNames,
 			includeAllExtensionTools: options.includeAllExtensionTools,
 		});
+	}
+
+	private _initializeCollectors(): void {
+		if (!this._shouldCollectEvidence()) return;
+		this._collectors = {
+			toolEvents: createToolEventCollector(),
+			outcomes: createOutcomeCollector(),
+			escalations: createEscalationCollector(),
+			productManifest: createProductManifestCollector(),
+		};
+		this._pendingToolStarts.clear();
+	}
+
+	private _shouldCollectEvidence(): boolean {
+		// Collectors are enabled by default. Future version-contract gates go here.
+		return true;
+	}
+
+	private async _finalizeEvidenceArtifact(): Promise<void> {
+		if (!this._collectors) return;
+		const manifestEntries = collectFromDirectory(this._cwd);
+		for (const entry of manifestEntries) {
+			this._collectors.productManifest.record(entry);
+		}
+
+		const artifact = this._evidenceSink.buildAndStore({
+			taskId: this.sessionId,
+			versionContract: this._versionContract,
+			toolEvents: this._collectors.toolEvents.getEvents(),
+			productManifest: this._collectors.productManifest.getManifest(),
+			graderOutcomes: this._collectors.outcomes.getOutcomes(),
+			userCorrections: this._collectors.outcomes.getCorrections(),
+			escalationJoinKeys: this._collectors.escalations.getJoinKeys(),
+		});
+
+		if (artifact) {
+			this._evidenceArtifacts.push(artifact);
+		}
+		this._initializeCollectors();
 	}
 
 	private _recordResolvedManifest(): void {
