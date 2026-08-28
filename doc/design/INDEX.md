@@ -248,6 +248,10 @@
 | 2026-08-28-self-evolving-engineering-design-adversarial-review.md | **Kimi × Codex 五轮上限对抗审核记录**：独立红队→统计/状态反驳→信任主体与数据模型→安全白名单与证据边界→V3 终审；记录收敛项、证据适用边界和 Phase 0 参数 |
 | 2026-08-27-self-evolving-engineering-design-changes-and-decisions.md | **自举设计决策 SE-01~SE-28**：在 V2 基础上新增 TEK 独立进程边界、四层状态、签名分权、adaptive holdout 隔离、严格 shadow、稀有事件保守门、受限 ABI、数据保留、签名依赖例外与 Phase 0a/0b |
 | 2026-08-27-p0-infrastructure-changes-and-decisions.md | **P0 基础设施实施决策 P0-01~P0-06**：judge 适配器、独立工作区断言、确认集 denylist、canonical request hash、arm/condition trace 标记、测试门控风险域分离 |
+| 2026-08-28-m2-t6b-2-version-contract-wiring-changes-and-decisions.md | M2-T6b-2：将 version contract 接入 `AgentSession`，注入 system-prompt/extension 上下文，并在 `reload()` 记录 resolved manifest |
+| 2026-08-28-m2-t6b-3-resolved-manifest-persistence-changes-and-decisions.md | M2-T6b-3：在 `AgentSession.reload()` 中将 resolved manifest 持久化到会话目录，字段校验 fail-closed，注入失败不影响会话继续 |
+| 2026-08-28-phase3-completion-changes-and-decisions.md | **Phase 3 scaffold 配置进化实施完成**：T29–T34 全链落地、9 项设计决策、测试基线 247+61 全绿、遗留 Phase 0b 参数与下一 Go/No-Go 点 |
+| plans/2026-08-28-phase3-orchestration-plan.md | Phase 3 任务分解与里程碑计划（T29–T34），已更新为全部完成 |
 
 ---
 

@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import triggerCompactExtension from "../examples/extensions/trigger-compact.ts";
+import { DEFAULT_VERSION_CONTRACT } from "../src/core/evolution/version-contract.ts";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "../src/core/extensions/index.ts";
 
 function createContext(tokens: number | null, compact = vi.fn()): ExtensionContext {
@@ -8,6 +9,7 @@ function createContext(tokens: number | null, compact = vi.fn()): ExtensionConte
 		hasUI: false,
 		ui: {} as ExtensionContext["ui"],
 		cwd: process.cwd(),
+		versionContract: DEFAULT_VERSION_CONTRACT,
 		sessionManager: {} as ExtensionContext["sessionManager"],
 		modelRegistry: {} as ExtensionContext["modelRegistry"],
 		model: undefined,

@@ -3,9 +3,12 @@
  */
 
 import { getDocsPath, getExamplesPath, getReadmePath } from "../config.ts";
+import type { VersionContract } from "./evolution/version-contract.ts";
 import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 
 export interface BuildSystemPromptOptions {
+	/** Gen0 version contract for the running agent. */
+	versionContract?: VersionContract;
 	/** Custom system prompt (replaces default). */
 	customPrompt?: string;
 	/** Tools to include in prompt. Default: [read, bash, edit, write] */

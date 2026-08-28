@@ -14,7 +14,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type {
 	Agent,
 	AgentEvent,
@@ -61,6 +61,7 @@ import {
 	shouldCompact,
 } from "./compaction/index.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
+import { loadVersionContract, type VersionContract } from "./evolution/version-contract.ts";
 import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.ts";
 import { createToolHtmlRenderer } from "./export-html/tool-renderer.ts";
 import {
@@ -341,6 +342,7 @@ export class AgentSession {
 	private _extensionErrorUnsubscriber?: () => void;
 
 	private _modelRuntime: ModelRuntime;
+	private _versionContract: VersionContract;
 
 	// Tool registry for extension getTools/setTools
 	private _toolRegistry: Map<string, AgentTool> = new Map();
@@ -362,6 +364,8 @@ export class AgentSession {
 		this._customTools = config.customTools ?? [];
 		this._cwd = config.cwd;
 		this._modelRuntime = config.modelRuntime;
+		this._versionContract = loadVersionContract();
+		this._persistVersionContract();
 		this._extensionRunnerRef = config.extensionRunnerRef;
 		this._initialActiveToolNames = config.initialActiveToolNames;
 		this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
@@ -383,6 +387,35 @@ export class AgentSession {
 
 	get modelRuntime(): ModelRuntime {
 		return this._modelRuntime;
+	}
+
+	/** Gen0 version contract for the running agent. */
+	get versionContract(): VersionContract {
+		return this._versionContract;
+	}
+
+	/** Current gen0 version contract (same value as the versionContract getter). */
+	sessionVersionContract(): VersionContract {
+		return this._versionContract;
+	}
+
+	/**
+	 * Persists the current version contract as a sidecar JSON file in the
+	 * session directory so downstream reconciliation can join task -> session
+	 * -> artifact. No-ops for in-memory sessions (no session directory).
+	 */
+	private _persistVersionContract(): void {
+		const sessionDir = this.sessionManager.getSessionDir();
+		if (!sessionDir || typeof sessionDir !== "string") {
+			return;
+		}
+		const payload = {
+			artifactId: this._versionContract.artifactId,
+			scaffoldHash: this._versionContract.scaffoldHash,
+			snapshotSha: this._versionContract.snapshotSha,
+			recordedAt: Date.now(),
+		};
+		writeFileSync(join(sessionDir, "version-contract.json"), JSON.stringify(payload, null, "\t"));
 	}
 
 	private async _getRequiredRequestAuth(model: Model<any>): Promise<{
@@ -1031,6 +1064,7 @@ export class AgentSession {
 
 		this._baseSystemPromptOptions = {
 			cwd: this._cwd,
+			versionContract: this._versionContract,
 			skills: loadedSkills,
 			contextFiles: loadedContextFiles,
 			customPrompt: loaderSystemPrompt,
@@ -2561,6 +2595,7 @@ export class AgentSession {
 			this._cwd,
 			this.sessionManager,
 			new ModelRegistry(this._modelRuntime),
+			this._versionContract,
 		);
 		if (this._extensionRunnerRef) {
 			this._extensionRunnerRef.current = this._extensionRunner;
@@ -2578,7 +2613,73 @@ export class AgentSession {
 		});
 	}
 
+	private _recordResolvedManifest(): void {
+		const model = this.agent.state.model;
+		const resolvedAt = Date.now();
+		const payload = {
+			task_id: this.sessionId,
+			slot: "gen0",
+			resolved_at: resolvedAt,
+			artifact_id: this._versionContract.artifactId,
+			actual_provider_model: model ? `${model.provider}/${model.id}` : "",
+			env_snapshot: {
+				cwd: this._cwd,
+			},
+		};
+
+		const sessionDir = this.sessionManager.getSessionDir();
+		if (!sessionDir || typeof sessionDir !== "string") {
+			throw new Error("Resolved manifest cannot be written: session directory is not configured");
+		}
+
+		this._assertValidResolvedManifestPayload(payload);
+
+		this._persistVersionContract();
+		const fileName = `resolved-manifest-${payload.slot}-${resolvedAt}.json`;
+		const filePath = join(sessionDir, fileName);
+		writeFileSync(filePath, JSON.stringify(payload, null, "\t"));
+	}
+
+	private _assertValidResolvedManifestPayload(payload: {
+		task_id: string;
+		slot: string;
+		resolved_at: number;
+		artifact_id: string;
+		actual_provider_model: string;
+		env_snapshot: { cwd: string };
+	}): void {
+		if (!payload.task_id || typeof payload.task_id !== "string") {
+			throw new Error("Resolved manifest is missing required field: task_id");
+		}
+		if (!payload.slot || typeof payload.slot !== "string") {
+			throw new Error("Resolved manifest is missing required field: slot");
+		}
+		if (typeof payload.resolved_at !== "number" || Number.isNaN(payload.resolved_at)) {
+			throw new Error("Resolved manifest is missing required field: resolved_at");
+		}
+		if (!payload.artifact_id || typeof payload.artifact_id !== "string") {
+			throw new Error("Resolved manifest is missing required field: artifact_id");
+		}
+		if (payload.artifact_id !== "pending_0b" && !/^[0-9a-f]{64}$/.test(payload.artifact_id)) {
+			throw new Error("Resolved manifest has invalid artifact_id");
+		}
+		if (!payload.actual_provider_model || typeof payload.actual_provider_model !== "string") {
+			throw new Error("Resolved manifest is missing required field: actual_provider_model");
+		}
+		if (!payload.env_snapshot || typeof payload.env_snapshot !== "object" || Array.isArray(payload.env_snapshot)) {
+			throw new Error("Resolved manifest is missing required field: env_snapshot");
+		}
+		if (!payload.env_snapshot.cwd || typeof payload.env_snapshot.cwd !== "string") {
+			throw new Error("Resolved manifest env_snapshot is missing required field: cwd");
+		}
+	}
+
 	async reload(options?: { beforeSessionStart?: () => void | Promise<void> }): Promise<void> {
+		try {
+			this._recordResolvedManifest();
+		} catch (error) {
+			console.error("[resolved-manifest] Failed to record resolved manifest:", error);
+		}
 		const previousFlagValues = this._extensionRunner.getFlagValues();
 		await emitSessionShutdownEvent(this._extensionRunner, { type: "session_shutdown", reason: "reload" });
 		await this.settingsManager.reload();

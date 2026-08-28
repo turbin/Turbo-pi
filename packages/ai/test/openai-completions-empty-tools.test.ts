@@ -48,6 +48,45 @@ vi.mock("openai", () => {
 				},
 			},
 		};
+
+		responses = {
+			create: (params: unknown) => {
+				mockState.lastParams = params;
+				const stream = {
+					async *[Symbol.asyncIterator]() {
+						yield {
+							type: "response.created",
+							response: { id: "resp-test" },
+						};
+						yield {
+							type: "response.completed",
+							response: {
+								id: "resp-test",
+								status: "completed",
+								output: [],
+								usage: {
+									input_tokens: 1,
+									output_tokens: 1,
+									total_tokens: 2,
+									output_tokens_details: { reasoning_tokens: 0 },
+								},
+							},
+						};
+					},
+				};
+				const promise = Promise.resolve(stream) as Promise<typeof stream> & {
+					withResponse: () => Promise<{
+						data: typeof stream;
+						response: { status: number; headers: Headers };
+					}>;
+				};
+				promise.withResponse = async () => ({
+					data: stream,
+					response: { status: 200, headers: new Headers() },
+				});
+				return promise;
+			},
+		};
 	}
 
 	return { default: FakeOpenAI };
@@ -160,11 +199,11 @@ describe("openai-completions empty tools handling", () => {
 		expect(params.max_completion_tokens).toBe(3904);
 	});
 
-	it("uses conservative OpenAI-compatible fields for Cloudflare AI Gateway /compat models", async () => {
+	it("uses OpenAI Responses fields for Cloudflare AI Gateway /openai models", async () => {
 		process.env.CLOUDFLARE_API_KEY = "cf-token";
 		process.env.CLOUDFLARE_ACCOUNT_ID = "account-id";
 		process.env.CLOUDFLARE_GATEWAY_ID = "gateway-id";
-		const model = getModel("cloudflare-ai-gateway", "workers-ai/@cf/moonshotai/kimi-k2.6")!;
+		const model = getModel("cloudflare-ai-gateway", "gpt-5.1")!;
 
 		await streamSimple(
 			model,
@@ -176,23 +215,27 @@ describe("openai-completions empty tools handling", () => {
 		).result();
 
 		const params = mockState.lastParams as {
-			messages: Array<{ role: string }>;
+			input: Array<{ role: string }>;
 			max_tokens?: number;
 			max_completion_tokens?: number;
+			max_output_tokens?: number;
+			reasoning?: { effort?: string };
 			reasoning_effort?: string;
 			store?: boolean;
 		};
-		expect(params.messages[0].role).toBe("system");
-		expect(params.max_tokens).toBe(1234);
+		expect(params.input[0].role).toBe("developer");
+		expect(params.max_tokens).toBeUndefined();
 		expect(params.max_completion_tokens).toBeUndefined();
+		expect(params.max_output_tokens).toBe(1234);
+		expect(params.reasoning?.effort).toBe("high");
 		expect(params.reasoning_effort).toBeUndefined();
-		expect(params.store).toBeUndefined();
+		expect(params.store).toBe(false);
 
 		const clientOptions = mockState.lastClientOptions as {
 			baseURL?: string;
 			defaultHeaders?: Record<string, unknown>;
 		};
-		expect(clientOptions.baseURL).toBe("https://gateway.ai.cloudflare.com/v1/account-id/gateway-id/compat");
+		expect(clientOptions.baseURL).toBe("https://gateway.ai.cloudflare.com/v1/account-id/gateway-id/openai");
 		expect(clientOptions.defaultHeaders?.Authorization).toBeNull();
 		expect(clientOptions.defaultHeaders?.["cf-aig-authorization"]).toBe("Bearer cf-token");
 	});
@@ -201,14 +244,14 @@ describe("openai-completions empty tools handling", () => {
 		process.env.CLOUDFLARE_API_KEY = "cf-token";
 		process.env.CLOUDFLARE_ACCOUNT_ID = "account-id";
 		process.env.CLOUDFLARE_GATEWAY_ID = "gateway-id";
-		const model = getModel("cloudflare-ai-gateway", "workers-ai/@cf/moonshotai/kimi-k2.6")!;
+		const model = getModel("cloudflare-ai-gateway", "gpt-5.1")!;
 
 		await streamSimple(model, {
 			messages: [{ role: "user", content: "hi", timestamp: Date.now() }],
 		}).result();
 
 		const clientOptions = mockState.lastClientOptions as { baseURL?: string };
-		expect(clientOptions.baseURL).toBe("https://gateway.ai.cloudflare.com/v1/account-id/gateway-id/compat");
+		expect(clientOptions.baseURL).toBe("https://gateway.ai.cloudflare.com/v1/account-id/gateway-id/openai");
 	});
 
 	it("preserves inline upstream Authorization for Cloudflare AI Gateway BYOK requests", async () => {
@@ -230,11 +273,11 @@ describe("openai-completions empty tools handling", () => {
 		expect(clientOptions.defaultHeaders?.["cf-aig-authorization"]).toBe("Bearer cf-token");
 	});
 
-	it("sends session affinity headers for Workers AI through Cloudflare AI Gateway", async () => {
+	it("sends session affinity headers for Cloudflare Workers AI models", async () => {
 		process.env.CLOUDFLARE_API_KEY = "cf-token";
 		process.env.CLOUDFLARE_ACCOUNT_ID = "account-id";
 		process.env.CLOUDFLARE_GATEWAY_ID = "gateway-id";
-		const workersModel = getModel("cloudflare-ai-gateway", "workers-ai/@cf/moonshotai/kimi-k2.6")!;
+		const workersModel = getModel("cloudflare-workers-ai", "@cf/moonshotai/kimi-k2.6")!;
 
 		await streamSimple(
 			workersModel,

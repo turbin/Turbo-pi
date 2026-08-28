@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
+import { DEFAULT_VERSION_CONTRACT } from "../src/core/evolution/version-contract.ts";
 import { ExtensionRunner } from "../src/core/extensions/runner.ts";
 import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
@@ -285,6 +286,7 @@ export default function(pi) {
 				cwd,
 				sessionManager,
 				modelRegistry,
+				DEFAULT_VERSION_CONTRACT,
 			);
 
 			expect(runner.getCommand("deploy:1")?.description).toBe("project deploy");
@@ -729,6 +731,7 @@ export default function(pi: ExtensionAPI) {
 				cwd,
 				sessionManager,
 				modelRegistry,
+				DEFAULT_VERSION_CONTRACT,
 			);
 
 			expect(runner.getCommand("deploy:1")?.description).toBe("explicit command");

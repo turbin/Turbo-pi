@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
+import { DEFAULT_VERSION_CONTRACT } from "../src/core/evolution/version-contract.ts";
 import { discoverAndLoadExtensions } from "../src/core/extensions/loader.ts";
 import { ExtensionRunner } from "../src/core/extensions/runner.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
@@ -31,7 +32,7 @@ describe("Input Event", () => {
 		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
 		const sm = SessionManager.inMemory();
 		const mr = await createModelRegistry(AuthStorage.create(path.join(tempDir, "auth.json")));
-		return new ExtensionRunner(result.extensions, result.runtime, tempDir, sm, mr);
+		return new ExtensionRunner(result.extensions, result.runtime, tempDir, sm, mr, DEFAULT_VERSION_CONTRACT);
 	}
 
 	it("returns continue when no handlers, undefined return, or explicit continue", async () => {

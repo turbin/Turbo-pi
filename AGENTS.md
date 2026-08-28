@@ -260,6 +260,15 @@ Attribution:
 
 5. **If CI publish fails**: inspect the failed `publish-npm` job. The publish helper is idempotent and skips package versions already present on npm, so rerun the tag workflow after fixing CI or transient npm issues. Do not rerun `npm run release:patch` or `npm run release:minor` for the same version.
 
+## Pi Agent Availability
+
+Do not start or run pi agent sessions during the following daily quiet hours:
+
+- 09:00–12:00
+- 14:00–18:00
+
+Pi agent may be started and used at all other times.
+
 ## User Override
 
 If the user's instructions conflict with any rule in this document, ask for explicit confirmation before overriding. Only then execute their instructions.

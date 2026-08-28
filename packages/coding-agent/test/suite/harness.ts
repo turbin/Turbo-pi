@@ -5,7 +5,7 @@ import { createInMemoryModelRegistry, getModelRuntime } from "../model-runtime-t
 
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import { Agent } from "@earendil-works/pi-agent-core";
 import type {
@@ -71,6 +71,7 @@ export interface HarnessOptions {
 	resourceLoader?: ResourceLoader;
 	extensionFactories?: Array<InlineExtension | CreateTestExtensionsResultInput>;
 	withConfiguredAuth?: boolean;
+	sessionDir?: string;
 }
 
 export interface Harness {
@@ -108,7 +109,12 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 	const withConfiguredAuth = options.withConfiguredAuth ?? true;
 	const extensionRunnerRef: { current?: ExtensionRunner } = {};
 
-	const sessionManager = SessionManager.inMemory();
+	const sessionDir = options.sessionDir
+		? isAbsolute(options.sessionDir)
+			? options.sessionDir
+			: join(tempDir, options.sessionDir)
+		: undefined;
+	const sessionManager = sessionDir ? SessionManager.create(tempDir, sessionDir) : SessionManager.inMemory(tempDir);
 	const settingsManager = SettingsManager.inMemory(options.settings);
 
 	const authStorage = AuthStorage.inMemory();

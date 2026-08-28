@@ -7,6 +7,7 @@ import type { ImageContent, Model, Provider, ProviderHeaders } from "@earendil-w
 import type { KeyId } from "@earendil-works/pi-tui";
 import { type Theme, theme } from "../../modes/interactive/theme/theme.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
+import type { VersionContract } from "../evolution/version-contract.ts";
 import type { KeybindingsConfig } from "../keybindings.ts";
 import type { ModelRegistry } from "../model-registry.ts";
 import type { SessionManager } from "../session-manager.ts";
@@ -283,6 +284,7 @@ export class ExtensionRunner {
 	private compactFn: (options?: CompactOptions) => void = () => {};
 	private getSystemPromptFn: () => string = () => "";
 	private getSystemPromptOptionsFn: () => BuildSystemPromptOptions = () => ({ cwd: this.cwd });
+	private versionContract: VersionContract;
 	private newSessionHandler: NewSessionHandler = async () => ({ cancelled: false });
 	private forkHandler: ForkHandler = async () => ({ cancelled: false });
 	private navigateTreeHandler: NavigateTreeHandler = async () => ({ cancelled: false });
@@ -299,6 +301,7 @@ export class ExtensionRunner {
 		cwd: string,
 		sessionManager: SessionManager,
 		modelRegistry: ModelRegistry,
+		versionContract: VersionContract,
 	) {
 		this.extensions = extensions;
 		this.runtime = runtime;
@@ -306,6 +309,7 @@ export class ExtensionRunner {
 		this.cwd = cwd;
 		this.sessionManager = sessionManager;
 		this.modelRegistry = modelRegistry;
+		this.versionContract = versionContract;
 	}
 
 	bindCore(
@@ -681,6 +685,10 @@ export class ExtensionRunner {
 			get cwd() {
 				runner.assertActive();
 				return runner.cwd;
+			},
+			get versionContract() {
+				runner.assertActive();
+				return runner.versionContract;
 			},
 			get sessionManager() {
 				runner.assertActive();
