@@ -18,6 +18,23 @@ import type { ProductManifestEntry } from "./evolution/product-manifest-collecto
 import type { ToolEvent } from "./evolution/tool-event-collector.ts";
 import type { VersionContract } from "./evolution/version-contract.ts";
 
+export interface TeacherCorrectionRef {
+	kind: "teacher_correction";
+	data_class: "pending_0b";
+	retention_policy_ref: "pending_0b";
+	task_id: string;
+	gateway_marker: EscalationJoinKey;
+	local_finish_reason: string;
+	cloud_finish_reason: string;
+	local_outcome?: string;
+	cloud_outcome?: string;
+	user_correction?: { correction_type: string; content: string; helpful: boolean };
+	correction_text: string;
+	improvement_basis: "grader" | "finish_reason" | "user_correction";
+	dlp_findings: { pattern: string; location: string }[];
+	aligned_at: number;
+}
+
 const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;
 
 export interface ArtifactManifest {
@@ -50,6 +67,8 @@ export interface EvidenceArtifactInput {
 	escalationJoinKeys: EscalationJoinKey[];
 	/** Optional frozen shadow task-level detector snapshot. */
 	detectorSnapshot?: TaskLevelDetectorSnapshot;
+	/** Optional aligned teacher correction ref produced by P4-3 backflow alignment. */
+	teacherCorrectionRef?: TeacherCorrectionRef;
 }
 
 export interface EvidenceSinkOptions {
@@ -91,6 +110,7 @@ class EvidenceSinkImpl implements EvidenceSink {
 			user_corrections: input.userCorrections,
 			escalation_join_keys: input.escalationJoinKeys,
 			...(input.detectorSnapshot !== undefined ? { detector_snapshot: input.detectorSnapshot } : {}),
+			...(input.teacherCorrectionRef !== undefined ? { teacher_correction_ref: input.teacherCorrectionRef } : {}),
 		};
 
 		const evidenceBlob = toCanonicalBlob(evidencePayload);
@@ -109,6 +129,7 @@ class EvidenceSinkImpl implements EvidenceSink {
 				`user_corrections:${input.userCorrections.length}`,
 				`escalation_join_keys:${input.escalationJoinKeys.length}`,
 				...(input.detectorSnapshot ? [`detector_signals:${input.detectorSnapshot.signals.length}`] : []),
+				...(input.teacherCorrectionRef ? [`teacher_correction_refs:1`] : []),
 			],
 			scaffold_hash: contract.scaffoldHash,
 			model_fingerprint: JSON.stringify({

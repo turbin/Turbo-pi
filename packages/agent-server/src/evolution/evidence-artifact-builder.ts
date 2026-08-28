@@ -4,6 +4,7 @@ import type { ArtifactManifest } from "./artifact-schema.ts";
 import { SHA256_HEX_PATTERN } from "./artifact-schema.ts";
 import { canonicalJson } from "./canonical.ts";
 import type { EscalationJoinKey } from "./evidence-schema.ts";
+import type { TeacherCorrectionRef } from "./teacher-correction-aligner.ts";
 
 /**
  * P1-T18: evidence artifact builder.
@@ -78,6 +79,8 @@ export interface EvidenceArtifactInput {
 	graderOutcomes: GraderOutcome[];
 	userCorrections: UserCorrection[];
 	escalationJoinKeys: EscalationJoinKey[];
+	/** Optional aligned teacher correction ref produced by P4-3 backflow alignment. */
+	teacherCorrectionRef?: TeacherCorrectionRef;
 }
 
 export interface EvidenceArtifact {
@@ -172,6 +175,7 @@ export function buildEvidenceArtifact(input: EvidenceArtifactInput): EvidenceArt
 		grader_outcomes: input.graderOutcomes,
 		user_corrections: input.userCorrections,
 		escalation_join_keys: input.escalationJoinKeys,
+		...(input.teacherCorrectionRef !== undefined ? { teacher_correction_ref: input.teacherCorrectionRef } : {}),
 	};
 
 	const evidenceBlob = toCanonicalBlob(evidencePayload);
@@ -189,6 +193,7 @@ export function buildEvidenceArtifact(input: EvidenceArtifactInput): EvidenceArt
 			`grader_outcomes:${input.graderOutcomes.length}`,
 			`user_corrections:${input.userCorrections.length}`,
 			`escalation_join_keys:${input.escalationJoinKeys.length}`,
+			...(input.teacherCorrectionRef ? [`teacher_correction_refs:1`] : []),
 		],
 		scaffold_hash: contract.scaffoldHash,
 		// Evidence artifacts are not model-generated; the fingerprint slot carries
