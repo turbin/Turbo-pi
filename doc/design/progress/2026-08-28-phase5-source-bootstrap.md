@@ -11,7 +11,7 @@
 | P5-1 定义 candidate-extension ABI 与 capability-limited 白名单 | done | Kimi Code CLI | 2026-08-28 | `packages/agent-server/src/evolution/candidate-abi/`，24 项契约测试通过 |
 | P5-2 实现源码候选 generator（失败簇 → patch） | done | Kimi Code CLI | 2026-08-28 | `packages/agent-server/src/evolution/source-candidate-generator.ts`，7 项测试通过 |
 | P5-3 构建隔离执行 runner（worktree + 容器 + 评估 artifact） | done | Kimi Code CLI | 2026-08-28 | `packages/agent-server/src/evolution/candidate-isolation-runner.ts`，9 项测试通过 |
-| P5-4 人工审查门与 promotion 状态机接入 | pending | | | |
+| P5-4 人工审查门与 promotion 状态机接入 | done | Kimi Code CLI | 2026-08-28 | `packages/agent-server/src/evolution/candidate-promoter.ts`，5 项测试通过 |
 | P5-5 Phase 5 end-to-end 集成测试与 canary/rollback 演练 | pending | | | |
 | S10 Phase 5 收尾 | pending | | | |
 
@@ -29,7 +29,7 @@
 
 如果从零接手：
 1. P5-1 已完成，代码在 `packages/agent-server/src/evolution/candidate-abi/`。
-2. 下一步启动 P5-4：将候选评估报告接入 promotion 状态机与人工审查门（canary_pending_approval / canary / active_pending_approval / active），消费 archive/detector 信号/teacher correction 生成失败簇并输出 `SourcePatchArtifactInput`。
+2. 下一步启动 P5-5：end-to-end 集成测试与 canary/rollback 演练，覆盖失败簇 → 候选 → 隔离验证 → 批准/拒绝 → rollback 全链路，消费 archive/detector 信号/teacher correction 生成失败簇并输出 `SourcePatchArtifactInput`。
 3. 验证命令：
    ```bash
    cd /Volumes/extern-1T-hardisk/workspace/01-repo/03-agents/Turbo-pi
