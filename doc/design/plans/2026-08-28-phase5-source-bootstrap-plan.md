@@ -1,7 +1,7 @@
 # Phase 5 实施计划：受限源码级自举
 
 日期：2026-08-28  
-状态：已获 Go Gate 批准，P5-1 已完成，P5-2 待启动  
+状态：已获 Go Gate 批准，P5-2 已完成，P5-3 待启动  
 上游约束：`doc/design/plans/2026-08-27-self-evolving-engineering-design-plan.md` §11 Phase 5
 
 ## 1. 目标
@@ -40,7 +40,7 @@ Phase 5 启动前必须满足：
 | 编号 | 任务 | 预计工期 | 依赖 | 验收点 |
 |---|---|---|---|---|
 | P5-1 | 定义 `candidate-extension` ABI 与 capability-limited 白名单 | 1–2 天 | Phase 3/4 状态机、scaffold config | ✅ ABI schema 与示例通过契约测试 |
-| P5-2 | 实现源码候选 generator（失败簇 → patch） | 2–3 天 | P5-1、archive、detector metrics | 对模拟失败簇生成可审计 patch |
+| P5-2 | 实现源码候选 generator（失败簇 → patch） | 2–3 天 | P5-1、archive、detector metrics | ✅ 对模拟失败簇生成可审计 patch |
 | P5-3 | 构建隔离执行 runner（worktree + 容器 + 评估 artifact） | 2–3 天 | P5-1、TEK IPC、bundle-builder | runner 可加载候选并输出完整评估报告 |
 | P5-4 | 人工审查门与 promotion 状态机接入 | 1–2 天 | P5-3、promotion-controller | 候选只能经人工批准进入 canary/active |
 | P5-5 | Phase 5 end-to-end 集成测试与 canary/rollback 演练 | 2–3 天 | P5-1~P5-4 | 完整闭环：失败簇 → 候选 → 隔离验证 → 批准/拒绝 → 人工 canary → rollback |
