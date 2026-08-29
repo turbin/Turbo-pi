@@ -260,6 +260,7 @@
 | progress/2026-08-28-phase5-source-bootstrap.md | Phase 5 受限源码级自举 — 进度与交接（进行中） |
 | 2026-08-28-p5-1-candidate-abi-changes-and-decisions.md | **P5-1 candidate-extension ABI 与 capability-limited 白名单**：ABI v1、manifest fail-closed 校验、默认路径白名单、`source_patch` artifact 布局 |
 | 2026-08-28-p5-2-source-candidate-generator-changes-and-decisions.md | **P5-2 源码候选 generator**：失败簇聚合、信号→声明式策略映射、模型-free patch 生成、lineage 记录 |
+| 2026-08-28-p5-3-isolation-runner-changes-and-decisions.md | **P5-3 隔离执行 runner**：worktree diff 应用、白名单校验、可插拔 `ExecRunner`、`CandidateEvaluationReport` |
 
 ---
 
